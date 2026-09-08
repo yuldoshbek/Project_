@@ -138,6 +138,14 @@
 
 **`notification_preferences`** — `user_id`, `event_kind`, `channels text[]`.
 
+**`project_health_snapshots`** — ежедневный снимок состояния проекта: `project_id`,
+`taken_on date`, `health`, `status_code`, `progress_pct`, `overdue_tasks_count`,
+`open_tasks_count`, `days_to_due`; уникальность по `(project_id, taken_on)`.
+Отвечает на вопрос «где мы проседаем», на который светофор ответить не может: цвет
+меняется от хода времени, и журнал изменений об этом не знает
+([ADR-0014](adr/ADR-0014-progress-history.md)). Ретроспектива не восстанавливается —
+задание должно работать до первого показа дашборда.
+
 ### 1.7 Интеграции
 
 **`google_accounts`** — `user_id fk`, `google_sub`, `email`, `refresh_token_encrypted`,
@@ -204,6 +212,8 @@ Telegram отдельной таблицы не требует: получате
 | `GET`, `POST /reports/definitions`; `POST /reports/{id}/run`; `GET /reports/runs/{id}` | Отчёты | ORB-043 |
 | `GET /notifications`; `POST /notifications/{id}/read` | Центр уведомлений | ORB-037 |
 | `GET /briefing` | Экран «Доклад»: портфель, красная зона, ждёт решения, 7 дней вперёд | ORB-061 |
+| `GET /dashboard/trend` | Динамика: что ухудшилось за неделю, что стоит на месте | ORB-064 |
+| `GET /projects/{id}/history` | Полоса состояний проекта за период | ORB-064 |
 | `GET /integrations/google/authorize`, `/callback` | Подключение календаря по OAuth | ORB-057 |
 | `GET`, `PATCH /integrations/google` | Состояние синхронизации и выключатель | ORB-057 |
 | `DELETE /integrations/google` | Отзыв доступа, удаление токена | ORB-057 |
