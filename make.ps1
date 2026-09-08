@@ -27,7 +27,8 @@ switch ($Target) {
         Write-Output @'
   install    Установить зависимости backend и frontend
   up         Поднять postgres, redis, minio, mailhog
-  down       Остановить окружение
+  down       Остановить окружение (данные сохраняются)
+  reset      Остановить окружение и удалить данные
   logs       Логи окружения
   migrate    Применить миграции
   seed       Загрузить справочники и демо-данные
@@ -43,7 +44,11 @@ switch ($Target) {
         Invoke-In $backend 'uv' @('sync', '--all-groups')
         Invoke-In $frontend 'npm' @('ci')
     }
-    'up' { Invoke-In $root 'docker' @('compose', 'up', '-d') }
+    'up' {
+        Invoke-In $root 'docker' @('compose', 'up', '-d', '--wait')
+        Invoke-In $root 'docker' @('compose', 'run', '--rm', 'minio-init')
+    }
+    'reset' { Invoke-In $root 'docker' @('compose', 'down', '-v') }
     'down' { Invoke-In $root 'docker' @('compose', 'down') }
     'logs' { Invoke-In $root 'docker' @('compose', 'logs', '-f') }
     'migrate' { Invoke-In $backend 'uv' @('run', 'alembic', 'upgrade', 'head') }

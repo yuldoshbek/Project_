@@ -7,7 +7,7 @@
 #   dev              — ORB-003 (приложение FastAPI) и ORB-005 (оболочка frontend)
 
 .DEFAULT_GOAL := help
-.PHONY: help install up down logs migrate seed dev dev-back dev-front test test-back test-front check fmt clean
+.PHONY: help install up down reset logs migrate seed dev dev-back dev-front test test-back test-front check fmt clean
 
 BACKEND  := backend
 FRONTEND := frontend
@@ -19,11 +19,17 @@ install: ## Установить зависимости backend и frontend
 	cd $(BACKEND) && uv sync --all-groups
 	cd $(FRONTEND) && npm ci
 
-up: ## Поднять postgres, redis, minio, mailhog
-	docker compose up -d
+up: ## Поднять окружение и дождаться готовности всех сервисов
+	docker compose up -d --wait
+	docker compose run --rm minio-init
+	@echo "PostgreSQL :$${ORBITA_DB_PORT:-55432}   Redis :$${ORBITA_REDIS_PORT:-56379}"
+	@echo "MinIO http://localhost:$${ORBITA_S3_CONSOLE_PORT:-59001}   Почта http://localhost:$${ORBITA_MAIL_UI_PORT:-58025}"
 
-down: ## Остановить окружение
+down: ## Остановить окружение (данные сохраняются)
 	docker compose down
+
+reset: ## Остановить окружение и удалить данные — база создастся заново
+	docker compose down -v
 
 logs: ## Логи окружения
 	docker compose logs -f

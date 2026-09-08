@@ -25,6 +25,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "httpx>=0.28",
+    "python-dotenv>=1.0",
     "ruff>=0.8",
     "mypy>=1.13",
     "import-linter>=2.1",
@@ -92,6 +93,15 @@ strict = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+# redis-py поставляет py.typed, но часть его публичных функций (from_url) не
+# аннотирована. Требовать этого от тестов бессмысленно — в коде приложения проверка
+# остаётся включённой.
+disallow_untyped_calls = false
+
+# Библиотеки без маркера py.typed: аннотации внутри есть, но mypy их не видит.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
+ignore_missing_imports = true
 
 # --------------------------------------------------------------------------
 # pytest
@@ -101,7 +111,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers --cov=app --cov-report=term-missing"
 markers = [
-    "db: тест требует поднятой PostgreSQL (make up)",
+    "infra: тест требует поднятого окружения — make up (PostgreSQL, Redis)",
+    "db: тест работает с базой данных",
     "slow: длительный тест, не входит в быстрый прогон",
 ]
 

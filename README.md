@@ -78,20 +78,42 @@ cp .env.example .env
 
 Дальше — на Linux и macOS через `make`, на Windows через `.\make.ps1` (цели одинаковые):
 
+Linux и macOS:
+
 ```bash
 make install    # зависимости backend и frontend
-make check      # ruff, mypy, границы слоёв, eslint, tsc, prettier
+make up         # postgres, redis, minio, почта — с ожиданием готовности
 make test       # pytest и vitest
+make check      # ruff, mypy, границы слоёв, eslint, tsc, prettier
 ```
+
+Windows (`make` в системе нет, обёртка делает то же самое):
 
 ```powershell
 .\make.ps1 install
-.\make.ps1 check
+.\make.ps1 up
 .\make.ps1 test
+.\make.ps1 check
 ```
 
-Цели `up`, `migrate`, `seed` и `dev` заработают вместе с тикетами ORB-002 (docker-compose),
-ORB-003 (приложение) и ORB-004 (миграции). Полный список целей — `make help`.
+`make up` поднимает окружение и ждёт, пока все сервисы пройдут healthcheck. Что появляется:
+
+| Сервис | Адрес | Зачем |
+|---|---|---|
+| PostgreSQL 16 | `localhost:55432`, базы `orbita` и `orbita_test` | данные; расширения `pg_trgm`, `unaccent`, `citext`, `pgcrypto` включены при создании |
+| Redis 7 | `localhost:56379` | очередь фоновых задач |
+| MinIO | http://localhost:59001 (консоль), логин `orbita` / `orbita-secret` | хранилище вложений, бакет `orbita` |
+| Почта (Mailpit) | http://localhost:58025 | письма разработки не уходят наружу |
+
+**Порты смещены намеренно.** Стандартный 5432 часто занят нативным PostgreSQL: контейнер
+тогда садится только на IPv6, а клиент молча уходит в чужую базу. Все порты
+переопределяются в `.env`, привязка — только к `127.0.0.1`.
+
+Остановить: `make down` (данные сохраняются) или `make reset` (данные удаляются, база
+создастся заново). Полный список целей — `make help`.
+
+Цели `migrate`, `seed` и `dev` заработают вместе с тикетами ORB-003 (приложение) и
+ORB-004 (миграции).
 
 ## Структура репозитория
 

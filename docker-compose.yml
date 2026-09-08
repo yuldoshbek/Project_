@@ -1,0 +1,117 @@
+# Локальное окружение разработки ORBITA.
+# Поднимается одной командой: make up (в Windows — .\make.ps1 up).
+#
+# Продовый контур этим файлом не описывается: площадка размещения уточняется у IT-службы
+# Агентства (OPEN-QUESTIONS Q9), сборка образов и деплой — тикет ORB-047.
+#
+# Порты на хосте смещены (55432, 56379, 59000/59001, 51025/58025) и привязаны к 127.0.0.1.
+# Причина не косметическая: если на машине уже работает PostgreSQL, он занимает IPv4:5432,
+# контейнер садится только на IPv6, и клиент молча уходит в чужую базу — соединение
+# рвётся без единой записи в логах контейнера. Привязка к 127.0.0.1 заодно не выставляет
+# базу разработки в локальную сеть. Переопределяется через .env.
+
+name: orbita
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ORBITA_DB_USER:-orbita}
+      POSTGRES_PASSWORD: ${ORBITA_DB_PASSWORD:-orbita}
+      POSTGRES_DB: ${ORBITA_DB_NAME:-orbita}
+      # Тестовая база создаётся рядом с рабочей: тесты не должны затирать данные разработки
+      ORBITA_TEST_DB: ${ORBITA_TEST_DB:-orbita_test}
+      # Локаль влияет на сортировку — для узбекской латиницы это существенно (ADR-0006)
+      LANG: C.UTF-8
+    ports:
+      - '127.0.0.1:${ORBITA_DB_PORT:-55432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${ORBITA_DB_USER:-orbita} -d ${ORBITA_DB_NAME:-orbita}']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly: очередь напоминаний и эскалаций не должна теряться при перезапуске (ADR-0008)
+    command: redis-server --appendonly yes
+    ports:
+      - '127.0.0.1:${ORBITA_REDIS_PORT:-56379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${ORBITA_S3_ACCESS_KEY:-orbita}
+      MINIO_ROOT_PASSWORD: ${ORBITA_S3_SECRET_KEY:-orbita-secret}
+    ports:
+      - '127.0.0.1:${ORBITA_S3_PORT:-59000}:9000'
+      - '127.0.0.1:${ORBITA_S3_CONSOLE_PORT:-59001}:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Разовая задача: создаёт бакет вложений, чтобы приложение не занималось этим на старте.
+  # Вынесена в профиль: `up --wait` считает любой завершившийся контейнер отказом, даже
+  # с нулевым кодом. Запускается отдельно через `docker compose run --rm minio-init`,
+  # что заодно даёт честный код возврата (см. цель up в Makefile).
+  minio-init:
+    profiles: [setup]
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${ORBITA_S3_ACCESS_KEY:-orbita}
+      MINIO_ROOT_PASSWORD: ${ORBITA_S3_SECRET_KEY:-orbita-secret}
+      BUCKET: ${ORBITA_S3_BUCKET:-orbita}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb --ignore-existing local/$$BUCKET &&
+      mc anonymous set none local/$$BUCKET &&
+      echo 'бакет '$$BUCKET' готов'
+      "
+    restart: 'no'
+
+  # Перехватывает исходящую почту в разработке: письма видны в веб-интерфейсе и никуда не уходят.
+  # Вместо MailHog из карточки тикета — Mailpit: MailHog не поддерживается с 2020 года,
+  # Mailpit его прямой преемник с теми же портами (SMTP 1025, интерфейс 8025).
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${ORBITA_SMTP_PORT:-51025}:1025'
+      - '127.0.0.1:${ORBITA_MAIL_UI_PORT:-58025}:8025'
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8025/readyz']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
