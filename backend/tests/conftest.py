@@ -17,6 +17,13 @@ from pathlib import Path
 import asyncpg
 import pytest
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
+
+from app.main import create_app
+from app.repos.database import dispose_database, init_database
+from app.settings import Settings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -92,3 +99,54 @@ async def db(test_dsn: str) -> AsyncIterator[asyncpg.Connection]:
         yield connection
     finally:
         await connection.close()
+
+
+# --------------------------------------------------------------------------
+# Приложение
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def settings() -> Settings:
+    """Настройки для тестов.
+
+    Собираются явно, а не читаются из окружения: тесты не должны зависеть от того, есть
+    ли на машине файл .env и что в нём написано. Единственное, что берётся из окружения, —
+    адреса поднятых сервисов.
+    """
+    return Settings(
+        env="test",
+        secret_key=SecretStr("test-secret-not-for-production"),
+        db_host=_env("ORBITA_DB_HOST", "localhost"),
+        db_port=int(_env("ORBITA_DB_PORT", "55432")),
+        db_name=configured_test_db(),
+        db_user=_env("ORBITA_DB_USER", "orbita"),
+        db_password=SecretStr(_env("ORBITA_DB_PASSWORD", "orbita")),
+        redis_url=redis_url(),
+        log_json=True,
+    )
+
+
+@pytest.fixture
+async def app(settings: Settings) -> AsyncIterator[FastAPI]:
+    """Приложение с поднятым подключением к базе.
+
+    `ASGITransport` не выполняет lifespan, поэтому подключение создаётся здесь вручную.
+    Что сам lifespan отрабатывает, проверяется отдельно в `test_lifespan_opens_database`.
+    """
+    application = create_app(settings)
+    init_database(settings)
+    try:
+        yield application
+    finally:
+        await dispose_database()
+
+
+@pytest.fixture
+async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    # raise_app_exceptions=False: Starlette возвращает ответ обработчика и следом
+    # пробрасывает исключение дальше, чтобы сервер его записал. В тесте нам нужен
+    # именно ответ — иначе проверить формат ошибки 500 невозможно.
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as http_client:
+        yield http_client
