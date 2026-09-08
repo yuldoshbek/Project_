@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '22'
+
+jobs:
+  backend:
+    name: Backend — линт, типы, тесты
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Установить Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Зависимости
+        run: uv sync --all-groups
+
+      - name: ruff — линт
+        run: uv run ruff check --output-format=github .
+
+      - name: ruff — форматирование
+        run: uv run ruff format --check .
+
+      - name: mypy
+        run: uv run mypy app tests
+
+      - name: Границы слоёв
+        run: uv run lint-imports
+
+      - name: Тесты
+        run: uv run pytest
+
+  frontend:
+    name: Frontend — линт, типы, тесты
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: eslint
+        run: npm run lint
+
+      - name: Типы
+        run: npm run typecheck
+
+      - name: Форматирование
+        run: npm run fmt:check
+
+      - name: Тесты
+        run: npm run test
+
+  docs:
+    name: Документы — ссылки и нумерация тикетов
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Проверить документы
+        run: python scripts/check_docs.py
