@@ -121,6 +121,8 @@ ORB-003 (приложение) и ORB-004 (миграции). Полный сп�
 | Тикеты, зависимости, волны | [docs/tickets/INDEX.md](docs/tickets/INDEX.md) |
 | Вопросы заказчику и допущения | [docs/OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) |
 | Процесс разработки | [docs/PIPELINE.md](docs/PIPELINE.md) |
+| Как вести работу над проектом | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Политика безопасности | [.github/SECURITY.md](.github/SECURITY.md) |
 
 ## Решения, определяющие проект
 

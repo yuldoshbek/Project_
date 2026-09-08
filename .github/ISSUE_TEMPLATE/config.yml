@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Вопрос к заказчику
+    url: https://github.com/yuldoshbek/Project_/blob/main/docs/OPEN-QUESTIONS.md
+    about: Неясность в требованиях — не задача разработки. Добавьте вопрос в OPEN-QUESTIONS.md вместе с допущением, по которому работаем до ответа.
+  - name: Предложение изменить ТЗ
+    url: https://github.com/yuldoshbek/Project_/blob/main/docs/council/COUNCIL-0001.md
+    about: Расхождение с техническим заданием оформляется предложением, а не молчаливой правкой кода.

@@ -1,0 +1,70 @@
+name: Тикет разработки
+description: Единица работы по спецификации — один тикет, одна ветка, один заход
+labels: ['тикет']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Тикеты MVP уже нарезаны в `docs/tickets/`. Эта форма — для работы, которой там нет.
+        Если тикет не помещается в один заход без `/clear`, он слишком большой: разрежьте.
+
+  - type: input
+    id: code
+    attributes:
+      label: Номер
+      placeholder: ORB-053
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Цель
+      description: Одно предложение — зачем это нужно пользователю или системе
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Объём
+      description: Что именно делается
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Критерии приёмки
+      description: |
+        Наблюдаемое поведение с чекбоксами. «Реализован сервис» — не критерий.
+        «Пять неудачных попыток входа блокируют вход на 15 минут» — критерий.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: input
+    id: depends
+    attributes:
+      label: Зависит от
+      placeholder: 'ORB-008, ORB-014'
+
+  - type: input
+    id: blocks
+    attributes:
+      label: Блокирует
+      placeholder: 'ORB-030'
+
+  - type: input
+    id: sources
+    attributes:
+      label: Требования ТЗ и решения
+      placeholder: 'ТЗ 6.4 · ADR-0005'
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Не входит
+      description: Что лежит рядом и в этом тикете не делается

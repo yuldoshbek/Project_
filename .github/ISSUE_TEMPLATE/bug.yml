@@ -1,0 +1,70 @@
+name: Дефект
+description: Система ведёт себя не так, как описано в ТЗ или в спецификации
+labels: ['дефект']
+body:
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что должно происходить
+      description: Со ссылкой на раздел ТЗ, SPEC.md или ADR
+      placeholder: 'По ТЗ 6.5 напоминание приходит за 3 дня до срока…'
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Что происходит на самом деле
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как воспроизвести
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Под какой ролью
+      options:
+        - Руководитель
+        - Помощник / координатор
+        - Куратор проекта
+        - Исполнитель
+        - Наблюдатель
+        - Администратор системы
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Насколько критично
+      options:
+        - 'Критично: утечка данных между проектами или потеря данных'
+        - 'Высокое: блокирует работу, обхода нет'
+        - 'Среднее: работает неверно, есть обходной путь'
+        - 'Низкое: неудобство, оформление'
+    validations:
+      required: true
+
+  - type: input
+    id: locale
+    attributes:
+      label: Локаль интерфейса
+      placeholder: 'ru | uz-Cyrl | uz-Latn'
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Логи, снимки экрана, request_id
+      description: |
+        request_id есть в заголовке ответа и в теле ошибки — с ним запись быстро находится в логах.
+        Не прикладывайте реальные данные проектов с ограниченным доступом.
