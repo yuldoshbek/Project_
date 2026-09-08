@@ -1,0 +1,42 @@
+{
+  "app": {
+    "name": "ORBITA",
+    "tagline": "Loyihalar va vazifalarni boshqarish",
+    "skipToContent": "Asosiy qismga oʻtish"
+  },
+  "nav": {
+    "section": "Boʻlimlar",
+    "dashboard": "Boshqaruv paneli",
+    "today": "Bugun",
+    "projects": "Loyihalar",
+    "tasks": "Vazifalar bazasi",
+    "calendar": "Taqvim",
+    "reports": "Hisobotlar",
+    "admin": "Maʼmuriyat"
+  },
+  "locale": {
+    "label": "Interfeys tili",
+    "ru": "Русский",
+    "uz-Cyrl": "Ўзбекча",
+    "uz-Latn": "Oʻzbekcha"
+  },
+  "state": {
+    "loading": "Yuklanmoqda",
+    "empty": "Hech narsa topilmadi",
+    "emptyHint": "Tanlash shartlarini oʻzgartiring yoki yangi yozuv yarating",
+    "errorTitle": "Maʼlumotlarni yuklab boʻlmadi",
+    "errorHint": "Ulanishni tekshiring va qayta urinib koʻring",
+    "retry": "Qayta urinish"
+  },
+  "error": {
+    "forbiddenTitle": "Ruxsat yoʻq",
+    "forbiddenText": "Loyiha yoki vazifa faqat ishtirokchilarga ochiq. Ish yuzasidan ruxsat kerak boʻlsa, loyiha kuratoriga murojaat qiling.",
+    "notFoundTitle": "Sahifa topilmadi",
+    "notFoundText": "Manzil notoʻgʻri koʻrsatilgan yoki yozuv oʻchirilgan.",
+    "goHome": "Boshqaruv paneliga"
+  },
+  "placeholder": {
+    "title": "Boʻlim ishlab chiqilmoqda",
+    "text": "Ekran {{ticket}} tiketida amalga oshiriladi."
+  }
+}
