@@ -1,0 +1,21 @@
+# В репозитории — только LF. Команда работает и на Windows, и на Linux;
+# без этого файла каждый диск шумит переносами строк.
+* text=auto eol=lf
+
+# Скрипты, зависящие от переносов строк своей платформы
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.sh    text eol=lf
+
+# Бинарные файлы не трогать
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary
+*.woff  binary
+*.woff2 binary
