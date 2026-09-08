@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
@@ -13,7 +14,11 @@ export default tseslint.config(
       ecmaVersion: 2022,
       globals: globals.browser,
     },
+    settings: {
+      react: { version: 'detect' },
+    },
     plugins: {
+      react,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
     },
@@ -23,10 +28,25 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
 
-      // Локализация (ТЗ 10.3): в компонентах не должно быть текстовых литералов —
-      // только ключи i18n. Правило включается в ORB-005 вместе с i18next,
-      // когда появится, чем заменять литералы.
-      // 'react/jsx-no-literals': 'error',
+      // ТЗ 10.3: интерфейс на трёх письменностях. Забытый литерал в компоненте — это
+      // строка, которая никогда не переведётся, и обнаружится она на приёмке у
+      // заказчика. Правило переводит эту ошибку из «когда-нибудь заметим» в «сборка
+      // не прошла». Разрешены только разделители, не несущие смысла.
+      'react/jsx-no-literals': [
+        'error',
+        {
+          noStrings: true,
+          ignoreProps: true,
+          allowedStrings: ['·', '—', '–', '/', '×', ':', ',', '.'],
+        },
+      ],
+    },
+  },
+  {
+    // В тестах ожидаемые строки пишутся прямо в проверках — это и есть предмет проверки.
+    files: ['**/*.test.{ts,tsx}', 'src/test-setup.ts'],
+    rules: {
+      'react/jsx-no-literals': 'off',
     },
   },
 );
