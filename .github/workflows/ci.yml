@@ -22,6 +22,39 @@ jobs:
       run:
         working-directory: backend
 
+    # Тесты окружения (маркер infra) идут против настоящих PostgreSQL и Redis:
+    # подменять их заглушками — значит проверять заглушки, а не систему.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orbita
+          POSTGRES_PASSWORD: orbita
+          POSTGRES_DB: orbita_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U orbita"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    env:
+      ORBITA_DB_HOST: localhost
+      ORBITA_DB_PORT: '5432'
+      ORBITA_DB_USER: orbita
+      ORBITA_DB_PASSWORD: orbita
+      ORBITA_DB_NAME: orbita
+      ORBITA_TEST_DB: orbita_test
+      ORBITA_REDIS_URL: redis://localhost:6379/0
+
     steps:
       - uses: actions/checkout@v4
 
