@@ -4,7 +4,11 @@
 
 param(
     [Parameter(Position = 0)]
-    [string]$Target = 'help'
+    [string]$Target = 'help',
+
+    # Описание для цели revision.
+    [Parameter(Position = 1)]
+    [string]$Name
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +35,8 @@ switch ($Target) {
   reset      Остановить окружение и удалить данные
   logs       Логи окружения
   migrate    Применить миграции
+  revision   Создать миграцию: .\make.ps1 revision "описание"
+  heads      Проверить, что голова миграций одна
   seed       Загрузить справочники и демо-данные
   dev-back   Запустить backend на :8000
   dev-front  Запустить frontend на :5173
@@ -52,6 +58,12 @@ switch ($Target) {
     'down' { Invoke-In $root 'docker' @('compose', 'down') }
     'logs' { Invoke-In $root 'docker' @('compose', 'logs', '-f') }
     'migrate' { Invoke-In $backend 'uv' @('run', 'alembic', 'upgrade', 'head') }
+    'revision' {
+        if (-not $Name) { throw 'укажите описание: .\make.ps1 revision "добавить проекты"' }
+        Invoke-In $backend 'uv' @('run', 'alembic', 'revision', '--autogenerate', '-m', $Name)
+        Write-Output 'проверьте сгенерированное: автогенерация не видит переименований и данных'
+    }
+    'heads' { Invoke-In $backend 'uv' @('run', 'alembic', 'heads') }
     'seed' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.seed') }
     'dev-back' { Invoke-In $backend 'uv' @('run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000') }
     'dev-front' { Invoke-In $frontend 'npm' @('run', 'dev') }
