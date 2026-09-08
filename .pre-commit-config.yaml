@@ -1,0 +1,50 @@
+# Установка: pre-commit install
+# Хуки повторяют часть make check — чтобы очевидные ошибки не доезжали до CI.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: Границы слоёв (import-linter)
+        entry: bash -c 'cd backend && uv run lint-imports'
+        language: system
+        pass_filenames: false
+        files: ^backend/app/
+
+      - id: prettier
+        name: prettier
+        entry: bash -c 'cd frontend && npx prettier --check .'
+        language: system
+        pass_filenames: false
+        files: ^frontend/
+
+      - id: no-env-commit
+        name: .env не коммитится
+        entry: bash -c 'git diff --cached --name-only | grep -E "(^|/)\.env$" && echo "Файл .env коммитить нельзя" && exit 1 || exit 0'
+        language: system
+        pass_filenames: false
