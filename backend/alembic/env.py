@@ -26,6 +26,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.repos.base import SCHEMA, Base
 from app.settings import get_settings
 
+# Импорт нужен ради побочного эффекта: автогенерация видит только те таблицы, чей
+# модуль загружен. Забытый импорт означает миграцию, молча удаляющую таблицу.
+import app.repos.models  # noqa: F401  isort:skip
+
 config = context.config
 
 if config.config_file_name is not None:

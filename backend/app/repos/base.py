@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import MetaData, func
+from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -59,14 +59,21 @@ class Timestamps:
     """Отметки создания и изменения.
 
     `timestamptz` и `now()` на стороне базы — время одно на всех: у приложения, воркера и
-    бота (CLAUDE.md, инвариант о времени). Наивных дат в схеме нет и быть не может.
+    бота (CLAUDE.md, инвариант о времени).
+
+    `DateTime(timezone=True)` указывается явно: по одной аннотации `Mapped[datetime]`
+    SQLAlchemy выводит `timestamp without time zone`. Разница не видна ни в модели, ни
+    на ревью — она обнаруживается, когда руководитель в поездке видит сдвинутые сроки.
+    Схема целиком проверяется тестом `test_no_naive_timestamp_columns`.
     """
 
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         onupdate=func.now(),
         nullable=True,
     )
