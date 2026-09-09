@@ -40,7 +40,9 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Tashkent"
 
     # --- База данных ---
-    db_host: str = "localhost"
+    # 127.0.0.1, а не localhost: см. пояснение в .env.example — разница в подключении
+    # тридцатикратная, и платит её каждое соединение, а не только тесты.
+    db_host: str = "127.0.0.1"
     db_port: int = 55432
     db_name: str = "orbita"
     db_user: str = "orbita"
@@ -48,7 +50,7 @@ class Settings(BaseSettings):
     db_schema: str = "orbita"
 
     # --- Redis ---
-    redis_url: str = "redis://localhost:56379/0"
+    redis_url: str = "redis://127.0.0.1:56379/0"
 
     # --- Наблюдаемость ---
     log_level: str = "INFO"

@@ -11,56 +11,18 @@ Alembic запускается настоящей консольной кома�
 from __future__ import annotations
 
 import asyncio
-import os
-import subprocess
-import sys
 from collections.abc import Iterator
-from pathlib import Path
 
 import asyncpg
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, UniqueConstraint
 
 from app.repos.base import NAMING_CONVENTION, SCHEMA, Base
-from tests.conftest import configured_test_db, dsn
+from tests.conftest import configured_test_db, dsn, run_alembic
 
 pytestmark = pytest.mark.infra
 
-BACKEND_ROOT = Path(__file__).resolve().parent.parent
 SCRATCH_DATABASE = f"{configured_test_db()}_migrations"
-
-
-def alembic_executable() -> Path:
-    bin_dir = Path(sys.executable).parent
-    for name in ("alembic.exe", "alembic"):
-        candidate = bin_dir / name
-        if candidate.is_file():
-            return candidate
-    raise RuntimeError(f"alembic не найден в {bin_dir}; выполните uv sync --all-groups")
-
-
-def run_alembic(*args: str, database: str) -> subprocess.CompletedProcess[str]:
-    """Запускает alembic на указанной базе.
-
-    Настройки читаются из окружения и перекрывают файл .env, поэтому подменять базу
-    достаточно переменными — так же, как это делается в рабочем контуре.
-    """
-    env = {
-        **os.environ,
-        "ORBITA_DB_NAME": database,
-        "ORBITA_SECRET_KEY": "test-secret-not-for-production",
-        "ORBITA_ENV": "test",
-    }
-    return subprocess.run(  # noqa: S603
-        [str(alembic_executable()), *args],
-        cwd=BACKEND_ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        check=False,
-    )
 
 
 async def _recreate_scratch_database() -> None:
@@ -177,6 +139,33 @@ def test_required_extensions_are_installed(clean_database: str) -> None:
             await connection.close()
 
     assert {"pg_trgm", "unaccent", "citext", "pgcrypto"} <= asyncio.run(fetch_extensions())
+
+
+def test_no_naive_timestamp_columns(clean_database: str) -> None:
+    """Ни одной колонки без часового пояса во всей схеме.
+
+    Инвариант CLAUDE.md. Проверять его глазами бесполезно: `Mapped[datetime]` без
+    явного `DateTime(timezone=True)` даёт `timestamp without time zone`, и разница не
+    видна ни в модели, ни в ревью — она обнаруживается, когда руководитель в поездке
+    видит сдвинутые сроки. Один раз это уже случилось при ORB-010.
+    """
+    assert run_alembic("upgrade", "head", database=clean_database).returncode == 0
+
+    async def fetch_naive_columns() -> list[str]:
+        connection = await asyncpg.connect(dsn(clean_database))
+        try:
+            rows = await connection.fetch(
+                "SELECT table_name || '.' || column_name AS column "
+                "FROM information_schema.columns "
+                "WHERE table_schema = $1 AND data_type = 'timestamp without time zone'",
+                SCHEMA,
+            )
+            return [row["column"] for row in rows]
+        finally:
+            await connection.close()
+
+    naive = asyncio.run(fetch_naive_columns())
+    assert naive == [], f"время без часового пояса: используйте DateTime(timezone=True) в {naive}"
 
 
 class TestSchemaConventions:
