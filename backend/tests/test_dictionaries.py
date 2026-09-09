@@ -25,9 +25,9 @@ DICTIONARY_MODELS = (Direction, ProjectStatusRef, TaskStatusRef, PriorityRef)
 
 
 class TestSeededContent:
-    async def test_all_directions_from_tz_are_present(self, seeded_session: AsyncSession) -> None:
+    async def test_all_directions_from_tz_are_present(self, session: AsyncSession) -> None:
         """Стартовый набор направлений — из мандата агентства (ТЗ 7, 3.1)."""
-        codes = set(await seeded_session.scalars(select(Direction.code)))
+        codes = set(await session.scalars(select(Direction.code)))
 
         assert codes == {
             "space_monitoring",
@@ -39,11 +39,9 @@ class TestSeededContent:
         }
 
     @pytest.mark.parametrize("model", DICTIONARY_MODELS, ids=lambda m: m.__tablename__)
-    async def test_all_three_scripts_are_filled(
-        self, seeded_session: AsyncSession, model: Any
-    ) -> None:
+    async def test_all_three_scripts_are_filled(self, session: AsyncSession, model: Any) -> None:
         """Незаполненный перевод — это русское слово в узбекском интерфейсе (ТЗ 10.3)."""
-        rows = list(await seeded_session.scalars(select(model)))
+        rows = list(await session.scalars(select(model)))
 
         assert rows, f"справочник {model.__tablename__} пуст"
         for row in rows:
@@ -62,7 +60,7 @@ class TestSeededContent:
         ids=["project_statuses", "task_statuses", "priorities"],
     )
     async def test_codes_match_domain_enums(
-        self, seeded_session: AsyncSession, model: Any, enum_type: Any
+        self, session: AsyncSession, model: Any, enum_type: Any
     ) -> None:
         """Код и данные не разошлись.
 
@@ -70,40 +68,38 @@ class TestSeededContent:
         строка без значения — статус, смысла которого система не знает. И то и другое
         обнаруживается на экране у пользователя, а не здесь, если этой проверки нет.
         """
-        in_database = set(await seeded_session.scalars(select(model.code)))
+        in_database = set(await session.scalars(select(model.code)))
         in_code = {str(member) for member in enum_type}
 
         assert in_database == in_code
 
-    async def test_overdue_is_not_a_task_status(self, seeded_session: AsyncSession) -> None:
+    async def test_overdue_is_not_a_task_status(self, session: AsyncSession) -> None:
         """«Просрочена» из ТЗ 7 — вычисляемый признак, а не состояние работы (ADR-0004)."""
-        names = set(await seeded_session.scalars(select(TaskStatusRef.name_ru)))
+        names = set(await session.scalars(select(TaskStatusRef.name_ru)))
 
         assert "Просрочена" not in names
 
-    async def test_urgent_priority_turns_yellow_immediately(
-        self, seeded_session: AsyncSession
-    ) -> None:
+    async def test_urgent_priority_turns_yellow_immediately(self, session: AsyncSession) -> None:
         """У «Срочно» порог жёлтой зоны равен нулю (ADR-0005), и это данные, а не код."""
-        override = await seeded_session.scalar(
+        override = await session.scalar(
             select(PriorityRef.warn_days_override).where(PriorityRef.code == Priority.URGENT)
         )
-        normal = await seeded_session.scalar(
+        normal = await session.scalar(
             select(PriorityRef.warn_days_override).where(PriorityRef.code == Priority.NORMAL)
         )
 
         assert override == 0
         assert normal is None, "у обычного приоритета порог общий, из настроек"
 
-    async def test_settings_cover_every_known_key(self, seeded_session: AsyncSession) -> None:
+    async def test_settings_cover_every_known_key(self, session: AsyncSession) -> None:
         """Параметр, известный коду, но отсутствующий в базе, читался бы как пустой."""
-        stored = set(await seeded_session.scalars(select(Setting.key)))
+        stored = set(await session.scalars(select(Setting.key)))
 
         assert stored == {str(key) for key in SettingKey}
 
-    async def test_status_flags_match_domain_rules(self, seeded_session: AsyncSession) -> None:
+    async def test_status_flags_match_domain_rules(self, session: AsyncSession) -> None:
         """Флаги в справочнике совпадают с правилами домена."""
-        rows = list(await seeded_session.scalars(select(ProjectStatusRef)))
+        rows = list(await session.scalars(select(ProjectStatusRef)))
 
         for row in rows:
             status = ProjectStatus(row.code)
@@ -112,64 +108,62 @@ class TestSeededContent:
 
 
 class TestSeedBehaviour:
-    async def test_second_run_adds_nothing(self, seeded_session: AsyncSession) -> None:
-        added = await seed_module.seed(seeded_session)
+    async def test_second_run_adds_nothing(self, session: AsyncSession) -> None:
+        added = await seed_module.seed(session)
 
         assert added == dict.fromkeys(added, 0)
 
-    async def test_edits_survive_re_seeding(self, seeded_session: AsyncSession) -> None:
+    async def test_edits_survive_re_seeding(self, session: AsyncSession) -> None:
         """Правки помощника переживают обновление системы.
 
         Сиды, затирающие изменения, превратили бы редактируемый справочник в декорацию —
         а ТЗ 6.8 требует ровно обратного.
         """
-        await seeded_session.execute(
+        await session.execute(
             update(ProjectStatusRef)
             .where(ProjectStatusRef.code == ProjectStatus.AWAITING_DECISION)
             .values(name_ru="Ждёт решения замдиректора", sort_order=99)
         )
 
-        await seed_module.seed(seeded_session)
+        await seed_module.seed(session)
 
-        row = await seeded_session.scalar(
+        row = await session.scalar(
             select(ProjectStatusRef).where(ProjectStatusRef.code == ProjectStatus.AWAITING_DECISION)
         )
         assert row is not None
         assert row.name_ru == "Ждёт решения замдиректора"
         assert row.sort_order == 99
 
-    async def test_seed_does_not_duplicate_on_empty_database(
-        self, seeded_session: AsyncSession
-    ) -> None:
-        await seed_module.seed(seeded_session)
-        await seed_module.seed(seeded_session)
+    async def test_seed_does_not_duplicate_on_empty_database(self, session: AsyncSession) -> None:
+        await seed_module.seed(session)
+        await seed_module.seed(session)
 
-        total = await seeded_session.scalar(select(func.count()).select_from(Direction))
+        total = await session.scalar(select(func.count()).select_from(Direction))
         assert total == len(seed_module.DIRECTIONS)
 
 
 class TestReading:
     async def test_deactivated_entry_hides_from_forms_but_stays_visible(
-        self, seeded_session: AsyncSession
+        self, session: AsyncSession
     ) -> None:
         """Отключённое направление нельзя выбрать заново, но старый проект его показывает.
 
         Удалять значение, на которое ссылаются записи, нельзя — иначе из карточки исчезнет
         направление, по которому проект когда-то завели (критерий ORB-010).
         """
-        await seeded_session.execute(
+        await session.execute(
             update(Direction).where(Direction.code == "internal").values(is_active=False)
         )
 
-        for_forms = await service.load_dictionaries(seeded_session, active_only=True)
-        for_display = await service.load_dictionaries(seeded_session, active_only=False)
+        for_forms = await service.load_dictionaries(session, active_only=True)
+        for_display = await service.load_dictionaries(session, active_only=False)
 
         assert "internal" not in {item.code for item in for_forms.directions}
         assert "internal" in {item.code for item in for_display.directions}
 
-    async def test_entries_come_in_configured_order(self, seeded_session: AsyncSession) -> None:
+    async def test_entries_come_in_configured_order(self, session: AsyncSession) -> None:
         """Порядок задаёт помощник, а не база: без сортировки он был бы случайным."""
-        loaded = await service.load_dictionaries(seeded_session)
+        loaded = await service.load_dictionaries(session)
 
         orders = [item.sort_order for item in loaded.project_statuses]
         assert orders == sorted(orders)

@@ -168,9 +168,47 @@ def test_no_naive_timestamp_columns(clean_database: str) -> None:
     assert naive == [], f"время без часового пояса: используйте DateTime(timezone=True) в {naive}"
 
 
+def test_every_table_lands_in_our_schema(clean_database: str) -> None:
+    """Все таблицы — в схеме orbita, ни одной в public.
+
+    Схема задаётся `search_path` подключения, а не именем в модели (см. env.py):
+    так отражение базы и модели описывают внешние ключи одинаково. Плата за это —
+    схема больше не записана в коде, и проверять её приходится по факту. Ошибка тут
+    означала бы таблицы в public, то есть в схеме, которую мы делим с SETA.
+    """
+    assert run_alembic("upgrade", "head", database=clean_database).returncode == 0
+
+    async def fetch_tables() -> dict[str, list[str]]:
+        connection = await asyncpg.connect(dsn(clean_database))
+        try:
+            rows = await connection.fetch(
+                "SELECT schemaname, tablename FROM pg_tables "
+                "WHERE schemaname NOT IN ('pg_catalog', 'information_schema')"
+            )
+        finally:
+            await connection.close()
+
+        grouped: dict[str, list[str]] = {}
+        for row in rows:
+            grouped.setdefault(row["schemaname"], []).append(row["tablename"])
+        return grouped
+
+    tables = asyncio.run(fetch_tables())
+
+    assert set(tables) == {SCHEMA}, f"таблицы вне схемы {SCHEMA}: {tables}"
+    assert "alembic_version" in tables[SCHEMA]
+    assert "users" in tables[SCHEMA]
+
+
 class TestSchemaConventions:
-    def test_metadata_is_bound_to_our_schema(self) -> None:
-        assert Base.metadata.schema == SCHEMA
+    def test_schema_is_not_baked_into_models(self) -> None:
+        """Имя схемы не должно быть частью модели.
+
+        Если вернуть его в `MetaData`, отражение и модели снова разойдутся на внешних
+        ключах, и `alembic check` начнёт бесконечно предлагать их пересоздать. Один
+        раз это уже случилось при ORB-007.
+        """
+        assert Base.metadata.schema is None
 
     def test_constraints_get_predictable_names(self) -> None:
         """Имена ограничений одинаковы на всех установках.

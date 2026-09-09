@@ -243,6 +243,10 @@ async def _seed_once(settings: Settings) -> None:
 async def session(settings: Settings, migrated_database: str) -> AsyncIterator[AsyncSession]:
     """Сессия, все изменения которой откатываются после теста.
 
+    В базе уже есть справочники раздела 7 ТЗ и две учётные записи: они наполняются
+    один раз за прогон (`migrated_database`). Пустой схемы у тестов нет — и не нужно:
+    система без справочников нерабочая, проверять её в таком виде бессмысленно.
+
     Сессия работает внутри внешней транзакции, а та откатывается: тесты не оставляют
     следов друг для друга, и порядок их выполнения перестаёт влиять на результат. Это
     важнее скорости — при общей базе один забытый `commit` делает соседний тест
@@ -266,18 +270,7 @@ async def session(settings: Settings, migrated_database: str) -> AsyncIterator[A
 
 
 @pytest.fixture
-def seeded_session(session: AsyncSession) -> AsyncSession:
-    """Сессия со справочниками из раздела 7 ТЗ.
-
-    Справочники уже наполнены на уровне прогона (`migrated_database`). Отдельное имя
-    оставлено намеренно: по нему в тесте видно, что он опирается на наличие данных, —
-    а `session` означает пустую схему.
-    """
-    return session
-
-
-@pytest.fixture
-async def api(app: FastAPI, seeded_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+async def api(app: FastAPI, session: AsyncSession) -> AsyncIterator[AsyncClient]:
     """Клиент API, работающий в той же откатываемой транзакции, что и тест.
 
     Без подмены зависимости роутеры открыли бы собственную сессию и своё соединение —
@@ -285,7 +278,7 @@ async def api(app: FastAPI, seeded_session: AsyncSession) -> AsyncIterator[Async
     """
 
     async def use_test_session() -> AsyncIterator[AsyncSession]:
-        yield seeded_session
+        yield session
 
     app.dependency_overrides[get_session] = use_test_session
     transport = ASGITransport(app=app, raise_app_exceptions=False)
