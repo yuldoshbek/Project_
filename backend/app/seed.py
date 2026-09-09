@@ -5,7 +5,8 @@
 **Существующие записи не изменяются.** Помощник вправе переименовать статус или поменять
 порядок (ТЗ 6.8); повторный запуск сидов, затирающий его правки, превратил бы
 редактируемый справочник в декорацию. Добавляются только отсутствующие значения — это
-делает команду безопасной после обновления системы.
+делает команду безопасной после обновления системы. То же касается учётных записей:
+повторный запуск не сбросит ни пароль, ни роль.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from app.domain.dictionaries import (
     SettingKey,
     TaskStatus,
 )
+from app.domain.people import Role
 from app.observability import configure_logging
 from app.repos.database import dispose_database, init_database, session_scope
 from app.repos.models import (
@@ -32,6 +34,7 @@ from app.repos.models import (
     ProjectStatusRef,
     Setting,
     TaskStatusRef,
+    User,
 )
 from app.settings import get_settings
 
@@ -284,6 +287,35 @@ SETTINGS: list[dict[str, Any]] = [
 ]
 
 
+# Две учётные записи (ADR-0011). Пароль не задаётся: репозиторий публичный, и
+# захардкоженный пароль в сидах — это пароль, который останется в рабочей системе.
+# Первичный пароль назначает администратор отдельной командой (ORB-006), до этого
+# вход по паролю невозможен.
+#
+# Адреса — заведомо нерабочие, на несуществующем домене. Настоящие проставляются при
+# развёртывании: выдумывать адреса сотрудников государственного органа нельзя.
+USERS: list[dict[str, Any]] = [
+    {
+        "email": "assistant@orbita.local",
+        "full_name": "Личный помощник заместителя директора",
+        "role": Role.ASSISTANT,
+        "locale": "ru",
+        "must_change_password": True,
+    },
+    {
+        "email": "leader@orbita.local",
+        "full_name": "Заместитель директора",
+        "role": Role.LEADER,
+        "locale": "ru",
+        "must_change_password": True,
+    },
+]
+
+# Сотрудники агентства (`people`) сидами не заполняются: это реальные люди, и
+# вносит их помощник. Выдуманные записи пришлось бы вычищать перед эксплуатацией,
+# а часть наверняка осталась бы.
+
+
 async def _insert_missing(
     session: AsyncSession,
     model: type[Any],
@@ -321,6 +353,7 @@ async def seed(session: AsyncSession) -> dict[str, int]:
         "task_statuses": await _insert_missing(session, TaskStatusRef, TASK_STATUSES, "code"),
         "priorities": await _insert_missing(session, PriorityRef, PRIORITIES, "code"),
         "settings": await _insert_missing(session, Setting, SETTINGS, "key"),
+        "users": await _insert_missing(session, User, USERS, "email"),
     }
     await session.flush()
     return added

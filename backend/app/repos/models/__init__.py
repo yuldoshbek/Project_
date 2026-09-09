@@ -13,12 +13,15 @@ from app.repos.models.dictionaries import (
     Setting,
     TaskStatusRef,
 )
+from app.repos.models.people import Person, User
 
 __all__ = [
     "Direction",
     "Organization",
+    "Person",
     "PriorityRef",
     "ProjectStatusRef",
     "Setting",
     "TaskStatusRef",
+    "User",
 ]
