@@ -15,6 +15,7 @@ from app.repos.models.dictionaries import (
     Setting,
     TaskStatusRef,
 )
+from app.repos.models.milestones import Milestone
 from app.repos.models.people import Person, User
 from app.repos.models.projects import Project
 from app.repos.models.tasks import Task
@@ -23,6 +24,7 @@ __all__ = [
     "AuditLog",
     "Auditable",
     "Direction",
+    "Milestone",
     "Organization",
     "Person",
     "PriorityRef",
