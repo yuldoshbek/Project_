@@ -16,9 +16,11 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.deps import SessionDep, SettingsDep
+from app.domain.audit import ActorKind
 from app.domain.errors import NotAuthenticatedError, PermissionDeniedError
 from app.domain.people import Role
 from app.repos.models import User
+from app.services.audit import Actor, set_actor
 from app.services.auth import ACCESS_TOKEN_LIFETIME
 from app.settings import Settings
 
@@ -112,6 +114,18 @@ async def get_current_user(
         raise NotAuthenticatedError("Требуется вход в систему")
 
     request.state.user_id = str(user.id)
+
+    # Журнал изменений узнаёт действующее лицо отсюда, а не из аргументов сервисов:
+    # передавать его через каждый вызов означает однажды его не передать, и изменение
+    # будет приписано фоновому заданию (ADR-0010).
+    set_actor(
+        Actor(
+            id=user.id,
+            kind=ActorKind.HUMAN,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
     return user
 
 
