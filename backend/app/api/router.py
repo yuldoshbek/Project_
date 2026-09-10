@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routes import dictionaries
+from app.api.routes import auth, dictionaries
 
 API_PREFIX = "/api/v1"
 
 api_router = APIRouter(prefix=API_PREFIX)
+api_router.include_router(auth.router)
 api_router.include_router(dictionaries.router)
 
 # Роутеры разделов подключаются здесь по мере готовности:

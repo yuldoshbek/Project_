@@ -23,11 +23,15 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.deps import get_session
+from app.api.security import create_access_token
+from app.domain.people import Role
 from app.main import create_app
 from app.repos.database import dispose_database, init_database
+from app.repos.models import User
 from app.seed import seed
 from app.settings import Settings
 
@@ -122,7 +126,7 @@ def build_settings() -> Settings:
     """
     return Settings(
         env="test",
-        secret_key=SecretStr("test-secret-not-for-production"),
+        secret_key=SecretStr("тестовый-ключ-достаточной-длины-не-для-эксплуатации"),
         db_host=_env("ORBITA_DB_HOST", "127.0.0.1"),
         db_port=int(_env("ORBITA_DB_PORT", "55432")),
         db_name=configured_test_db(),
@@ -192,7 +196,7 @@ def run_alembic(*args: str, database: str) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "ORBITA_DB_NAME": database,
-        "ORBITA_SECRET_KEY": "test-secret-not-for-production",
+        "ORBITA_SECRET_KEY": "тестовый-ключ-достаточной-длины-не-для-эксплуатации",
         "ORBITA_ENV": "test",
     }
     return subprocess.run(  # noqa: S603
@@ -271,7 +275,9 @@ async def session(settings: Settings, migrated_database: str) -> AsyncIterator[A
 
 @pytest.fixture
 async def api(app: FastAPI, session: AsyncSession) -> AsyncIterator[AsyncClient]:
-    """Клиент API, работающий в той же откатываемой транзакции, что и тест.
+    """Клиент API **без входа**, в той же откатываемой транзакции, что и тест.
+
+    Для запросов от имени пользователя есть `assistant_api` и `leader_api`.
 
     Без подмены зависимости роутеры открыли бы собственную сессию и своё соединение —
     и не увидели бы данных, подготовленных тестом.
@@ -287,3 +293,59 @@ async def api(app: FastAPI, session: AsyncSession) -> AsyncIterator[AsyncClient]
             yield http_client
     finally:
         app.dependency_overrides.clear()
+
+
+async def _client_for(
+    app: FastAPI,
+    session: AsyncSession,
+    settings: Settings,
+    role: Role,
+) -> AsyncIterator[AsyncClient]:
+    """Клиент, вошедший под указанной ролью.
+
+    Токен выписывается напрямую, без обращения к /auth/login: тесту про справочники не
+    должно быть дела до того, как устроен вход, — иначе поломка входа роняет половину
+    набора и прячет настоящую причину.
+    """
+    user = await session.scalar(select(User).where(User.role == role))
+    if user is None:
+        pytest.fail(f"в сидах нет пользователя с ролью {role}")
+
+    # В сидах пароля нет и стоит требование сменить временный (ORB-007). Для тестов,
+    # которые проверяют не вход, а работу с данными, это лишнее препятствие: сам
+    # запрет проверяется отдельно, в test_auth.
+    user.must_change_password = False
+    await session.flush()
+
+    async def use_test_session() -> AsyncIterator[AsyncSession]:
+        yield session
+
+    app.dependency_overrides[get_session] = use_test_session
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {create_access_token(user, settings)}"},
+        ) as http_client:
+            yield http_client
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def assistant_api(
+    app: FastAPI, session: AsyncSession, settings: Settings
+) -> AsyncIterator[AsyncClient]:
+    """Клиент от имени помощника — того, кто вносит данные."""
+    async for client in _client_for(app, session, settings, Role.ASSISTANT):
+        yield client
+
+
+@pytest.fixture
+async def leader_api(
+    app: FastAPI, session: AsyncSession, settings: Settings
+) -> AsyncIterator[AsyncClient]:
+    """Клиент от имени руководителя — того, кто смотрит и принимает решения."""
+    async for client in _client_for(app, session, settings, Role.LEADER):
+        yield client

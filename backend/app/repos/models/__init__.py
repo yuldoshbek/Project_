@@ -5,6 +5,7 @@
 которая молча удаляет таблицу.
 """
 
+from app.repos.models.auth import RefreshToken
 from app.repos.models.dictionaries import (
     Direction,
     Organization,
@@ -21,6 +22,7 @@ __all__ = [
     "Person",
     "PriorityRef",
     "ProjectStatusRef",
+    "RefreshToken",
     "Setting",
     "TaskStatusRef",
     "User",

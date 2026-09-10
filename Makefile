@@ -7,7 +7,7 @@
 #   dev              — ORB-003 (приложение FastAPI) и ORB-005 (оболочка frontend)
 
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs migrate revision heads seed dev dev-back dev-front test test-back test-front check fmt clean
+.PHONY: help install up down reset logs migrate revision heads password seed dev dev-back dev-front test test-back test-front check fmt clean
 
 BACKEND  := backend
 FRONTEND := frontend
@@ -41,6 +41,10 @@ revision: ## Создать миграцию по изменившимся мо�
 	@test -n "$(m)" || (echo 'укажите описание: make revision m="добавить проекты"'; exit 1)
 	cd $(BACKEND) && uv run alembic revision --autogenerate -m "$(m)"
 	@echo 'проверьте сгенерированное: автогенерация не видит переименований и данных'
+
+password: ## Назначить пароль пользователю: make password EMAIL=assistant@orbita.local
+	@test -n "$(EMAIL)" || (echo 'укажите адрес: make password EMAIL=...'; exit 1)
+	cd $(BACKEND) && uv run python -m app.cli set-password "$(EMAIL)"
 
 heads: ## Проверить, что голова миграций одна
 	cd $(BACKEND) && uv run alembic heads

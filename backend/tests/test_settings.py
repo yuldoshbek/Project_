@@ -5,13 +5,15 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.settings import Settings
+from app.settings import MIN_SECRET_KEY_LENGTH, Settings
+
+LONG_ENOUGH_KEY = "к" * MIN_SECRET_KEY_LENGTH
 
 
 def build(**overrides: object) -> Settings:
     defaults: dict[str, object] = {
         "env": "test",
-        "secret_key": SecretStr("secret"),
+        "secret_key": SecretStr(LONG_ENOUGH_KEY),
         "_env_file": None,
     }
     return Settings(**{**defaults, **overrides})  # type: ignore[arg-type]
@@ -41,10 +43,23 @@ def test_database_url_is_built_for_asyncpg() -> None:
 
 def test_secrets_are_not_printed() -> None:
     """Репозиторий публичный, логи попадают в отчёты — секрет не должен светиться."""
-    settings = build(secret_key=SecretStr("очень-секретно"))
+    secret = "очень-секретно-и-достаточно-длинно-для-подписи"
+    settings = build(secret_key=SecretStr(secret))
 
-    assert "очень-секретно" not in repr(settings)
-    assert "очень-секретно" not in str(settings)
+    assert secret not in repr(settings)
+    assert secret not in str(settings)
+
+
+def test_short_secret_key_stops_the_application() -> None:
+    """Ключ короче 32 символов ослабляет подпись токенов (RFC 7518, раздел 3.2).
+
+    Падение на старте, а не предупреждение в логах: предупреждение читают один раз,
+    а слабый ключ живёт годами.
+    """
+    with pytest.raises(ValidationError) as error:
+        build(secret_key=SecretStr("коротко"))
+
+    assert "32" in str(error.value)
 
 
 def test_console_logs_in_development_json_elsewhere() -> None:

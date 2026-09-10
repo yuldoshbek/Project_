@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.identity import IdentityProvider, create_identity_provider
 from app.repos.database import session_scope
 from app.settings import Settings
 
@@ -36,5 +37,15 @@ def get_app_settings(request: Request) -> Settings:
     return settings
 
 
+def get_identity_provider(request: Request) -> IdentityProvider:
+    """Провайдер установления личности из настроек приложения.
+
+    Зависимость, а не прямой вызов в роутере: так реализацию подменяют и в тестах, и
+    при переходе на SETA — не трогая ни один роутер (критерий ORB-006, ADR-0001).
+    """
+    return create_identity_provider(get_app_settings(request).identity_provider)
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
+IdentityProviderDep = Annotated[IdentityProvider, Depends(get_identity_provider)]

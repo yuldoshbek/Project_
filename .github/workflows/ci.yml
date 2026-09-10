@@ -49,7 +49,7 @@ jobs:
     env:
       # Обязательная настройка: без неё приложение падает на старте — так и задумано.
       # В CI это значение-заглушка, настоящий ключ живёт в секретах развёртывания.
-      ORBITA_SECRET_KEY: ci-secret-not-for-production
+      ORBITA_SECRET_KEY: ci-secret-not-for-production-long-enough-for-hmac-sha256
       ORBITA_ENV: test
       ORBITA_DB_HOST: localhost
       ORBITA_DB_PORT: '5432'
