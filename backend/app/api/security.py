@@ -16,7 +16,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.deps import SessionDep, SettingsDep
-from app.domain.errors import PermissionDeniedError
+from app.domain.errors import NotAuthenticatedError, PermissionDeniedError
 from app.domain.people import Role
 from app.repos.models import User
 from app.services.auth import ACCESS_TOKEN_LIFETIME
@@ -28,10 +28,6 @@ TOKEN_TYPE = "access"  # noqa: S105  — это назначение токен�
 # auto_error=False: без него FastAPI отдаёт свой ответ 401, минуя наш формат RFC 9457,
 # и клиент получает две разные формы ошибки от одного API.
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-class NotAuthenticatedError(PermissionDeniedError):
-    code = "not-authenticated"
 
 
 class PasswordChangeRequiredError(PermissionDeniedError):

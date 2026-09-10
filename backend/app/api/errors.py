@@ -22,6 +22,7 @@ from app.domain.errors import (
     ConflictError,
     DomainError,
     ExternalServiceError,
+    NotAuthenticatedError,
     NotFoundError,
     PermissionDeniedError,
     RuleViolationError,
@@ -36,6 +37,9 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ConflictError: status.HTTP_409_CONFLICT,
     RuleViolationError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    # Строго до PermissionDeniedError: сопоставление идёт по первому подходящему
+    # типу в порядке объявления, а перестановка этих двух строк молча вернёт 403.
+    NotAuthenticatedError: status.HTTP_401_UNAUTHORIZED,
     PermissionDeniedError: status.HTTP_403_FORBIDDEN,
     ExternalServiceError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
@@ -74,6 +78,11 @@ def problem_response(
         body["errors"] = errors
 
     headers: dict[str, str] = {}
+    if status_code == status.HTTP_401_UNAUTHORIZED:
+        # RFC 9110 требует его при 401. Без заголовка ответ формально некорректен, и
+        # клиентские библиотеки не понимают, каким способом входить.
+        headers["WWW-Authenticate"] = "Bearer"
+
     request_id = get_request_id()
     if request_id:
         # Пользователь называет этот идентификатор — по нему находится запись в логе.

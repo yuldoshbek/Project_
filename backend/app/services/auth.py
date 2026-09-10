@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.identity import Credentials, IdentityProvider
 from app.adapters.passwords import MIN_PASSWORD_LENGTH, hash_password, verify_password
-from app.domain.errors import PermissionDeniedError, RuleViolationError
+from app.domain.errors import NotAuthenticatedError, PermissionDeniedError, RuleViolationError
 from app.repos.models import RefreshToken, User
 
 logger = structlog.get_logger(__name__)
@@ -40,7 +40,7 @@ class Session:
     refresh_expires_at: datetime
 
 
-class AuthenticationFailedError(PermissionDeniedError):
+class AuthenticationFailedError(NotAuthenticatedError):
     """Единственная ошибка входа.
 
     Одна на все случаи намеренно: «нет такого адреса», «неверный пароль» и «учётная
@@ -51,7 +51,18 @@ class AuthenticationFailedError(PermissionDeniedError):
     code = "authentication-failed"
 
 
-class AccountLockedError(PermissionDeniedError):
+class CurrentPasswordMismatchError(PermissionDeniedError):
+    """Текущий пароль при смене указан неверно.
+
+    Намеренно не `NotAuthenticatedError`: сессия действует, пользователь вошёл, и
+    ответ 401 увёл бы его на экран входа за опечатку в одном поле формы. Отдельный
+    код нужен интерфейсу, чтобы показать ошибку у нужного поля, а не общим баннером.
+    """
+
+    code = "current-password-mismatch"
+
+
+class AccountLockedError(NotAuthenticatedError):
     """Вход временно закрыт после серии неудачных попыток.
 
     Отличается от `AuthenticationFailedError` сознательно: человеку нужно понимать, что пароль
@@ -227,7 +238,7 @@ async def change_password(
     Исключение — первый вход по временному паролю, когда своего пароля ещё нет.
     """
     if user.password_hash is not None and not verify_password(current_password, user.password_hash):
-        raise AuthenticationFailedError("Текущий пароль указан неверно")
+        raise CurrentPasswordMismatchError("Текущий пароль указан неверно")
 
     validate_password(new_password)
 

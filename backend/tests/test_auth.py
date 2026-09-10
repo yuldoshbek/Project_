@@ -118,7 +118,7 @@ class TestLogin:
             json={"email": "ivan@orbita.local", "password": PASSWORD},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.json()["type"].endswith("authentication-failed")
 
     async def test_account_without_password_cannot_enter(
@@ -132,7 +132,7 @@ class TestLogin:
             json={"email": "ivan@orbita.local", "password": "любой-длинный-пароль"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     async def test_login_recomputes_a_hash_made_with_weaker_parameters(
         self, api: AsyncClient, session: AsyncSession
@@ -189,7 +189,7 @@ class TestBruteForceProtection:
             json={"email": user.email, "password": PASSWORD},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.json()["type"].endswith("account-locked")
 
     async def test_expired_lock_lets_the_owner_back_in(
@@ -245,7 +245,7 @@ class TestRefreshRotation:
             "/api/v1/auth/refresh",
             json={"refresh_token": first["refresh_token"]},
         )
-        assert reused.status_code == 403
+        assert reused.status_code == 401
 
     async def test_reusing_a_spent_token_closes_every_session(
         self, api: AsyncClient, session: AsyncSession
@@ -275,7 +275,7 @@ class TestRefreshRotation:
             "/api/v1/auth/refresh",
             json={"refresh_token": second["refresh_token"]},
         )
-        assert still_valid.status_code == 403, "повторное использование обязано закрыть всю цепочку"
+        assert still_valid.status_code == 401, "повторное использование обязано закрыть всю цепочку"
 
         alive = await session.scalars(
             select(RefreshToken).where(
@@ -291,7 +291,7 @@ class TestRefreshRotation:
             json={"refresh_token": "sIkR7Qm2vXo9LpZa4TbNc1EdGh8UwYf3JiKl6MnOpQr"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert "недействительна" in response.json()["detail"]
 
     async def test_expired_refresh_token_is_refused_with_a_readable_reason(
@@ -324,7 +324,7 @@ class TestRefreshRotation:
             json={"refresh_token": tokens["refresh_token"]},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert "истекла" in response.json()["detail"]
 
     async def test_deactivated_user_cannot_refresh(
@@ -352,7 +352,7 @@ class TestRefreshRotation:
             json={"refresh_token": tokens["refresh_token"]},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     async def test_logout_actually_closes_the_session(
         self, api: AsyncClient, session: AsyncSession
@@ -376,14 +376,14 @@ class TestRefreshRotation:
             "/api/v1/auth/refresh",
             json={"refresh_token": tokens["refresh_token"]},
         )
-        assert after.status_code == 403
+        assert after.status_code == 401
 
 
 class TestAccessToken:
     async def test_profile_requires_a_token(self, api: AsyncClient) -> None:
         response = await api.get("/api/v1/me")
 
-        assert response.status_code == 403
+        assert response.status_code == 401
         assert response.headers["content-type"].startswith("application/problem+json")
 
     async def test_profile_returns_the_current_user(
@@ -415,7 +415,8 @@ class TestAccessToken:
 
         response = await api.get("/api/v1/me", headers={"Authorization": f"Bearer {expired}"})
 
-        assert response.status_code == 403
+        assert response.status_code == 401
+        assert response.headers["WWW-Authenticate"] == "Bearer"
         assert "истёк" in response.json()["detail"]
 
     async def test_refresh_token_does_not_work_as_access_token(
@@ -435,7 +436,7 @@ class TestAccessToken:
             headers={"Authorization": f"Bearer {tokens['refresh_token']}"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     async def test_deactivation_takes_effect_immediately(
         self, authorized: tuple[AsyncClient, User], session: AsyncSession
@@ -448,7 +449,7 @@ class TestAccessToken:
         user.is_active = False
         await session.flush()
 
-        assert (await client.get("/api/v1/me")).status_code == 403
+        assert (await client.get("/api/v1/me")).status_code == 401
 
     async def test_tampered_token_is_refused(self, api: AsyncClient, session: AsyncSession) -> None:
         user = await make_user(session)
@@ -461,7 +462,7 @@ class TestAccessToken:
 
         response = await api.get("/api/v1/me", headers={"Authorization": f"Bearer {forged}"})
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
 
 class TestPasswordChange:
@@ -489,7 +490,11 @@ class TestPasswordChange:
         assert changed.status_code == 204
 
     async def test_current_password_is_required(self, authorized: tuple[AsyncClient, User]) -> None:
-        """Доступ к открытому браузеру не должен означать смену пароля владельца."""
+        """Доступ к открытому браузеру не должен означать смену пароля владельца.
+
+        Ответ здесь 403, а не 401: сессия действует, и опечатка в одном поле формы не
+        повод уводить пользователя на экран входа.
+        """
         client, _ = authorized
 
         response = await client.post(
@@ -549,7 +554,7 @@ class TestPasswordChange:
             "/api/v1/auth/refresh",
             json={"refresh_token": tokens["refresh_token"]},
         )
-        assert after.status_code == 403
+        assert after.status_code == 401
 
 
 class TestProviderSubstitution:
