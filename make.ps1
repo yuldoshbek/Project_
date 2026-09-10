@@ -39,6 +39,7 @@ switch ($Target) {
   heads      Проверить, что голова миграций одна
   password   Назначить пароль: .\make.ps1 password <адрес>
   seed       Загрузить справочники и демо-данные
+  worker     Запустить воркер фоновых задач
   dev-back   Запустить backend на :8000
   dev-front  Запустить frontend на :5173
   test       Прогнать все тесты
@@ -70,6 +71,8 @@ switch ($Target) {
         Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.cli', 'set-password', $Name)
     }
     'seed' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.seed') }
+    'worker' { Invoke-In $backend 'uv' @('run', 'arq', 'app.workers.main.WorkerSettings') }
+    'worker-health' { Invoke-In $backend 'uv' @('run', 'arq', '--check', 'app.workers.main.WorkerSettings') }
     'dev-back' { Invoke-In $backend 'uv' @('run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000') }
     'dev-front' { Invoke-In $frontend 'npm' @('run', 'dev') }
     'test' {
