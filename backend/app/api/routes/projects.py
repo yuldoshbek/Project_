@@ -119,6 +119,12 @@ async def list_projects(
     curator_person_id: Annotated[uuid.UUID | None, Query()] = None,
     search: Annotated[str | None, Query(description="Совпадение по части названия")] = None,
     health: Annotated[Health | None, Query(description="Цвет светофора")] = None,
+    organization_id: Annotated[
+        uuid.UUID | None, Query(description="Проекты этого партнёра")
+    ] = None,
+    partner_search: Annotated[
+        str | None, Query(description="Проекты партнёра по части его названия")
+    ] = None,
     sort_by: Annotated[
         str, Query(description=f"Одно из: {', '.join(service.SORTABLE)}")
     ] = "due_on",
@@ -135,6 +141,8 @@ async def list_projects(
             curator_person_id=curator_person_id,
             search=search,
             health=health,
+            organization_id=organization_id,
+            partner_search=partner_search,
         ),
         today=today_in(settings.timezone),
         sort_by=sort_by,

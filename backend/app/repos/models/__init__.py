@@ -16,6 +16,7 @@ from app.repos.models.dictionaries import (
     TaskStatusRef,
 )
 from app.repos.models.milestones import Milestone
+from app.repos.models.partners import ProjectPartner
 from app.repos.models.people import Person, User
 from app.repos.models.projects import Project
 from app.repos.models.tasks import Task
@@ -29,6 +30,7 @@ __all__ = [
     "Person",
     "PriorityRef",
     "Project",
+    "ProjectPartner",
     "ProjectStatusRef",
     "RefreshToken",
     "Setting",

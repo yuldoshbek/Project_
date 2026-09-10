@@ -30,7 +30,7 @@ from app.domain.projects import (
     validate_status_reason,
 )
 from app.domain.projects import health as compute_health
-from app.repos.models import PriorityRef, Project
+from app.repos.models import Organization, PriorityRef, Project, ProjectPartner
 from app.services import codes
 from app.services.dictionaries import get_setting
 
@@ -221,6 +221,8 @@ class ProjectFilter:
     curator_person_id: uuid.UUID | None = None
     search: str | None = None
     health: Health | None = None
+    organization_id: uuid.UUID | None = None
+    partner_search: str | None = None
 
 
 SORTABLE = {
@@ -246,6 +248,25 @@ def _apply(statement: Select[Any], filters: ProjectFilter) -> Select[Any]:
         statement = statement.where(Project.classification == filters.classification.value)
     if filters.curator_person_id is not None:
         statement = statement.where(Project.curator_person_id == filters.curator_person_id)
+    if filters.organization_id is not None:
+        statement = statement.where(
+            Project.id.in_(
+                select(ProjectPartner.project_id).where(
+                    ProjectPartner.organization_id == filters.organization_id
+                )
+            )
+        )
+    if filters.partner_search:
+        # «Что у нас с ЕКА» — вопрос сценария U6. Полноценный поиск на трёх письменностях
+        # даёт ORB-033; здесь совпадение по подстроке названия и краткого имени.
+        pattern = f"%{filters.partner_search.strip()}%"
+        statement = statement.where(
+            Project.id.in_(
+                select(ProjectPartner.project_id)
+                .join(Organization, ProjectPartner.organization_id == Organization.id)
+                .where(Organization.name.ilike(pattern) | Organization.short_name.ilike(pattern))
+            )
+        )
     if filters.search:
         # Совпадение по подстроке. Поиск на трёх письменностях — ORB-033: он требует
         # своего индекса и нормализации, и делать его наполовину здесь значит получить

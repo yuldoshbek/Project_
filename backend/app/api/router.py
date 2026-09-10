@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routes import auth, dictionaries, milestones, projects, tasks
+from app.api.routes import auth, dictionaries, milestones, partners, projects, tasks
 
 API_PREFIX = "/api/v1"
 
@@ -18,6 +18,7 @@ api_router.include_router(dictionaries.router)
 api_router.include_router(projects.router)
 api_router.include_router(tasks.router)
 api_router.include_router(milestones.router)
+api_router.include_router(partners.router)
 
 # Роутеры разделов подключаются здесь по мере готовности:
 #   calendar (ORB-026), dashboard (ORB-029),
