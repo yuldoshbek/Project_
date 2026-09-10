@@ -16,7 +16,7 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Integer, Select, cast, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.dictionaries import Health, ProjectStatus, SettingKey
@@ -31,6 +31,7 @@ from app.domain.projects import (
 )
 from app.domain.projects import health as compute_health
 from app.repos.models import PriorityRef, Project
+from app.services import codes
 from app.services.dictionaries import get_setting
 
 DEFAULT_WARN_DAYS = 3
@@ -137,25 +138,10 @@ class ProjectPatch:
 
 
 async def next_code(session: AsyncSession, *, today: date) -> str:
-    """Следующий человекочитаемый номер: PRJ-2026-001.
-
-    Номер считается по числовому хвосту, а не по строке: на тысячном проекте года
-    строковое сравнение поставило бы «PRJ-2026-1000» раньше «PRJ-2026-999», и номер
-    начал бы повторяться.
-
-    Гонка двух одновременных созданий закрыта не блокировкой, а уникальностью `code`:
-    вносящих двое, столкновение практически невозможно, а уникальный индекс превратит
-    его в честную ошибку вместо двух проектов с одним номером.
-    """
-    year = today.year
-    prefix = f"{CODE_PREFIX}-{year}-"
-
-    last = await session.scalar(
-        select(func.max(cast(func.substr(Project.code, len(prefix) + 1), Integer))).where(
-            Project.code.like(f"{prefix}%")
-        )
+    """Следующий человекочитаемый номер проекта: PRJ-2026-001."""
+    return await codes.next_code(
+        session, column=Project.code, prefix=CODE_PREFIX, digits=CODE_DIGITS, today=today
     )
-    return f"{prefix}{(last or 0) + 1:0{CODE_DIGITS}d}"
 
 
 async def create(
