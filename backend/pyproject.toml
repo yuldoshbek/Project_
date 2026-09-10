@@ -118,6 +118,13 @@ markers = [
     "slow: длительный тест, не входит в быстрый прогон",
 ]
 
+# SQLAlchemy выполняет запросы к базе в гринлете. Без этой строки coverage теряет
+# трассировку после каждого «await» к базе и не видит весь остаток функции: сервис
+# входа показывал 61 % при полностью покрытых тестами ветках. Цифра, которой нельзя
+# верить, хуже отсутствующей — по ней принимают решение «тут тестов мало».
+[tool.coverage.run]
+concurrency = ["greenlet", "thread"]
+
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
 

@@ -12,13 +12,14 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
+from argon2 import PasswordHasher
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.identity import Credentials, IdentityProvider
-from app.adapters.passwords import hash_password
+from app.adapters.passwords import hash_password, needs_rehash
 from app.api.deps import get_identity_provider
 from app.api.security import create_access_token
 from app.domain.people import Role
@@ -132,6 +133,31 @@ class TestLogin:
         )
 
         assert response.status_code == 403
+
+    async def test_login_recomputes_a_hash_made_with_weaker_parameters(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Момент входа — единственный, когда у нас есть открытый пароль.
+
+        Параметры хеширования со временем ужесточаются. Без пересчёта база годами
+        хранила бы хеши по правилам того дня, когда пароль завели, и ужесточение
+        параметров не дошло бы ни до одного существующего пользователя.
+        """
+        weak = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+        user = await make_user(session, password=None)
+        user.password_hash = weak.hash(PASSWORD)
+        await session.flush()
+        stale = user.password_hash
+
+        response = await api.post(
+            "/api/v1/auth/login",
+            json={"email": user.email, "password": PASSWORD},
+        )
+
+        assert response.status_code == 200
+        await session.refresh(user)
+        assert user.password_hash != stale
+        assert not needs_rehash(user.password_hash)
 
 
 class TestBruteForceProtection:
@@ -257,6 +283,76 @@ class TestRefreshRotation:
             )
         )
         assert list(alive) == []
+
+    async def test_unknown_refresh_token_is_refused(self, api: AsyncClient) -> None:
+        """Выдуманный токен неотличим по ответу от потраченного и от истёкшего."""
+        response = await api.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "sIkR7Qm2vXo9LpZa4TbNc1EdGh8UwYf3JiKl6MnOpQr"},
+        )
+
+        assert response.status_code == 403
+        assert "недействительна" in response.json()["detail"]
+
+    async def test_expired_refresh_token_is_refused_with_a_readable_reason(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Срок жизни токена обновления — месяц, и он обязан кончаться.
+
+        Иначе «выйти из системы» становится единственным способом закрыть сессию, а
+        забытый на чужом устройстве вход живёт вечно.
+        """
+        user = await make_user(session)
+        tokens = (
+            await api.post(
+                "/api/v1/auth/login",
+                json={"email": user.email, "password": PASSWORD},
+            )
+        ).json()
+
+        record = await session.scalar(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == service.hash_token(tokens["refresh_token"])
+            )
+        )
+        assert record is not None
+        record.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        await session.flush()
+
+        response = await api.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": tokens["refresh_token"]},
+        )
+
+        assert response.status_code == 403
+        assert "истекла" in response.json()["detail"]
+
+    async def test_deactivated_user_cannot_refresh(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Отключение обязано действовать и на обновление, а не только на доступ.
+
+        Иначе отключённый пользователь продлевал бы себе сессию месяц подряд, и
+        проверка на каждом запросе (`test_deactivation_takes_effect_immediately`)
+        оказалась бы обойдена с другой стороны.
+        """
+        user = await make_user(session)
+        tokens = (
+            await api.post(
+                "/api/v1/auth/login",
+                json={"email": user.email, "password": PASSWORD},
+            )
+        ).json()
+
+        user.is_active = False
+        await session.flush()
+
+        response = await api.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": tokens["refresh_token"]},
+        )
+
+        assert response.status_code == 403
 
     async def test_logout_actually_closes_the_session(
         self, api: AsyncClient, session: AsyncSession
