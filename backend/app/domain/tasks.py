@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from app.domain.dictionaries import TaskStatus
 from app.domain.errors import ConflictError
@@ -74,12 +74,3 @@ def days_overdue(*, due_at: datetime | None, status: TaskStatus, now: datetime) 
         return 0
     assert due_at is not None
     return (now - due_at).days
-
-
-def now_utc() -> datetime:
-    """Текущий момент в UTC.
-
-    Отдельная функция, чтобы в тестах подставлялся момент, а не подкручивались часы
-    машины: время — такой же вход, как «сегодня» в `app.domain.clock`.
-    """
-    return datetime.now(UTC)

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Any
 
@@ -22,9 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.dictionaries import Health, ProjectStatus, SettingKey
 from app.domain.errors import NotFoundError
 from app.domain.projects import (
+    DEFAULT_IMPEDIMENT_STALE_DAYS,
     Classification,
     ProgressMode,
     ProjectKind,
+    has_active_impediment,
+    impediment_is_stale,
     validate_dates,
     validate_progress,
     validate_status_reason,
@@ -49,16 +52,17 @@ _UNSET: Any = object()
 
 
 @dataclass(frozen=True, slots=True)
-class HealthRules:
-    """Пороги светофора, прочитанные один раз на весь список.
+class ProjectRules:
+    """Пороги из справочника, прочитанные один раз на весь список.
 
-    Иначе расчёт цвета для двухсот проектов даст двести обращений к справочнику — и
-    экран, ради которого система существует, будет открываться секундами (ТЗ 10.2).
+    Иначе расчёт для двухсот проектов даст двести обращений к справочнику — и экран,
+    ради которого система существует, будет открываться секундами (ТЗ 10.2).
     """
 
     warn_days: int
     warn_ratio: float
     warn_days_by_priority: dict[str, int]
+    impediment_stale_days: int
 
     def of(self, project: Project, *, today: date) -> Health:
         return compute_health(
@@ -70,21 +74,40 @@ class HealthRules:
             warn_ratio=self.warn_ratio,
         )
 
+    def impediment_is_stale(self, project: Project, *, now: datetime) -> bool:
+        return impediment_is_stale(
+            updated_at=project.impediment_updated_at,
+            now=now,
+            stale_days=self.impediment_stale_days,
+        )
 
-async def load_health_rules(session: AsyncSession) -> HealthRules:
+    def has_active_impediment(self, project: Project, *, now: datetime) -> bool:
+        return has_active_impediment(
+            impediment=project.impediment,
+            updated_at=project.impediment_updated_at,
+            now=now,
+            stale_days=self.impediment_stale_days,
+        )
+
+
+async def load_project_rules(session: AsyncSession) -> ProjectRules:
     """Пороги из справочника настроек и переопределения по приоритету (ТЗ 6.8)."""
     warn_days = await get_setting(session, SettingKey.WARN_DAYS, DEFAULT_WARN_DAYS)
     warn_ratio = await get_setting(session, SettingKey.WARN_RATIO, DEFAULT_WARN_RATIO)
+    stale_days = await get_setting(
+        session, SettingKey.IMPEDIMENT_STALE_DAYS, DEFAULT_IMPEDIMENT_STALE_DAYS
+    )
 
     overrides = await session.execute(
         select(PriorityRef.code, PriorityRef.warn_days_override).where(
             PriorityRef.warn_days_override.is_not(None)
         )
     )
-    return HealthRules(
+    return ProjectRules(
         warn_days=int(warn_days),
         warn_ratio=float(warn_ratio),
         warn_days_by_priority={code: int(days) for code, days in overrides},
+        impediment_stale_days=int(stale_days),
     )
 
 
@@ -203,6 +226,30 @@ async def update(session: AsyncSession, project_id: uuid.UUID, patch: ProjectPat
     return project
 
 
+async def set_impediment(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    text: str | None,
+    *,
+    now: datetime | None = None,
+) -> Project:
+    """Записывает строку «что мешает» и отмечает момент.
+
+    Дата обновляется при **каждом** обращении к этому эндпоинту, даже если текст не
+    изменился: обращение сюда — это подтверждение, что помеха всё ещё та же и всё ещё
+    есть. Именно на этот вопрос дата и отвечает.
+
+    Очистка строки очищает и дату: дата без текста ничего не датирует.
+    """
+    project = await get(session, project_id)
+    cleaned = (text or "").strip() or None
+
+    project.impediment = cleaned
+    project.impediment_updated_at = (now or datetime.now(UTC)) if cleaned else None
+    await session.flush()
+    return project
+
+
 async def delete(session: AsyncSession, project_id: uuid.UUID) -> None:
     project = await get(session, project_id)
     await session.delete(project)
@@ -298,7 +345,7 @@ async def list_projects(
     statement = _apply(select(Project), filters)
     statement = statement.order_by(column.desc() if descending else column.asc())
 
-    rules = await load_health_rules(session)
+    rules = await load_project_rules(session)
     rows = [
         (project, rules.of(project, today=today)) for project in await session.scalars(statement)
     ]

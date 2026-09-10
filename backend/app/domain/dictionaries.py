@@ -109,6 +109,7 @@ class SettingKey(StrEnum):
     WARN_DAYS = "warn_days"
     WARN_RATIO = "warn_ratio"
     STAGNATION_DAYS = "stagnation_days"
+    IMPEDIMENT_STALE_DAYS = "impediment_stale_days"
     REMINDER_DAYS = "reminder_days"
     QUIET_HOURS_START = "quiet_hours_start"
     QUIET_HOURS_END = "quiet_hours_end"

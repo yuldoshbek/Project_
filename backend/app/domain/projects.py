@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 
 from app.domain.dictionaries import Health, ProjectStatus
@@ -57,6 +57,40 @@ class ProgressMode(StrEnum):
 
 MIN_PROGRESS = 0
 MAX_PROGRESS = 100
+
+DEFAULT_IMPEDIMENT_STALE_DAYS = 14
+"""Через сколько дней строка «что мешает» перестаёт считаться действующей проблемой.
+
+Допущение по вопросу **Q23**. Порог лежит в справочнике настроек и меняется без
+разработчика (ТЗ 6.8) — здесь только значение по умолчанию на случай, если строки в
+справочнике ещё нет.
+"""
+
+
+def impediment_is_stale(*, updated_at: datetime | None, now: datetime, stale_days: int) -> bool:
+    """Устарела ли строка «что мешает».
+
+    Запись месячной давности говорит не о препятствии, а о том, что её забыли обновить.
+    Считать её за действующую проблему — значит держать на главном экране тревогу,
+    которой, возможно, давно нет, и приучить не обращать на тревогу внимания.
+    """
+    if updated_at is None:
+        return False
+    return updated_at < now - timedelta(days=stale_days)
+
+
+def has_active_impediment(
+    *, impediment: str | None, updated_at: datetime | None, now: datetime, stale_days: int
+) -> bool:
+    """Есть ли у проекта действующая помеха — то, что попадает в агрегаты (ADR-0016).
+
+    Пустая строка помехой не считается, устаревшая — тоже. Единственное место, где это
+    решается: агрегаты главного экрана (ORB-029, ORB-078) берут ответ отсюда, а не
+    повторяют условие у себя.
+    """
+    if not (impediment or "").strip():
+        return False
+    return not impediment_is_stale(updated_at=updated_at, now=now, stale_days=stale_days)
 
 
 def health(

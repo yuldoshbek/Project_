@@ -17,10 +17,11 @@ from typing import Any
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.clock import now_utc
 from app.domain.dictionaries import TaskStatus
 from app.domain.errors import NotFoundError
 from app.domain.projects import ProgressMode, auto_progress
-from app.domain.tasks import days_overdue, is_overdue, now_utc, validate_transition
+from app.domain.tasks import days_overdue, is_overdue, validate_transition
 from app.repos.models import Project, Task
 from app.services import codes
 

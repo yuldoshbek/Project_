@@ -253,6 +253,19 @@ SETTINGS: list[dict[str, Any]] = [
         ),
     },
     {
+        "key": SettingKey.IMPEDIMENT_STALE_DAYS,
+        "value": 14,
+        "value_type": "days",
+        "min_value": 1,
+        "max_value": 180,
+        "description_ru": (
+            "Через сколько дней строка «что мешает» считается устаревшей. Устаревшая не "
+            "считается за действующую проблему в агрегатах: месячной давности запись о "
+            "препятствии говорит не о препятствии, а о том, что её забыли обновить "
+            "(ADR-0016, вопрос Q23)"
+        ),
+    },
+    {
         "key": SettingKey.REMINDER_DAYS,
         "value": [1, 3, 7],
         "value_type": "days_list",

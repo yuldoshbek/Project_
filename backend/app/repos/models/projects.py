@@ -9,11 +9,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import (
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     SmallInteger,
@@ -74,6 +75,16 @@ class Project(Auditable, UUIDPrimaryKey, Timestamps, Base):
     # Справочно, без интеграции с финансовыми системами: ТЗ 2.5 прямо выносит бюджетный
     # и бухгалтерский учёт за границы системы.
     budget_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Единственное поле ручного ввода по рискам (ADR-0016). Реестра рисков с
+    # вероятностью, влиянием и планом реагирования нет и не будет: он требует
+    # регулярного пересмотра руками, которого при одном вносящем не случится.
+    impediment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Ставится системой при изменении текста, руками не правится: дата, которой можно
+    # управлять, перестаёт отвечать на вопрос «насколько это свежо».
+    impediment_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
