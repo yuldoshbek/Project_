@@ -41,6 +41,17 @@ class PasswordChangeRequiredError(PermissionDeniedError):
 
 
 def create_access_token(user: User, settings: Settings) -> str:
+    """Токен доступа.
+
+    Утверждение `role` в теле токена — **справочное**. Сервер его не читает: роль
+    берётся из базы на каждом запросе (`require_assistant`), иначе смена роли и
+    отключение пользователя действовали бы только после истечения токена. Клали его
+    ради интерфейса — он рисует экран под роль, не дожидаясь ответа `/me`.
+
+    Подписанное утверждение, которому не верят, — ловушка для следующего читателя:
+    однажды его примут за проверенное. Проверка обратного — в `test_roles.py`,
+    `test_role_claim_in_the_token_does_not_grant_anything` (ORB-053).
+    """
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": str(user.id),
