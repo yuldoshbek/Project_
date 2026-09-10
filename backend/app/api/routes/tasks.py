@@ -19,9 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep
 from app.api.security import Assistant, get_active_user
-from app.domain.clock import today_in
+from app.domain.clock import now_utc, today_in
 from app.domain.dictionaries import TaskStatus
-from app.domain.tasks import now_utc
 from app.services import tasks as service
 
 router = APIRouter(tags=["задачи"], dependencies=[Depends(get_active_user)])

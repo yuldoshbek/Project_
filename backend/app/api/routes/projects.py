@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep
 from app.api.security import Assistant, get_active_user
-from app.domain.clock import today_in
+from app.domain.clock import now_utc, today_in
 from app.domain.dictionaries import Health
 from app.domain.projects import Classification, ProgressMode, ProjectKind
 from app.services import projects as service
@@ -29,6 +29,22 @@ from app.services import projects as service
 router = APIRouter(tags=["проекты"], dependencies=[Depends(get_active_user)])
 
 TITLE_MAX = 300
+COMPUTED = frozenset({"health", "impediment_is_stale", "impediment_is_active"})
+"""Поля ответа, которых нет в таблице: они считаются, а не хранятся."""
+
+IMPEDIMENT_MAX = 500
+"""Одна фраза, а не план реагирования.
+
+Ограничение не техническое: поле, куда помещается страница, через месяц содержит
+страницу, и читать его перестают — а вместе с ним перестают читать и остальное
+([ADR-0016](../../../docs/adr/ADR-0016-risks-signals-not-register.md))."""
+
+
+async def _respond(session: SessionDep, project: Any, settings: SettingsDep) -> ProjectResponse:
+    """Ответ с посчитанными признаками — в одном месте на все четыре эндпоинта."""
+    rules = await service.load_project_rules(session)
+    today = today_in(settings.timezone)
+    return ProjectResponse.of(project, rules.of(project, today=today), rules=rules, now=now_utc())
 
 
 class ProjectResponse(BaseModel):
@@ -51,13 +67,24 @@ class ProjectResponse(BaseModel):
     progress_pct: int
     progress_mode: ProgressMode
     budget_note: str | None
+    impediment: str | None
+    impediment_updated_at: datetime | None
     health: Health
+    impediment_is_stale: bool
+    impediment_is_active: bool
 
     @classmethod
-    def of(cls, project: Any, health: Health) -> ProjectResponse:
+    def of(
+        cls, project: Any, health: Health, *, rules: service.ProjectRules, now: datetime
+    ) -> ProjectResponse:
+        stored = {name: getattr(project, name) for name in cls.model_fields if name not in COMPUTED}
         return cls(
-            **{name: getattr(project, name) for name in cls.model_fields if name != "health"},
+            **stored,
             health=health,
+            # Дата обновления показывается рядом с текстом всегда, а не по наведению:
+            # строка без даты выглядит одинаково свежей и вчерашней, и месячной давности.
+            impediment_is_stale=rules.impediment_is_stale(project, now=now),
+            impediment_is_active=rules.has_active_impediment(project, now=now),
         )
 
 
@@ -130,6 +157,8 @@ async def list_projects(
     ] = "due_on",
     descending: Annotated[bool, Query()] = False,
 ) -> list[ProjectResponse]:
+    rules = await service.load_project_rules(session)
+    now = now_utc()
     rows = await service.list_projects(
         session,
         service.ProjectFilter(
@@ -148,7 +177,7 @@ async def list_projects(
         sort_by=sort_by,
         descending=descending,
     )
-    return [ProjectResponse.of(project, colour) for project, colour in rows]
+    return [ProjectResponse.of(project, colour, rules=rules, now=now) for project, colour in rows]
 
 
 @router.post("/projects", response_model=ProjectResponse, status_code=201, summary="Новый проект")
@@ -162,8 +191,7 @@ async def create_project(
         created_by=user.id,
         today=today,
     )
-    rules = await service.load_health_rules(session)
-    return ProjectResponse.of(project, rules.of(project, today=today))
+    return await _respond(session, project, settings)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse, summary="Карточка проекта")
@@ -171,8 +199,7 @@ async def read_project(
     project_id: uuid.UUID, session: SessionDep, settings: SettingsDep
 ) -> ProjectResponse:
     project = await service.get(session, project_id)
-    rules = await service.load_health_rules(session)
-    return ProjectResponse.of(project, rules.of(project, today=today_in(settings.timezone)))
+    return await _respond(session, project, settings)
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectResponse, summary="Изменение проекта")
@@ -184,8 +211,34 @@ async def update_project(
     user: Assistant,
 ) -> ProjectResponse:
     project = await service.update(session, project_id, payload.to_patch())
-    rules = await service.load_health_rules(session)
-    return ProjectResponse.of(project, rules.of(project, today=today_in(settings.timezone)))
+    return await _respond(session, project, settings)
+
+
+class ImpedimentUpdate(BaseModel):
+    """Строка «что мешает». `null` очищает её вместе с датой."""
+
+    impediment: str | None = Field(default=None, max_length=IMPEDIMENT_MAX)
+
+
+@router.patch(
+    "/projects/{project_id}/impediment",
+    response_model=ProjectResponse,
+    summary="Что мешает проекту",
+)
+async def set_impediment(
+    project_id: uuid.UUID,
+    payload: ImpedimentUpdate,
+    session: SessionDep,
+    settings: SettingsDep,
+    user: Assistant,
+) -> ProjectResponse:
+    """Отдельный эндпоинт, а не поле в общем изменении проекта.
+
+    Дату обновления ставит система, и через общий `PATCH` её можно было бы обновить
+    заодно с правкой названия — то есть отметить помеху свежей, ничего о ней не узнав.
+    """
+    project = await service.set_impediment(session, project_id, payload.impediment)
+    return await _respond(session, project, settings)
 
 
 @router.delete("/projects/{project_id}", status_code=204, summary="Удаление проекта")

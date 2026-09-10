@@ -22,3 +22,12 @@ def today_in(timezone: str) -> date:
     где её развернули, — это не тот пояс, в котором наступают сроки агентства.
     """
     return datetime.now(UTC).astimezone(ZoneInfo(timezone)).date()
+
+
+def now_utc() -> datetime:
+    """Текущий момент в UTC.
+
+    Отдельная функция по той же причине, что и `today_in`: время — такой же вход, как
+    «сегодня». В тестах подставляется момент, а не подкручиваются часы машины.
+    """
+    return datetime.now(UTC)
