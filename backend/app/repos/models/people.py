@@ -21,13 +21,17 @@ from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.models.audit import Auditable
 
 
-class Person(UUIDPrimaryKey, Timestamps, Base):
+class Person(Auditable, UUIDPrimaryKey, Timestamps, Base):
     """Сотрудник агентства.
 
     В систему не входит. Существует, чтобы было понятно, с кого спрашивать: куратор
     проекта, исполнитель задачи, участник встречи.
+
+    Первая журналируемая сущность (ORB-009): смена куратора или должности — деловое
+    изменение, и вопрос «кто это поменял» по ней возникает так же, как по проекту.
 
     Почта необязательна и не уникальна как учётные данные: это способ связи, а не логин.
     Уникален только адрес пользователя (`users.email`), потому что по нему входят.

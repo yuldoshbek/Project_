@@ -5,6 +5,7 @@
 которая молча удаляет таблицу.
 """
 
+from app.repos.models.audit import Auditable, AuditLog
 from app.repos.models.auth import RefreshToken
 from app.repos.models.dictionaries import (
     Direction,
@@ -17,6 +18,8 @@ from app.repos.models.dictionaries import (
 from app.repos.models.people import Person, User
 
 __all__ = [
+    "AuditLog",
+    "Auditable",
     "Direction",
     "Organization",
     "Person",
