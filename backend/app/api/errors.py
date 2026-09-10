@@ -119,7 +119,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         return problem_response(
             status_code=status_code,
             code=exc.code,
-            detail=exc.detail or exc.message,
+            # Сообщение и подробность складываются, а не вытесняют друг друга. Раньше
+            # подробность побеждала, и пользователь получал «начало 01.06, срок 01.05»
+            # без объяснения, что именно не так. Подробность уточняет, а не заменяет.
+            detail=f"{exc.message}: {exc.detail}" if exc.detail else exc.message,
             instance=request.url.path,
         )
 

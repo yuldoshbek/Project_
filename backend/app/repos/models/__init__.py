@@ -16,6 +16,7 @@ from app.repos.models.dictionaries import (
     TaskStatusRef,
 )
 from app.repos.models.people import Person, User
+from app.repos.models.projects import Project
 
 __all__ = [
     "AuditLog",
@@ -24,6 +25,7 @@ __all__ = [
     "Organization",
     "Person",
     "PriorityRef",
+    "Project",
     "ProjectStatusRef",
     "RefreshToken",
     "Setting",
