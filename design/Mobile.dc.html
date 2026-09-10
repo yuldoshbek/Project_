@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #f6f7f9; color: #14181f;
+      font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Liberation Sans', sans-serif;
+      font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #1c5fd6; text-decoration: none; }
+    a:hover { color: #164ead; text-decoration: underline; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .chip { padding: 6px 11px; border-radius: 4px; font-size: 12.5px; white-space: nowrap; }
+    .tap { min-height: 44px; }
+    .cut { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #f6f7f9; display: flex; flex-direction: column; overflow: hidden">
+
+  <!-- Шапка приложения. Системную строку и клавиатуру рисует сам телефон — здесь их нет намеренно -->
+  <div style="background: #ffffff; border-bottom: 1px solid #dfe3e8; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none">
+    <div style="display: flex; flex-direction: column; gap: 1px">
+      <span style="font-size: 16px; font-weight: 600; letter-spacing: .04em">ORBITA</span>
+      <span class="mono" style="font-size: 11px; color: #5b6472">чт, 10 сентября · 09:14</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <div class="tap" style="width: 44px; display: flex; align-items: center; justify-content: center">
+        <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="#14181f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.75" cy="8.75" r="5.5"/><path d="M12.9 12.9 17 17"/></svg>
+      </div>
+      <div class="tap" style="width: 44px; display: flex; align-items: center; justify-content: center; position: relative">
+        <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="#14181f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.4 8.25a4.6 4.6 0 0 1 9.2 0c0 3.85 1.4 5.1 1.4 5.1H4s1.4-1.25 1.4-5.1z"/><path d="M8.5 16.1a1.8 1.8 0 0 0 3 0"/></svg>
+        <span style="position: absolute; top: 4px; right: 4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #c0392b; color: #ffffff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center">6</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Содержимое -->
+  <div style="flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; gap: 16px; padding: 14px 16px 8px">
+
+    <!-- Фильтр направлений: полоса прокручивается вбок, последний чип раскрывает остальные -->
+    <div style="display: flex; gap: 7px; overflow: hidden; flex: none">
+      <span class="chip" style="background: #14181f; color: #ffffff; font-weight: 500">Все · 28</span>
+      <span class="chip" style="background: #ffffff; border: 1px solid #dfe3e8">Мониторинг · 9</span>
+      <span class="chip" style="background: #ffffff; border: 1px solid #dfe3e8">ДЗЗ · 6</span>
+      <span class="chip" style="background: #ffffff; border: 1px solid #dfe3e8; color: #1c5fd6">ещё 4</span>
+    </div>
+
+    <!-- Уровень 1 — тревога -->
+    <div style="display: flex; flex-direction: column; gap: 9px; flex: none">
+      <span style="font-size: 18px; font-weight: 600">Требует внимания</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 9px">
+        <div class="tap" style="background: #ffffff; border: 1px solid #dfe3e8; border-left: 3px solid #c0392b; border-radius: 8px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; justify-content: center">
+          <span style="font-size: 26px; font-weight: 600; line-height: 1; color: #c0392b; font-variant-numeric: tabular-nums">3</span>
+          <span style="font-size: 12px; color: #5b6472">в красной зоне</span>
+        </div>
+        <div class="tap" style="background: #ffffff; border: 1px solid #dfe3e8; border-left: 3px solid #7c3aed; border-radius: 8px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; justify-content: center">
+          <span style="font-size: 26px; font-weight: 600; line-height: 1; color: #7c3aed; font-variant-numeric: tabular-nums">2</span>
+          <span style="font-size: 12px; color: #5b6472">ждёт решения</span>
+        </div>
+        <div class="tap" style="background: #ffffff; border: 1px solid #dfe3e8; border-left: 3px solid #b8770a; border-radius: 8px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; justify-content: center">
+          <span style="font-size: 26px; font-weight: 600; line-height: 1; color: #b8770a; font-variant-numeric: tabular-nums">4</span>
+          <span style="font-size: 12px; color: #5b6472">ухудшилось</span>
+        </div>
+        <div class="tap" style="background: #ffffff; border: 1px solid #dfe3e8; border-left: 3px solid #546b8a; border-radius: 8px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; justify-content: center">
+          <span style="font-size: 26px; font-weight: 600; line-height: 1; color: #546b8a; font-variant-numeric: tabular-nums">6</span>
+          <span style="font-size: 12px; color: #5b6472">молчит</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Уровень 2 — лента времени -->
+    <div style="display: flex; flex-direction: column; gap: 8px; flex: none">
+      <div style="display: flex; align-items: baseline; justify-content: space-between">
+        <span style="font-size: 18px; font-weight: 600">Ближайшее</span>
+        <span class="mono" style="font-size: 11px; color: #1c5fd6">весь месяц</span>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden">
+        <div class="tap" style="padding: 9px 13px; border-bottom: 1px solid #dfe3e8; display: flex; align-items: center; gap: 10px; border-left: 3px solid #7c3aed">
+          <span class="mono" style="font-size: 12px; color: #5b6472; width: 40px; flex: none; font-variant-numeric: tabular-nums">11:00</span>
+          <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0; flex-grow: 1">
+            <span class="cut" style="font-size: 13.5px; font-weight: 500">Встреча с делегацией ESA</span>
+            <span style="font-size: 11.5px; color: #5b6472">подготовка готова · 4 участника</span>
+          </div>
+        </div>
+        <div class="tap" style="padding: 9px 13px; border-bottom: 1px solid #dfe3e8; display: flex; align-items: center; gap: 10px; border-left: 3px solid #c0392b">
+          <span class="mono" style="font-size: 12px; color: #5b6472; width: 40px; flex: none; font-variant-numeric: tabular-nums">18:00</span>
+          <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0; flex-grow: 1">
+            <span class="cut" style="font-size: 13.5px; font-weight: 500">Ответ Минводхозу</span>
+            <span style="font-size: 11.5px; color: #c0392b">срок ответа истекает сегодня</span>
+          </div>
+        </div>
+        <div class="tap" style="padding: 9px 13px; display: flex; align-items: center; gap: 10px">
+          <span class="mono" style="font-size: 12px; color: #5b6472; width: 40px; flex: none; font-variant-numeric: tabular-nums">12.09</span>
+          <span class="cut" style="font-size: 13.5px; flex-grow: 1">Веха: техническая спецификация</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 11.5px; color: #b8770a"><span class="dot" style="background: #b8770a"></span>риск</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Уровень 3 — портфель -->
+    <div style="display: flex; flex-direction: column; gap: 8px; flex: none">
+      <div style="display: flex; align-items: baseline; justify-content: space-between">
+        <span style="font-size: 18px; font-weight: 600">Портфель</span>
+        <div style="display: flex; gap: 9px; align-items: center">
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: #5b6472"><span class="dot" style="background: #1f8a4c"></span>12</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: #5b6472"><span class="dot" style="background: #b8770a"></span>9</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: #5b6472"><span class="dot" style="background: #c0392b"></span>3</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: #5b6472"><span class="dot" style="background: #6b7280"></span>4</span>
+        </div>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden">
+        <div class="tap" style="padding: 10px 13px; border-bottom: 1px solid #dfe3e8; display: flex; align-items: center; gap: 10px">
+          <span class="dot" style="background: #c0392b"></span>
+          <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-grow: 1">
+            <span class="cut" style="font-size: 13.5px; font-weight: 500">Соглашение с ESA</span>
+            <span class="cut" style="font-size: 11.5px; color: #c0392b">Просрочено · партнёр не подтвердил дату</span>
+          </div>
+          <span class="mono" style="font-size: 12px; color: #5b6472; flex: none; font-variant-numeric: tabular-nums">62%</span>
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#c3c9d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex: none"><path d="M7.75 4.5 13.25 10l-5.5 5.5"/></svg>
+        </div>
+        <div class="tap" style="padding: 10px 13px; display: flex; align-items: center; gap: 10px">
+          <span class="dot" style="background: #546b8a"></span>
+          <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-grow: 1">
+            <span class="cut" style="font-size: 13.5px; font-weight: 500">Мониторинг водных объектов</span>
+            <span class="cut" style="font-size: 11.5px; color: #546b8a">Молчит 21 день</span>
+          </div>
+          <span class="mono" style="font-size: 12px; color: #5b6472; flex: none; font-variant-numeric: tabular-nums">40%</span>
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#c3c9d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex: none"><path d="M7.75 4.5 13.25 10l-5.5 5.5"/></svg>
+        </div>
+      </div>
+      <div style="text-align: center; font-size: 12.5px; color: #1c5fd6; padding-top: 2px">Показать все 28</div>
+    </div>
+
+  </div>
+
+  <!-- Нижнее меню -->
+  <div style="background: #ffffff; border-top: 1px solid #dfe3e8; padding: 6px 8px 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; flex: none">
+    <div class="tap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #1c5fd6">
+      <svg viewBox="0 0 20 20" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.75" y="2.75" width="6" height="6" rx="1.25"/><rect x="11.25" y="2.75" width="6" height="6" rx="1.25"/><rect x="2.75" y="11.25" width="6" height="6" rx="1.25"/><rect x="11.25" y="11.25" width="6" height="6" rx="1.25"/></svg>
+      <span style="font-size: 11px; font-weight: 500">Главное</span>
+    </div>
+    <div class="tap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #5b6472">
+      <svg viewBox="0 0 20 20" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5 17.5 6.75 10 11 2.5 6.75z"/><path d="M3.5 10.5 10 14.25l6.5-3.75"/></svg>
+      <span style="font-size: 11px">Проекты</span>
+    </div>
+    <div class="tap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #5b6472">
+      <svg viewBox="0 0 20 20" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.75" y="4.25" width="14.5" height="13" rx="2"/><path d="M6.5 2.5v3.5M13.5 2.5v3.5M2.75 8.5h14.5"/></svg>
+      <span style="font-size: 11px">Календарь</span>
+    </div>
+    <div class="tap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #5b6472; position: relative">
+      <svg viewBox="0 0 20 20" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.75" y="4.5" width="14.5" height="11" rx="1.75"/><path d="M3.4 5.9 10 10.6l6.6-4.7"/></svg>
+      <span style="font-size: 11px">Обращения</span>
+      <span style="position: absolute; top: 2px; right: 20px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #c0392b; color: #ffffff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center">4</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

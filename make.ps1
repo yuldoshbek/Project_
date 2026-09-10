@@ -37,6 +37,7 @@ switch ($Target) {
   migrate    Применить миграции
   revision   Создать миграцию: .\make.ps1 revision "описание"
   heads      Проверить, что голова миграций одна
+  password   Назначить пароль: .\make.ps1 password <адрес>
   seed       Загрузить справочники и демо-данные
   dev-back   Запустить backend на :8000
   dev-front  Запустить frontend на :5173
@@ -64,6 +65,10 @@ switch ($Target) {
         Write-Output 'проверьте сгенерированное: автогенерация не видит переименований и данных'
     }
     'heads' { Invoke-In $backend 'uv' @('run', 'alembic', 'heads') }
+    'password' {
+        if (-not $Name) { throw 'укажите адрес: .\make.ps1 password assistant@orbita.local' }
+        Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.cli', 'set-password', $Name)
+    }
     'seed' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.seed') }
     'dev-back' { Invoke-In $backend 'uv' @('run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000') }
     'dev-front' { Invoke-In $frontend 'npm' @('run', 'dev') }

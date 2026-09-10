@@ -1,0 +1,376 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #f6f7f9; color: #14181f;
+      font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Liberation Sans', sans-serif;
+      font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #1c5fd6; text-decoration: none; }
+    a:hover { color: #164ead; text-decoration: underline; }
+    .lbl { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+      font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #5b6472; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace; }
+    .panel { background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px;
+      padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+    .sub { font-size: 12px; color: #5b6472; }
+    .sk { border-radius: 4px; background: linear-gradient(90deg, #f0f2f5 25%, #dfe3e8 37%, #f0f2f5 63%);
+      background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+    @keyframes shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+    @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+  </style>
+</helmet>
+
+<div style="width: 2200px; padding: 40px 44px 48px; display: flex; flex-direction: column; gap: 28px">
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; border-bottom: 2px solid #14181f; padding-bottom: 16px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <div class="lbl">ORBITA · дизайн-система</div>
+      <div style="font-size: 28px; font-weight: 600; line-height: 1.2">Компоненты и состояния</div>
+      <div style="color: #5b6472">Анатомия построена на существующих <span class="mono" style="font-size: 12px">ui.module.css</span> и <span class="mono" style="font-size: 12px">layout.module.css</span>. Плотность переключается тумблером над макетом</div>
+    </div>
+    <div class="mono" style="font-size: 12px; color: #5b6472; text-align: right; flex: none">{{densityName}}</div>
+  </div>
+
+  <!-- РЯД A -->
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px">
+
+    <!-- Кнопки -->
+    <div class="panel">
+      <div class="lbl">Кнопки</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+        <button style="height: {{ctrlH}}; padding: 0 16px; border: 1px solid #1c5fd6; border-radius: 4px; background: #1c5fd6; color: #ffffff; font-weight: 500">Создать проект</button>
+        <button style="height: {{ctrlH}}; padding: 0 16px; border: 1px solid #c3c9d2; border-radius: 4px; background: #ffffff; color: #14181f">Отменить</button>
+        <button style="height: {{ctrlH}}; padding: 0 12px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #1c5fd6">Ещё</button>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+        <button style="height: {{ctrlH}}; padding: 0 16px; border: 1px solid #c0392b; border-radius: 4px; background: #ffffff; color: #c0392b">Отменить проект</button>
+        <button style="height: {{ctrlH}}; padding: 0 16px; border: 1px solid #dfe3e8; border-radius: 4px; background: #f0f2f5; color: #8a8f98" disabled>Недоступно</button>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap">
+        <span style="display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border: 1px solid #164ead; border-radius: 4px; background: #164ead; color: #ffffff; font-weight: 500">Наведение</span>
+        <span style="display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border: 1px solid #1c5fd6; border-radius: 4px; background: #1c5fd6; color: #ffffff; font-weight: 500; outline: 2px solid #1c5fd6; outline-offset: 2px">Фокус</span>
+      </div>
+      <div class="sub">Фокус виден всегда: канбан и списки обязаны работать с клавиатуры. На телефоне высота кнопки не опускается ниже 44 px, каким бы плотным ни был режим.</div>
+    </div>
+
+    <!-- Поля -->
+    <div class="panel">
+      <div class="lbl">Поля ввода</div>
+      <div style="display: flex; flex-direction: column; gap: 5px">
+        <label style="font-size: 12px; color: #5b6472">Название проекта</label>
+        <div style="height: {{ctrlH}}; padding: 0 12px; border: 1px solid #c3c9d2; border-radius: 4px; background: #ffffff; display: flex; align-items: center">Соглашение с ESA о совместном мониторинге</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 5px">
+        <label style="font-size: 12px; color: #5b6472">Направление</label>
+        <div style="height: {{ctrlH}}; padding: 0 12px; border: 1px solid #1c5fd6; border-radius: 4px; background: #ffffff; display: flex; align-items: center; justify-content: space-between; outline: 2px solid #1c5fd6; outline-offset: 2px">
+          <span>Международное сотрудничество</span>
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#5b6472" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8 10 12.5 14.5 8"/></svg>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 5px">
+        <label style="font-size: 12px; color: #c0392b">Плановый срок</label>
+        <div style="height: {{ctrlH}}; padding: 0 12px; border: 1px solid #c0392b; border-radius: 4px; background: #ffffff; display: flex; align-items: center; color: #5b6472">дд.мм.гггг</div>
+        <div style="font-size: 12px; color: #c0392b">Срок не может быть раньше даты начала — 01.10.2026</div>
+      </div>
+      <div class="sub">Ошибка объясняет, что не так и каким должно быть значение. «Некорректный ввод» — не сообщение об ошибке.</div>
+    </div>
+
+    <!-- Чипы -->
+    <div class="panel">
+      <div class="lbl">Признаки состояния</div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div class="sub">Светофор — всегда с подписью</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <span style="display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 4px; background: #e3f5ea; color: #1f8a4c; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1f8a4c"></span>По плану</span>
+          <span style="display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 4px; background: #fdf1da; color: #b8770a; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b8770a"></span>Риск срыва</span>
+          <span style="display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 4px; background: #fbe6e3; color: #c0392b; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #c0392b"></span>Просрочено</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div class="sub">Сигналы движения — новое</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 4px; background: #e9eef4; color: #546b8a; font-weight: 500"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.25h3l3.75-3.5v10.5L5.5 11.75h-3z"/><path d="M12.75 7.75 16.5 12.25M16.5 7.75l-3.75 4.5"/></svg>Молчит 21 день</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 4px; background: #fbe6e3; color: #c0392b; font-weight: 500"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.75 5.75 8 11l3-3 6.25 6.25"/><path d="M17.25 9.75v4.5h-4.5"/></svg>Ухудшилось</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div class="sub">Качество встречи — вычисляется, не оценивается</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <span style="padding: 5px 11px; border-radius: 4px; background: #e3f5ea; color: #1f8a4c; font-weight: 500">Результативная</span>
+          <span style="padding: 5px 11px; border-radius: 4px; background: #eef0f3; color: #6b7280; font-weight: 500">Формальная</span>
+          <span style="padding: 5px 11px; border-radius: 4px; background: #fdf1da; color: #b8770a; font-weight: 500">Провисшая</span>
+        </div>
+      </div>
+      <div class="sub">Ни один новый цвет здесь не заведён: качество встречи переиспользует светофор. Новый смысл в палитре ровно один — «молчит»; два мягких фона добавлены к уже существующим приоритету и статусу.</div>
+    </div>
+  </div>
+
+  <!-- РЯД B -->
+  <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 20px">
+
+    <!-- Карточка проекта -->
+    <div class="panel">
+      <div class="lbl">Карточка проекта — основная единица портфеля</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
+
+        <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; box-shadow: 0 1px 2px rgb(20 24 31 / 8%); padding: 16px; display: flex; flex-direction: column; gap: 11px">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span class="mono" style="font-size: 11px; color: #5b6472">PRJ-2026-014</span>
+              <span style="font-size: 15px; font-weight: 600; line-height: 1.3">Соглашение с ESA о совместном мониторинге</span>
+            </div>
+            <span style="width: 10px; height: 10px; border-radius: 50%; background: #c0392b; flex: none; margin-top: 5px"></span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px">
+            <span style="padding: 3px 9px; border-radius: 4px; background: #e7efff; color: #1c5fd6; font-size: 12px; font-weight: 500">В работе</span>
+            <span style="padding: 3px 9px; border-radius: 4px; background: #fbe6e3; color: #c0392b; font-size: 12px; font-weight: 500">Срочный</span>
+            <span style="padding: 3px 9px; border-radius: 4px; background: #f0f2f5; color: #5b6472; font-size: 12px">Международное</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5b6472"><span>Выполнено</span><span class="mono" style="color: #14181f; font-variant-numeric: tabular-nums">62%</span></div>
+            <div style="height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden"><div style="height: 100%; width: 62%; background: #1c5fd6; border-radius: 3px"></div></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px">
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #5b6472">Куратор</span><span>Р. Азимов</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #5b6472">Ближайшая веха</span><span class="mono" style="font-variant-numeric: tabular-nums">18.09</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #5b6472">Просрочено задач</span><span class="mono" style="color: #c0392b; font-weight: 600; font-variant-numeric: tabular-nums">3</span></div>
+          </div>
+          <div style="border-top: 1px dashed #dfe3e8; padding-top: 10px; display: flex; gap: 8px; align-items: flex-start">
+            <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="#c0392b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 2px"><path d="M10 2.9 17.6 16.6a.8.8 0 0 1-.7 1.2H3.1a.8.8 0 0 1-.7-1.2z"/><path d="M10 8v3.6M10 14.35v.1"/></svg>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span style="font-size: 12.5px">Партнёр не подтвердил дату подписания</span>
+              <span class="mono" style="font-size: 11px; color: #5b6472">обновлено 06.09 · 4 дня назад</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; box-shadow: 0 1px 2px rgb(20 24 31 / 8%); padding: 16px; display: flex; flex-direction: column; gap: 11px">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span class="mono" style="font-size: 11px; color: #5b6472">PRJ-2026-007</span>
+              <span style="font-size: 15px; font-weight: 600; line-height: 1.3">Мониторинг водных объектов</span>
+            </div>
+            <span style="width: 10px; height: 10px; border-radius: 50%; background: #1f8a4c; flex: none; margin-top: 5px"></span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px">
+            <span style="padding: 3px 9px; border-radius: 4px; background: #e7efff; color: #1c5fd6; font-size: 12px; font-weight: 500">В работе</span>
+            <span style="padding: 3px 9px; border-radius: 4px; background: #e9eef4; color: #546b8a; font-size: 12px; font-weight: 500">Молчит 21 день</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5b6472"><span>Выполнено</span><span class="mono" style="color: #14181f; font-variant-numeric: tabular-nums">40%</span></div>
+            <div style="height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden"><div style="height: 100%; width: 40%; background: #546b8a; border-radius: 3px"></div></div>
+            <div class="mono" style="font-size: 11px; color: #546b8a">процент не менялся с 20.08</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px">
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #5b6472">Куратор</span><span>Д. Каримова</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #5b6472">Ближайшая веха</span><span class="mono" style="font-variant-numeric: tabular-nums">30.11</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 10px"><span style="color: #5b6472">Просрочено задач</span><span class="mono" style="font-variant-numeric: tabular-nums">0</span></div>
+          </div>
+          <div style="border-top: 1px dashed #dfe3e8; padding-top: 10px; display: flex; gap: 8px; align-items: center">
+            <span style="font-size: 12.5px; color: #5b6472">Строка «что мешает» не заполнена</span>
+          </div>
+        </div>
+
+      </div>
+      <div class="sub">Слева — красный по сроку, и причина названа человеком. Справа — зелёный, но не двигается три недели: на светофоре он невидим, и потому у него собственный признак. Именно такие проекты потом взрываются.</div>
+    </div>
+
+    <!-- Мобильные элементы и меню -->
+    <div class="panel">
+      <div class="lbl">Плотность на телефоне и пункты меню</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div class="sub">Строка списка — 44 px минимум</div>
+          <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+            <div style="min-height: 44px; padding: 9px 13px; border-bottom: 1px solid #dfe3e8; display: flex; align-items: center; gap: 10px">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: #c0392b; flex: none"></span>
+              <span style="font-size: 13px; flex-grow: 1">Соглашение с ESA</span>
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#c3c9d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.75 4.5 13.25 10l-5.5 5.5"/></svg>
+            </div>
+            <div style="min-height: 44px; padding: 9px 13px; border-bottom: 1px solid #dfe3e8; display: flex; align-items: center; gap: 10px">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: #b8770a; flex: none"></span>
+              <span style="font-size: 13px; flex-grow: 1">Регламент ДЗЗ</span>
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#c3c9d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.75 4.5 13.25 10l-5.5 5.5"/></svg>
+            </div>
+            <div style="min-height: 44px; padding: 9px 13px; display: flex; align-items: center; gap: 10px">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: #546b8a; flex: none"></span>
+              <span style="font-size: 13px; flex-grow: 1">Мониторинг водных объектов</span>
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#c3c9d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.75 4.5 13.25 10l-5.5 5.5"/></svg>
+            </div>
+          </div>
+          <div class="sub">Плотный режим на телефоне не применяется: он экономит пиксели ценой промахов пальцем.</div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div class="sub">Боковое меню — состояния пункта</div>
+          <div style="border: 1px solid #dfe3e8; border-radius: 8px; background: #ffffff; padding: 10px; display: flex; flex-direction: column; gap: 3px">
+            <div style="padding: 8px 12px; border-radius: 4px; display: flex; align-items: center; gap: 10px"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#14181f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.75" y="2.75" width="6" height="6" rx="1.25"/><rect x="11.25" y="2.75" width="6" height="6" rx="1.25"/><rect x="2.75" y="11.25" width="6" height="6" rx="1.25"/><rect x="11.25" y="11.25" width="6" height="6" rx="1.25"/></svg><span>Дашборд</span></div>
+            <div style="padding: 8px 12px; border-radius: 4px; background: #f0f2f5; display: flex; align-items: center; gap: 10px"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#14181f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5 17.5 6.75 10 11 2.5 6.75z"/><path d="M3.5 10.5 10 14.25l6.5-3.75"/></svg><span>Проекты</span><span class="mono" style="font-size: 11px; color: #5b6472; margin-left: auto">наведение</span></div>
+            <div style="padding: 8px 12px; border-radius: 4px; background: #e7efff; color: #1c5fd6; font-weight: 500; display: flex; align-items: center; gap: 10px"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.25h9.25M8 10h9.25M8 14.75h9.25"/><path d="M2.75 5 3.9 6.15 6 4.05"/><path d="M2.75 9.75 3.9 10.9 6 8.8"/><path d="M3 14.75h2.75"/></svg><span>Задачи</span><span class="mono" style="font-size: 11px; margin-left: auto">активный</span></div>
+            <div style="padding: 8px 12px; border-radius: 4px; display: flex; align-items: center; gap: 10px; outline: 2px solid #1c5fd6; outline-offset: -1px"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#14181f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.75" y="4.25" width="14.5" height="13" rx="2"/><path d="M6.5 2.5v3.5M13.5 2.5v3.5M2.75 8.5h14.5"/></svg><span>Календарь</span><span class="mono" style="font-size: 11px; color: #5b6472; margin-left: auto">фокус</span></div>
+          </div>
+          <div class="sub">Активный пункт — мягкий акцентный фон и акцентный текст, а не жирная заливка: меню не должно спорить с содержимым.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- РЯД C — таблица -->
+  <div class="panel">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 20px">
+      <div class="lbl">Таблица портфеля — три представления одних данных, ТЗ 6.2</div>
+      <div class="mono" style="font-size: 11px; color: #5b6472">{{densityName}}</div>
+    </div>
+    <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 130px 1fr 190px 150px 130px 110px 170px 150px; background: #f0f2f5; border-bottom: 1px solid #dfe3e8">
+        <div class="lbl" style="padding: 9px 14px">Код</div>
+        <div class="lbl" style="padding: 9px 14px">Проект</div>
+        <div class="lbl" style="padding: 9px 14px">Направление</div>
+        <div class="lbl" style="padding: 9px 14px">Куратор</div>
+        <div class="lbl" style="padding: 9px 14px">Статус</div>
+        <div class="lbl" style="padding: 9px 14px">Срок</div>
+        <div class="lbl" style="padding: 9px 14px">Выполнено</div>
+        <div class="lbl" style="padding: 9px 14px">Состояние</div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 130px 1fr 190px 150px 130px 110px 170px 150px; border-bottom: 1px solid #dfe3e8; background: #ffffff; align-items: center">
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #1c5fd6">PRJ-2026-014</div>
+        <div style="padding: {{rowPad}}; font-weight: 500">Соглашение с ESA о совместном мониторинге</div>
+        <div style="padding: {{rowPad}}; color: #5b6472">Международное</div>
+        <div style="padding: {{rowPad}}">Р. Азимов</div>
+        <div style="padding: {{rowPad}}"><span style="padding: 3px 9px; border-radius: 4px; background: #e7efff; color: #1c5fd6; font-size: 12px; font-weight: 500">В работе</span></div>
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #c0392b; font-variant-numeric: tabular-nums">18.09</div>
+        <div style="padding: {{rowPad}}; display: flex; align-items: center; gap: 9px"><span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden"><span style="display: block; height: 100%; width: 62%; background: #1c5fd6"></span></span><span class="mono" style="font-size: 12px; font-variant-numeric: tabular-nums">62%</span></div>
+        <div style="padding: {{rowPad}}"><span style="display: inline-flex; align-items: center; gap: 7px; color: #c0392b; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #c0392b"></span>Просрочено</span></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 130px 1fr 190px 150px 130px 110px 170px 150px; border-bottom: 1px solid #dfe3e8; background: #ffffff; align-items: center">
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #1c5fd6">PRJ-2026-009</div>
+        <div style="padding: {{rowPad}}; font-weight: 500">Регламент обработки данных ДЗЗ</div>
+        <div style="padding: {{rowPad}}; color: #5b6472">Нормативно-регуляторная работа</div>
+        <div style="padding: {{rowPad}}">С. Юсупов</div>
+        <div style="padding: {{rowPad}}"><span style="padding: 3px 9px; border-radius: 4px; background: #f3ebfd; color: #7c3aed; font-size: 12px; font-weight: 500">На контроле</span></div>
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #b8770a; font-variant-numeric: tabular-nums">25.09</div>
+        <div style="padding: {{rowPad}}; display: flex; align-items: center; gap: 9px"><span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden"><span style="display: block; height: 100%; width: 78%; background: #1c5fd6"></span></span><span class="mono" style="font-size: 12px; font-variant-numeric: tabular-nums">78%</span></div>
+        <div style="padding: {{rowPad}}"><span style="display: inline-flex; align-items: center; gap: 7px; color: #b8770a; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b8770a"></span>Риск срыва</span></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 130px 1fr 190px 150px 130px 110px 170px 150px; border-bottom: 1px solid #dfe3e8; background: #ffffff; align-items: center">
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #1c5fd6">PRJ-2026-007</div>
+        <div style="padding: {{rowPad}}; font-weight: 500">Мониторинг водных объектов</div>
+        <div style="padding: {{rowPad}}; color: #5b6472">Космический мониторинг</div>
+        <div style="padding: {{rowPad}}">Д. Каримова</div>
+        <div style="padding: {{rowPad}}"><span style="padding: 3px 9px; border-radius: 4px; background: #e7efff; color: #1c5fd6; font-size: 12px; font-weight: 500">В работе</span></div>
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #5b6472; font-variant-numeric: tabular-nums">30.11</div>
+        <div style="padding: {{rowPad}}; display: flex; align-items: center; gap: 9px"><span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden"><span style="display: block; height: 100%; width: 40%; background: #546b8a"></span></span><span class="mono" style="font-size: 12px; font-variant-numeric: tabular-nums">40%</span></div>
+        <div style="padding: {{rowPad}}"><span style="display: inline-flex; align-items: center; gap: 7px; color: #546b8a; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #546b8a"></span>Молчит 21 д.</span></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 130px 1fr 190px 150px 130px 110px 170px 150px; background: #f6f7f9; align-items: center">
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #1c5fd6">PRJ-2026-002</div>
+        <div style="padding: {{rowPad}}; font-weight: 500">Наземная станция приёма</div>
+        <div style="padding: {{rowPad}}; color: #5b6472">Инфраструктура</div>
+        <div style="padding: {{rowPad}}">Р. Азимов</div>
+        <div style="padding: {{rowPad}}"><span style="padding: 3px 9px; border-radius: 4px; background: #e3f5ea; color: #1f8a4c; font-size: 12px; font-weight: 500">Завершён</span></div>
+        <div class="mono" style="padding: {{rowPad}}; font-size: 12px; color: #5b6472; font-variant-numeric: tabular-nums">31.08</div>
+        <div style="padding: {{rowPad}}; display: flex; align-items: center; gap: 9px"><span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden"><span style="display: block; height: 100%; width: 100%; background: #1f8a4c"></span></span><span class="mono" style="font-size: 12px; font-variant-numeric: tabular-nums">100%</span></div>
+        <div style="padding: {{rowPad}}"><span style="display: inline-flex; align-items: center; gap: 7px; color: #6b7280"><span style="width: 8px; height: 8px; border-radius: 50%; background: #6b7280"></span>Вне светофора</span></div>
+      </div>
+    </div>
+    <div class="sub">Строка выделяется цветом только через признак состояния в последней колонке — заливать всю строку красным нельзя: на портфеле из сорока проектов таблица становится нечитаемой, а «красное» перестаёт означать «требует действия».</div>
+  </div>
+
+  <!-- РЯД D — состояния данных -->
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <div class="lbl">Лестница состояний данных — у каждого экрана обязаны быть все пять</div>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px">
+
+      <div class="panel" style="gap: 12px">
+        <div style="font-weight: 600">1 · Загрузка</div>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 6px 0">
+          <div class="sk" style="height: 12px; width: 48%"></div>
+          <div class="sk" style="height: 12px; width: 100%"></div>
+          <div class="sk" style="height: 12px; width: 86%"></div>
+          <div class="sk" style="height: 12px; width: 62%"></div>
+        </div>
+        <div class="sub">Заглушка повторяет форму содержимого. Область помечена <span class="mono" style="font-size: 11px">aria-busy</span>.</div>
+      </div>
+
+      <div class="panel" style="gap: 12px">
+        <div style="font-weight: 600">2 · Пусто</div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 8px; text-align: center">
+          <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="#c3c9d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.75 4.25h14.5l-5.6 6.5v5.15l-3.3 1.85V10.75z"/></svg>
+          <div style="font-size: 15px; font-weight: 600">Ничего не найдено</div>
+          <div style="font-size: 12px; color: #5b6472">По выбранным фильтрам проектов нет. Снимите фильтр по направлению.</div>
+        </div>
+        <div class="sub">Данных нет, но система исправна. Всегда подсказывает следующее действие.</div>
+      </div>
+
+      <div class="panel" style="gap: 12px">
+        <div style="font-weight: 600">3 · Ошибка</div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px; text-align: center">
+          <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.9 17.6 16.6a.8.8 0 0 1-.7 1.2H3.1a.8.8 0 0 1-.7-1.2z"/><path d="M10 8v3.6M10 14.35v.1"/></svg>
+          <div style="font-size: 15px; font-weight: 600">Не удалось загрузить портфель</div>
+          <div style="font-size: 12px; color: #5b6472">Проверьте соединение и повторите.</div>
+          <button style="margin-top: 4px; height: 34px; padding: 0 16px; border: 1px solid #c3c9d2; border-radius: 4px; background: #ffffff">Повторить</button>
+        </div>
+        <div class="sub">Что случилось и что делать. Технические подробности остаются в журнале.</div>
+      </div>
+
+      <div class="panel" style="gap: 12px">
+        <div style="font-weight: 600">4 · Данные устарели</div>
+        <div style="display: flex; flex-direction: column; gap: 9px; padding: 6px 0">
+          <div style="display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: 4px; background: #fdf1da; border: 1px solid #b8770a33">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#b8770a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 1px"><circle cx="10" cy="10" r="7.25"/><path d="M10 5.75V10.3l3 1.95"/></svg>
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 12.5px; color: #b8770a; font-weight: 500">Встречи могли устареть</span>
+              <span class="mono" style="font-size: 11px; color: #5b6472">Google недоступен с 09:14</span>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: #5b6472">Свои данные показываются как обычно.</div>
+        </div>
+        <div class="sub">Обязательное состояние по ADR-0012: недоступность внешнего сервиса не ломает календарь.</div>
+      </div>
+
+      <div class="panel" style="gap: 12px">
+        <div style="font-weight: 600">5 · Только чтение</div>
+        <div style="display: flex; flex-direction: column; gap: 9px; padding: 6px 0">
+          <div style="display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: 4px; background: #f0f2f5; border: 1px solid #dfe3e8">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#5b6472" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 1px"><path d="M1.9 10S4.9 4.9 10 4.9 18.1 10 18.1 10 15.1 15.1 10 15.1 1.9 10 1.9 10z"/><circle cx="10" cy="10" r="2.4"/></svg>
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 12.5px; font-weight: 500">Изменение недоступно</span>
+              <span style="font-size: 11.5px; color: #5b6472">Отметку о выполнении ставит SETA</span>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: #5b6472">Кнопка не прячется — она объясняет, где действие живёт.</div>
+        </div>
+        <div class="sub">Следствие ADR-0015: владение разделено по полям, и это видно пользователю.</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"density":{"editor":"enum","default":"Просторно","options":["Просторно","Плотно"],"section":"Раскладка"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dense = (this.props.density ?? 'Просторно') === 'Плотно';
+    return {
+      rowPad: dense ? '7px 14px' : '12px 14px',
+      ctrlH: dense ? '30px' : '36px',
+      densityName: dense ? 'плотно · строка 36 px · контрол 30 px' : 'просторно · строка 46 px · контрол 36 px'
+    };
+  }
+}
+</script>
+</body>
+</html>

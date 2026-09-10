@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "pydantic>=2.9",
+    "pydantic[email]>=2.9",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
@@ -17,6 +17,8 @@ dependencies = [
     "structlog>=24.4",
     "redis>=5.2",
     "arq>=0.26",
+    "argon2-cffi>=25.1.0",
+    "pyjwt>=2.13.0",
 ]
 
 [dependency-groups]
@@ -116,13 +118,24 @@ markers = [
     "slow: длительный тест, не входит в быстрый прогон",
 ]
 
+# SQLAlchemy выполняет запросы к базе в гринлете. Без этой строки coverage теряет
+# трассировку после каждого «await» к базе и не видит весь остаток функции: сервис
+# входа показывал 61 % при полностью покрытых тестами ветках. Цифра, которой нельзя
+# верить, хуже отсутствующей — по ней принимают решение «тут тестов мало».
+[tool.coverage.run]
+concurrency = ["greenlet", "thread"]
+
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
 
 # --------------------------------------------------------------------------
 # import-linter — границы слоёв из CLAUDE.md.
-# Правило: api → services → domain; services → repos/adapters через порты.
-# Обратные импорты запрещены.
+# Порядок сверху вниз: api → workers → services → adapters → repos → domain.
+#
+# adapters стоит НАД repos, а не рядом: адаптер внешней системы почти всегда
+# работает с данными — провайдер входа сверяет пароль с хешем в базе, отправщик
+# уведомлений отмечает факт отправки. Обратное запрещено и остаётся запрещённым:
+# репозиторий не имеет права звонить в Telegram.
 # --------------------------------------------------------------------------
 [tool.importlinter]
 root_package = "app"
@@ -135,7 +148,8 @@ layers = [
     "app.api",
     "app.workers",
     "app.services",
-    "app.repos | app.adapters",
+    "app.adapters",
+    "app.repos",
     "app.domain",
 ]
 

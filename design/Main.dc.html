@@ -1,0 +1,369 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #f6f7f9; color: #14181f;
+      font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Liberation Sans', sans-serif;
+      font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #1c5fd6; text-decoration: none; }
+    a:hover { color: #164ead; text-decoration: underline; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace; }
+    .lbl { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+      font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #5b6472; }
+  </style>
+</helmet>
+
+<div style="width: 1180px; padding: 40px 44px 52px; display: flex; flex-direction: column; gap: 40px">
+
+  <!-- Шапка -->
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; border-bottom: 2px solid #14181f; padding-bottom: 20px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div class="lbl">Агентство «Ўзбеккосмос» · аппарат заместителя директора</div>
+      <div style="font-size: 34px; font-weight: 600; letter-spacing: .04em; line-height: 1.15">ORBITA</div>
+      <div style="font-size: 18px; color: #5b6472">Эталонная дизайн-система</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; text-align: right">
+      <div class="lbl">Источник</div>
+      <div class="mono" style="font-size: 12px; color: #14181f">frontend/src/styles/tokens.css</div>
+      <div class="mono" style="font-size: 12px; color: #5b6472">10.09.2026 · светлая тема</div>
+    </div>
+  </div>
+
+  <!-- Принцип -->
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px">
+    <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+      <div class="lbl">Принцип 01</div>
+      <div style="font-size: 16px; font-weight: 600">Цвет — носитель смысла</div>
+      <div style="color: #5b6472">Он кодирует состояние проекта, приоритет задачи и зону риска по сроку. Прямые значения цвета в компонентах запрещены — только переменные.</div>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+      <div class="lbl">Принцип 02</div>
+      <div style="font-size: 16px; font-weight: 600">Цвет считает сервер</div>
+      <div style="color: #5b6472">Светофор приходит из API одним правилом для проекта и задачи. Вычислять его в интерфейсе — значит развести дашборд и списки в оценке одной записи.</div>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+      <div class="lbl">Принцип 03</div>
+      <div style="font-size: 16px; font-weight: 600">Цвет никогда не один</div>
+      <div style="color: #5b6472">У каждого цветового признака есть подпись или значок: цвет сам по себе не читается программой чтения с экрана и теряется при печати.</div>
+    </div>
+  </div>
+
+  <!-- ЦВЕТ -->
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid #dfe3e8; padding-bottom: 10px">
+      <div style="font-size: 22px; font-weight: 600">Палитра</div>
+      <div style="color: #5b6472">Существующие токены сохранены без изменений. Новое отмечено меткой.</div>
+    </div>
+
+    <div class="lbl">Поверхности и текст</div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 56px; background: #f6f7f9; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 2px">
+          <div class="mono" style="font-size: 11px; color: #14181f">--color-bg</div>
+          <div class="mono" style="font-size: 11px; color: #5b6472">#f6f7f9 · фон приложения</div>
+        </div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 56px; background: #ffffff; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 2px">
+          <div class="mono" style="font-size: 11px; color: #14181f">--color-surface</div>
+          <div class="mono" style="font-size: 11px; color: #5b6472">#ffffff · карточки, панели</div>
+        </div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 56px; background: #f0f2f5; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 2px">
+          <div class="mono" style="font-size: 11px; color: #14181f">--color-surface-muted</div>
+          <div class="mono" style="font-size: 11px; color: #5b6472">#f0f2f5 · шапки таблиц</div>
+        </div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 56px; background: #14181f; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 2px">
+          <div class="mono" style="font-size: 11px; color: #14181f">--color-text</div>
+          <div class="mono" style="font-size: 11px; color: #5b6472">#14181f · основной текст</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 44px; background: #5b6472; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 8px 12px"><div class="mono" style="font-size: 11px">--color-text-muted · #5b6472</div></div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 44px; background: #dfe3e8; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 8px 12px"><div class="mono" style="font-size: 11px">--color-border · #dfe3e8</div></div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 44px; background: #c3c9d2; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 8px 12px"><div class="mono" style="font-size: 11px">--color-border-strong · #c3c9d2</div></div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 44px; background: #e7efff; border-bottom: 1px solid #dfe3e8"></div>
+        <div style="padding: 8px 12px"><div class="mono" style="font-size: 11px">--color-accent-soft · #e7efff</div></div>
+      </div>
+    </div>
+
+    <div class="lbl">Акцент — единственный неситуативный цвет</div>
+    <div style="display: flex; gap: 12px; align-items: stretch">
+      <div style="flex-grow: 1; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff; display: flex">
+        <div style="width: 180px; background: {{accent}}"></div>
+        <div style="padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; justify-content: center">
+          <div class="mono" style="font-size: 12px; color: #14181f">--color-accent · --color-focus</div>
+          <div style="color: #5b6472">Действие, ссылка, активный пункт меню, кольцо фокуса. Не используется для состояния — состояние всегда говорит светофором.</div>
+        </div>
+      </div>
+      <div style="width: 220px; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 40px; background: #164ead"></div>
+        <div style="padding: 8px 12px"><div class="mono" style="font-size: 11px">--color-accent-hover</div><div class="mono" style="font-size: 11px; color: #5b6472">#164ead</div></div>
+      </div>
+    </div>
+
+    <div class="lbl">Светофор актуальности — ТЗ 6.4, ADR-0005</div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; background: #ffffff; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #1f8a4c; flex: none"></span>
+          <span style="font-weight: 600">По плану</span>
+        </div>
+        <div style="height: 26px; border-radius: 4px; background: #e3f5ea; border: 1px solid #1f8a4c33"></div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">#1f8a4c · #e3f5ea</div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; background: #ffffff; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #b8770a; flex: none"></span>
+          <span style="font-weight: 600">Риск срыва</span>
+        </div>
+        <div style="height: 26px; border-radius: 4px; background: #fdf1da; border: 1px solid #b8770a33"></div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">#b8770a · #fdf1da</div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; background: #ffffff; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #c0392b; flex: none"></span>
+          <span style="font-weight: 600">Просрочено</span>
+        </div>
+        <div style="height: 26px; border-radius: 4px; background: #fbe6e3; border: 1px solid #c0392b33"></div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">#c0392b · #fbe6e3</div>
+      </div>
+      <div style="border: 1px solid #dfe3e8; border-radius: 8px; background: #ffffff; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #6b7280; flex: none"></span>
+          <span style="font-weight: 600">Вне светофора</span>
+        </div>
+        <div style="height: 26px; border-radius: 4px; background: #eef0f3; border: 1px solid #6b728033"></div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">#6b7280 · #eef0f3</div>
+      </div>
+    </div>
+    <div style="color: #5b6472; padding-left: 2px">Серый обязателен: завершённые и отменённые исключены из светофора, иначе «всё зелёное» перестаёт что-либо значить.</div>
+
+    <div class="lbl">Статусы проекта — ТЗ 7, редактируемый справочник</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #ffffff; border: 1px solid #dfe3e8"><span style="width: 8px; height: 8px; border-radius: 2px; background: #6b7280"></span>Инициация</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #ffffff; border: 1px solid #dfe3e8"><span style="width: 8px; height: 8px; border-radius: 2px; background: #1c5fd6"></span>В работе</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #ffffff; border: 1px solid #dfe3e8"><span style="width: 8px; height: 8px; border-radius: 2px; background: #b8770a"></span>Приостановлен</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #ffffff; border: 1px solid #dfe3e8"><span style="width: 8px; height: 8px; border-radius: 2px; background: #7c3aed"></span>На контроле руководителя</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #ffffff; border: 1px solid #dfe3e8"><span style="width: 8px; height: 8px; border-radius: 2px; background: #1f8a4c"></span>Завершён</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #ffffff; border: 1px solid #dfe3e8"><span style="width: 8px; height: 8px; border-radius: 2px; background: #8a8f98"></span>Отменён</span>
+    </div>
+
+    <div class="lbl">Приоритеты — ТЗ 7</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #fbe6e3; color: #c0392b; font-weight: 500">Срочный</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #fdefe0; color: #d9730d; font-weight: 500">Высокий</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #e7efff; color: #1c5fd6; font-weight: 500">Обычный</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 4px; background: #eef0f3; color: #6b7280; font-weight: 500">Низкий</span>
+    </div>
+
+    <div class="lbl">Сигнал «молчит» — единственный новый смысл в палитре</div>
+    <div style="display: flex; gap: 12px">
+      <div style="width: 300px; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; background: #ffffff">
+        <div style="height: 44px; background: #546b8a"></div>
+        <div style="padding: 10px 12px"><div class="mono" style="font-size: 11px">--color-signal-silent · #546b8a</div><div class="mono" style="font-size: 11px; color: #5b6472">фон #e9eef4</div></div>
+      </div>
+      <div style="flex-grow: 1; border: 1px solid #dfe3e8; border-radius: 8px; background: #ffffff; padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; justify-content: center">
+        <div style="color: #5b6472">Проект зелёный, потому что срок не наступил, но по нему нет движения дольше порога. На светофоре он невидим до дня, когда становится красным — поэтому у него собственный признак, а не оттенок жёлтого.</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px">
+          <span style="display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 4px; background: #e9eef4; color: #546b8a; font-weight: 500">Молчит 21 день</span>
+          <span class="mono" style="font-size: 11px; color: #5b6472">порог в справочнике настроек</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ТИПОГРАФИКА -->
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid #dfe3e8; padding-bottom: 10px">
+      <div style="font-size: 22px; font-weight: 600">Типографика</div>
+      <div style="color: #5b6472">Системный стек: покрывает кириллицу, узбекскую кириллицу и латиницу с диакритикой без подгрузки шрифтов</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px">
+      <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px">
+        <div class="lbl">Шкала</div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">display · 34px</span><span style="font-size: 34px; font-weight: 600; line-height: 1.15">ORBITA</span></div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">2xl · 28px</span><span style="font-size: 28px; font-weight: 600; line-height: 1.25">Портфель проектов</span></div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">xl · 22px</span><span style="font-size: 22px; font-weight: 600; line-height: 1.25">Требует внимания</span></div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">lg · 18px</span><span style="font-size: 18px; font-weight: 600">Заголовок карточки</span></div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">md · 16px</span><span style="font-size: 16px">Подзаголовок и вводный текст</span></div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">sm · 14px</span><span style="font-size: 14px">Основной размер интерфейса</span></div>
+        <div style="display: flex; align-items: baseline; gap: 16px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 108px; flex: none">xs · 12px</span><span style="font-size: 12px">Подписи, метки, служебное</span></div>
+        <div style="color: #5b6472; font-size: 12px; border-top: 1px solid #dfe3e8; padding-top: 10px; margin-top: 2px">Шкала описывает текст. Кроме неё в системе есть три служебные ступени, и они тоже правило, а не самодеятельность: <span class="mono" style="font-size: 11px">15px</span> — заголовок карточки в плотной сетке, <span class="mono" style="font-size: 11px">13px</span> и <span class="mono" style="font-size: 11px">11.5px</span> — строки списков на телефоне, <span class="mono" style="font-size: 11px">26px</span> — крупная цифра показателя, у которой <span class="mono" style="font-size: 11px">line-height: 1</span>. Ниже 11px не опускается ничто.</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 20px">
+        <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px">
+          <div class="lbl">Три письменности — обязательны с первого экрана</div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="display: flex; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 72px; flex: none">ru</span><span style="font-size: 16px">Космический мониторинг · Узбекистан</span></div>
+            <div style="display: flex; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 72px; flex: none">uz-Cyrl</span><span style="font-size: 16px">Космик мониторинг · Ўзбекистон</span></div>
+            <div style="display: flex; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 72px; flex: none">uz-Latn</span><span style="font-size: 16px">Kosmik monitoring · Oʻzbekiston</span></div>
+          </div>
+          <div style="color: #5b6472; font-size: 12px">Каждая строка написана одним алфавитом целиком: смешанные латиница и кириллица ломают и поиск, и сортировку. Проверочные знаки — ў қ ғ ҳ и okina в Oʻzbekiston, gʻalaba.</div>
+        </div>
+
+        <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px">
+          <div class="lbl">Начертания и цифры</div>
+          <div style="display: flex; gap: 20px; flex-wrap: wrap">
+            <span style="font-weight: 400">400 обычный</span>
+            <span style="font-weight: 500">500 средний</span>
+            <span style="font-weight: 600">600 полужирный</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 14px">
+            <span class="mono" style="font-size: 11px; color: #5b6472">tabular-nums</span>
+            <span class="mono" style="font-size: 18px; font-variant-numeric: tabular-nums">28 · 147 · 09.09.2026</span>
+          </div>
+          <div style="color: #5b6472; font-size: 12px">Везде, где цифры выстраиваются в столбец: показатели, таблицы, сроки.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- РИТМ -->
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid #dfe3e8; padding-bottom: 10px">
+      <div style="font-size: 22px; font-weight: 600">Ритм, форма, глубина</div>
+      <div style="color: #5b6472">Шаг 4 px. Промежутки задаёт раскладка через gap, а не поля у каждого элемента</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 20px">
+      <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 12px">
+        <div class="lbl">Шкала отступов</div>
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-1 · 4</span><span style="height: 12px; width: 4px; background: #1c5fd6; border-radius: 2px"></span></div>
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-2 · 8</span><span style="height: 12px; width: 8px; background: #1c5fd6; border-radius: 2px"></span></div>
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-3 · 12</span><span style="height: 12px; width: 12px; background: #1c5fd6; border-radius: 2px"></span></div>
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-4 · 16</span><span style="height: 12px; width: 16px; background: #1c5fd6; border-radius: 2px"></span></div>
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-5 · 24</span><span style="height: 12px; width: 24px; background: #1c5fd6; border-radius: 2px"></span></div>
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-6 · 32</span><span style="height: 12px; width: 32px; background: #1c5fd6; border-radius: 2px"></span></div>
+          <div style="display: flex; align-items: center; gap: 14px"><span class="mono" style="font-size: 11px; color: #5b6472; width: 96px; flex: none">space-8 · 48</span><span style="height: 12px; width: 48px; background: #1c5fd6; border-radius: 2px"></span></div>
+        </div>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px">
+        <div class="lbl">Скругления</div>
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 34px; background: #f0f2f5; border: 1px solid #c3c9d2; border-radius: 4px; flex: none"></span><span class="mono" style="font-size: 11px; color: #5b6472">sm · 4 · поля, чипы</span></div>
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 34px; background: #f0f2f5; border: 1px solid #c3c9d2; border-radius: 8px; flex: none"></span><span class="mono" style="font-size: 11px; color: #5b6472">md · 8 · карточки</span></div>
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 34px; background: #f0f2f5; border: 1px solid #c3c9d2; border-radius: 12px; flex: none"></span><span class="mono" style="font-size: 11px; color: #5b6472">lg · 12 · панели</span></div>
+        </div>
+        <div style="color: #5b6472; font-size: 12px">Одно скругление на всё — верный признак того, что иерархию не выстраивали.</div>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px">
+        <div class="lbl">Глубина</div>
+        <div style="display: flex; flex-direction: column; gap: 14px">
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 34px; background: #ffffff; border-radius: 8px; box-shadow: 0 1px 2px rgb(20 24 31 / 8%); flex: none"></span><span class="mono" style="font-size: 11px; color: #5b6472">shadow-sm · карточка</span></div>
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 34px; background: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgb(20 24 31 / 10%); flex: none"></span><span class="mono" style="font-size: 11px; color: #5b6472">shadow-md · всплывающее</span></div>
+        </div>
+        <div style="color: #5b6472; font-size: 12px">Две ступени и всё. Плоскость по умолчанию, тень — только у того, что действительно лежит поверх.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- НОВЫЕ ТОКЕНЫ -->
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid #dfe3e8; padding-bottom: 10px">
+      <div style="font-size: 22px; font-weight: 600">Что добавляется в tokens.css</div>
+      <div style="color: #5b6472">Пробелы, которых в системе не было, — заполняются здесь</div>
+    </div>
+
+    <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; gap: 0; background: #f0f2f5; border-bottom: 1px solid #dfe3e8">
+        <div class="lbl" style="padding: 10px 18px">Токен</div>
+        <div class="lbl" style="padding: 10px 18px">Значение</div>
+        <div class="lbl" style="padding: 10px 18px">Зачем</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--color-signal-silent</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">#546b8a</div>
+        <div style="padding: 11px 18px; color: #5b6472">Проект без движения. Главный показатель: он зелёный и потому невидим</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--color-priority-high-soft</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">#fdefe0</div>
+        <div style="padding: 11px 18px; color: #5b6472">У приоритета «Высокий» не было мягкого фона — чип нечем было залить</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--color-status-awaiting-decision-soft</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">#f3ebfd</div>
+        <div style="padding: 11px 18px; color: #5b6472">То же для статуса «На контроле руководителя»</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--motion-instant</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">90ms ease-out</div>
+        <div style="padding: 11px 18px; color: #5b6472">Наведение и фокус — быстрее восприятия задержки</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #5b6472">--transition-fast</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">120ms ease</div>
+        <div style="padding: 11px 18px; color: #5b6472">Уже есть. Смена цвета и фона</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--motion-base</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">200ms · вход</div>
+        <div style="padding: 11px 18px; color: #5b6472">Появление карточек, раскрытие панели</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--motion-slow</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">320ms · вход</div>
+        <div style="padding: 11px 18px; color: #5b6472">Смена экрана, включение режима показа</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--touch-target-min</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">44px</div>
+        <div style="padding: 11px 18px; color: #5b6472">ADR-0019: руководитель работает с телефона, и это теперь основной вид</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr; border-bottom: 1px solid #dfe3e8">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--icon-sm / md / lg</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">16 / 20 / 24</div>
+        <div style="padding: 11px 18px; color: #5b6472">Иконок в системе не было вовсе</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 260px 200px 1fr">
+        <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--icon-stroke</div>
+        <div class="mono" style="padding: 11px 18px; font-size: 12px">1.5</div>
+        <div style="padding: 11px 18px; color: #5b6472">Одна толщина на весь набор, иначе значки не читаются как семья</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#1c5fd6","section":"Палитра"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#1c5fd6' };
+  }
+}
+</script>
+</body>
+</html>

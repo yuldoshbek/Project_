@@ -177,13 +177,13 @@ class TestReading:
 
 
 class TestApi:
-    async def test_dictionaries_come_in_all_three_scripts(self, api: AsyncClient) -> None:
+    async def test_dictionaries_come_in_all_three_scripts(self, assistant_api: AsyncClient) -> None:
         """Ответ содержит все три письменности сразу.
 
         Иначе переключение языка потребовало бы нового запроса, а по ORB-005 язык
         меняется без перезагрузки.
         """
-        response = await api.get("/api/v1/dictionaries")
+        response = await assistant_api.get("/api/v1/dictionaries")
 
         assert response.status_code == 200
         body = response.json()
@@ -193,8 +193,10 @@ class TestApi:
         assert set(first["name"]) == {"ru", "uz_cyrl", "uz_latn"}
         assert all(value.strip() for value in first["name"].values())
 
-    async def test_dictionaries_carry_flags_needed_by_the_interface(self, api: AsyncClient) -> None:
-        body = (await api.get("/api/v1/dictionaries")).json()
+    async def test_dictionaries_carry_flags_needed_by_the_interface(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        body = (await assistant_api.get("/api/v1/dictionaries")).json()
 
         awaiting = next(
             item for item in body["project_statuses"] if item["code"] == "awaiting_decision"
@@ -205,16 +207,16 @@ class TestApi:
         urgent = next(item for item in body["priorities"] if item["code"] == "urgent")
         assert urgent["warn_days_override"] == 0
 
-    async def test_settings_are_readable(self, api: AsyncClient) -> None:
-        body = (await api.get("/api/v1/settings")).json()
+    async def test_settings_are_readable(self, assistant_api: AsyncClient) -> None:
+        body = (await assistant_api.get("/api/v1/settings")).json()
 
         assert body[SettingKey.WARN_DAYS] == 3
         assert body[SettingKey.STAGNATION_DAYS] == 14
         assert body[SettingKey.REMINDER_DAYS] == [1, 3, 7]
 
-    async def test_organizations_are_empty_until_entered(self, api: AsyncClient) -> None:
+    async def test_organizations_are_empty_until_entered(self, assistant_api: AsyncClient) -> None:
         """Организации сидами не заполняются: их вносит помощник по реальным партнёрам."""
-        response = await api.get("/api/v1/organizations")
+        response = await assistant_api.get("/api/v1/organizations")
 
         assert response.status_code == 200
         assert response.json() == []

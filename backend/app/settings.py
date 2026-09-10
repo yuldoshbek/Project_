@@ -15,12 +15,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, computed_field
+from pydantic import SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 Environment = Literal["development", "test", "production"]
+
+# RFC 7518, раздел 3.2: ключ HMAC-SHA256 должен быть не короче размера выхода хеша.
+MIN_SECRET_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -49,6 +52,11 @@ class Settings(BaseSettings):
     db_password: SecretStr = SecretStr("orbita")
     db_schema: str = "orbita"
 
+    # --- Вход (ADR-0001) ---
+    # local — адрес и пароль. Провайдер seta включится, когда у неё появится API;
+    # менять придётся только это значение.
+    identity_provider: str = "local"
+
     # --- Redis ---
     redis_url: str = "redis://127.0.0.1:56379/0"
 
@@ -56,6 +64,22 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # В разработке читаемый вывод, в остальных случаях JSON для сбора логов.
     log_json: bool | None = None
+
+    @field_validator("secret_key")
+    @classmethod
+    def _secret_key_is_long_enough(cls, value: SecretStr) -> SecretStr:
+        """Ключ короче 32 байт ослабляет подпись токенов (RFC 7518, раздел 3.2).
+
+        Проверка на старте, а не предупреждение в логах: предупреждение о слабом
+        ключе читают ровно один раз, а живёт такой ключ годами.
+        Сгенерировать: python -c "import secrets; print(secrets.token_urlsafe(48))"
+        """
+        if len(value.get_secret_value()) < MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                f"ORBITA_SECRET_KEY короче {MIN_SECRET_KEY_LENGTH} символов. "
+                'Сгенерируйте: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        return value
 
     @computed_field  # type: ignore[prop-decorator]
     @property
