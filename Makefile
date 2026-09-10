@@ -52,6 +52,12 @@ heads: ## Проверить, что голова миграций одна
 seed: ## Загрузить справочники и демо-данные
 	cd $(BACKEND) && uv run python -m app.seed
 
+worker: ## Запустить воркер фоновых задач
+	cd $(BACKEND) && uv run arq app.workers.main.WorkerSettings
+
+worker-health: ## Проверить, что воркер жив
+	cd $(BACKEND) && uv run arq --check app.workers.main.WorkerSettings
+
 dev: ## Запустить backend и frontend
 	@echo "Backend: http://localhost:8000   Frontend: http://localhost:5173"
 	@$(MAKE) -j2 dev-back dev-front
