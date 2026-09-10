@@ -40,3 +40,7 @@ Thumbs.db
 
 # Локальные настройки Claude Code
 .claude/settings.local.json
+
+# Собранный холст дизайн-системы: 2,6 МБ редактора вокруг наших листов.
+# Источник — design/*.dc.html и design/canvas.json, холст пересобирается из них.
+design/orbita-design-system.html

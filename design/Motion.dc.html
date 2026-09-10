@@ -1,0 +1,211 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #f6f7f9; color: #14181f;
+      font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Liberation Sans', sans-serif;
+      font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #1c5fd6; text-decoration: none; }
+    a:hover { color: #164ead; text-decoration: underline; }
+    .lbl { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+      font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #5b6472; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace; }
+    .demo { background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px;
+      padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+    .demoStage { background: #f6f7f9; border: 1px solid #dfe3e8; border-radius: 4px;
+      padding: 14px; min-height: 96px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+
+    /* 1. Шиммер загрузки — уже в системе */
+    .sk { border-radius: 4px; height: 12px;
+      background: linear-gradient(90deg, #f0f2f5 25%, #dfe3e8 37%, #f0f2f5 63%);
+      background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+    @keyframes shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+
+    /* 2. Появление лесенкой — только transform и opacity */
+    .rise { background: #ffffff; border: 1px solid #dfe3e8; border-radius: 4px;
+      padding: 8px 11px; display: flex; align-items: center; gap: 9px;
+      animation: rise 3.6s cubic-bezier(.2,0,0,1) infinite; }
+    .rise:nth-child(2) { animation-delay: .06s; }
+    .rise:nth-child(3) { animation-delay: .12s; }
+    @keyframes rise {
+      0%   { opacity: 0; transform: translateY(8px); }
+      9%   { opacity: 1; transform: translateY(0); }
+      92%  { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(8px); }
+    }
+
+    /* 3. Синхронизация — scaleX, а не width */
+    .syncTrack { height: 6px; border-radius: 3px; background: #e7efff; overflow: hidden; }
+    .syncFill { height: 100%; background: #1c5fd6; transform-origin: left center;
+      animation: fill 2.8s cubic-bezier(.2,0,0,1) infinite; }
+    @keyframes fill {
+      0%   { transform: scaleX(.04); }
+      70%  { transform: scaleX(1); }
+      100% { transform: scaleX(1); }
+    }
+    .spin { animation: spin 1.6s linear infinite; transform-origin: 50% 50%; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 4. Смена светофора */
+    .tl { width: 12px; height: 12px; border-radius: 50%; animation: tl 6s steps(1) infinite; }
+    @keyframes tl {
+      0%, 32%   { background: #1f8a4c; }
+      33%, 65%  { background: #b8770a; }
+      66%, 100% { background: #c0392b; }
+    }
+    .tlLabel { animation: tlText 6s steps(1) infinite; }
+    @keyframes tlText {
+      0%, 32%   { color: #1f8a4c; }
+      33%, 65%  { color: #b8770a; }
+      66%, 100% { color: #c0392b; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sk, .rise, .syncFill, .spin, .tl, .tlLabel {
+        animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+        opacity: 1 !important; transform: none !important;
+      }
+    }
+  </style>
+</helmet>
+
+<div style="width: 900px; padding: 36px 40px 44px; display: flex; flex-direction: column; gap: 26px">
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; border-bottom: 2px solid #14181f; padding-bottom: 16px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <div class="lbl">ORBITA · дизайн-система</div>
+      <div style="font-size: 28px; font-weight: 600; line-height: 1.2">Движение</div>
+      <div style="color: #5b6472">Анимация здесь объясняет, что изменилось и откуда взялось. Всё, что не объясняет, — не делается</div>
+    </div>
+    <div class="mono" style="font-size: 12px; color: #5b6472; text-align: right; flex: none">4 длительности<br>2 свойства</div>
+  </div>
+
+  <!-- Правило -->
+  <div style="background: #e7efff; border-left: 3px solid #1c5fd6; border-radius: 0 8px 8px 0; padding: 16px 20px; display: flex; flex-direction: column; gap: 6px">
+    <div style="font-weight: 600">Анимируются только <span class="mono">transform</span> и <span class="mono">opacity</span></div>
+    <div style="color: #5b6472">Это единственные два свойства, которые браузер меняет без пересчёта раскладки. Анимация <span class="mono" style="font-size: 12px">height</span>, <span class="mono" style="font-size: 12px">width</span>, <span class="mono" style="font-size: 12px">top</span> или <span class="mono" style="font-size: 12px">left</span> даёт рывки на списке из двухсот проектов — там, где плавность нужнее всего. Цвет и фон — исключение: их меняет <span class="mono" style="font-size: 12px">--transition-fast</span>, и они не двигают раскладку.</div>
+  </div>
+
+  <!-- Шкала -->
+  <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden">
+    <div style="display: grid; grid-template-columns: 170px 210px 1fr; background: #f0f2f5; border-bottom: 1px solid #dfe3e8">
+      <div class="lbl" style="padding: 10px 18px">Токен</div>
+      <div class="lbl" style="padding: 10px 18px">Кривая</div>
+      <div class="lbl" style="padding: 10px 18px">Где</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 170px 210px 1fr; border-bottom: 1px solid #dfe3e8">
+      <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--motion-instant<br><span style="color: #5b6472">90ms</span></div>
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">ease-out</div>
+      <div style="padding: 11px 18px; color: #5b6472">Наведение, нажатие, кольцо фокуса. Медленнее — и отклик читается как задержка</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 170px 210px 1fr; border-bottom: 1px solid #dfe3e8">
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">--transition-fast<br><span style="color: #5b6472">120ms</span></div>
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">ease</div>
+      <div style="padding: 11px 18px; color: #5b6472">Смена цвета и фона: пункт меню, статус, светофор. Уже в системе</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 170px 210px 1fr; border-bottom: 1px solid #dfe3e8">
+      <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--motion-base<br><span style="color: #5b6472">200ms</span></div>
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">cubic-bezier(.2,0,0,1)</div>
+      <div style="padding: 11px 18px; color: #5b6472">Появление карточек и строк, раскрытие панели свойств, всплывающее меню</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 170px 210px 1fr; border-bottom: 1px solid #dfe3e8">
+      <div class="mono" style="padding: 11px 18px; font-size: 12px; color: #1c5fd6">--motion-slow<br><span style="color: #5b6472">320ms</span></div>
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">cubic-bezier(.2,0,0,1)</div>
+      <div style="padding: 11px 18px; color: #5b6472">Смена экрана, включение режима показа, разворот карточки проекта из списка</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 170px 210px 1fr">
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">shimmer<br><span style="color: #5b6472">1.4s</span></div>
+      <div class="mono" style="padding: 11px 18px; font-size: 12px">ease infinite</div>
+      <div style="padding: 11px 18px; color: #5b6472">Единственная бесконечная анимация в системе. Всё остальное имеет конец</div>
+    </div>
+  </div>
+
+  <!-- Живые примеры -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+
+    <div class="demo">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+        <div style="font-weight: 600">Загрузка данных</div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">shimmer 1.4s</div>
+      </div>
+      <div class="demoStage">
+        <div class="sk" style="width: 45%"></div>
+        <div class="sk" style="width: 100%"></div>
+        <div class="sk" style="width: 82%"></div>
+        <div class="sk" style="width: 64%"></div>
+      </div>
+      <div style="color: #5b6472; font-size: 12px">Заглушка повторяет форму того, что грузится, — не крутящийся кружок посреди пустоты. Скрыта от программ чтения: им о загрузке говорит <span class="mono" style="font-size: 11px">aria-busy</span>.</div>
+    </div>
+
+    <div class="demo">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+        <div style="font-weight: 600">Появление списка</div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">200ms · сдвиг 60ms</div>
+      </div>
+      <div class="demoStage">
+        <div class="rise"><span style="width: 10px; height: 10px; border-radius: 50%; background: #c0392b; flex: none"></span><span style="font-size: 13px">Соглашение с ESA</span></div>
+        <div class="rise"><span style="width: 10px; height: 10px; border-radius: 50%; background: #b8770a; flex: none"></span><span style="font-size: 13px">Мониторинг водных объектов</span></div>
+        <div class="rise"><span style="width: 10px; height: 10px; border-radius: 50%; background: #1f8a4c; flex: none"></span><span style="font-size: 13px">Регламент ДЗЗ</span></div>
+      </div>
+      <div style="color: #5b6472; font-size: 12px">Сдвиг между строками — 60 мс и не больше трёх строк подряд. На двадцати строках лесенка превращается в ожидание.</div>
+    </div>
+
+    <div class="demo">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+        <div style="font-weight: 600">Синхронизация с Google</div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">scaleX, не width</div>
+      </div>
+      <div class="demoStage">
+        <div style="display: flex; align-items: center; gap: 9px">
+          <svg class="spin" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#1c5fd6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.75 4.75v4h-4"/><path d="M3.25 15.25v-4h4"/><path d="M16.4 8.75A6.75 6.75 0 0 0 4.4 6.6L3.25 7.75"/><path d="M3.6 11.25a6.75 6.75 0 0 0 12 2.15l1.15-1.15"/></svg>
+          <span style="font-size: 13px; color: #5b6472">Читаем встречи из календаря руководителя</span>
+        </div>
+        <div class="syncTrack"><div class="syncFill"></div></div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">последняя синхронизация 4 минуты назад</div>
+      </div>
+      <div style="color: #5b6472; font-size: 12px">Полоса растёт через <span class="mono" style="font-size: 11px">transform: scaleX</span> от левого края. Анимация ширины пересчитывала бы раскладку календаря шестьдесят раз в секунду.</div>
+    </div>
+
+    <div class="demo">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+        <div style="font-weight: 600">Смена состояния</div>
+        <div class="mono" style="font-size: 11px; color: #5b6472">120ms · цвет</div>
+      </div>
+      <div class="demoStage">
+        <div style="background: #ffffff; border: 1px solid #dfe3e8; border-radius: 4px; padding: 11px 13px; display: flex; align-items: center; gap: 10px">
+          <span class="tl" style="flex: none"></span>
+          <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0">
+            <span style="font-size: 13px; font-weight: 500">Программа мониторинга недр</span>
+            <span class="tlLabel mono" style="font-size: 11px">состояние меняется от хода времени</span>
+          </div>
+        </div>
+        <div style="color: #5b6472; font-size: 12px; line-height: 1.4">Цвет меняется сам, без действия человека, — поэтому переход обязан быть заметным, но коротким.</div>
+      </div>
+      <div style="color: #5b6472; font-size: 12px">Мигание и пульсация запрещены: в системе, где красное — норма рабочего дня, пульсирующий индикатор перестают видеть за неделю.</div>
+    </div>
+
+  </div>
+
+  <!-- Отказ от движения -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-top: 1px solid #dfe3e8; padding-top: 20px">
+    <div style="display: flex; flex-direction: column; gap: 5px">
+      <div style="font-weight: 600">Уважение к настройке системы</div>
+      <div style="color: #5b6472"><span class="mono" style="font-size: 12px">prefers-reduced-motion</span> уже обработан в <span class="mono" style="font-size: 12px">global.css</span> глобально: длительности схлопываются до 0.01 мс. Ни одна анимация не должна нести смысл, который пропадёт при её отключении.</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 5px">
+      <div style="font-weight: 600">Чего в системе нет</div>
+      <div style="color: #5b6472">Параллакса, анимации при прокрутке, появления блоков по мере доскроливания, отскоков и пружин. Руководитель открывает экран, чтобы за полминуты понять картину, а не смотреть, как она собирается.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
