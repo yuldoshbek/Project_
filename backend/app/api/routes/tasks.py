@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import datetime
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep
@@ -89,6 +92,7 @@ async def list_tasks(
     session: SessionDep,
     project_id: Annotated[uuid.UUID | None, Query()] = None,
     direction_id: Annotated[uuid.UUID | None, Query(description="Через проект")] = None,
+    curator_person_id: Annotated[uuid.UUID | None, Query(description="Куратор проекта")] = None,
     assignee_person_id: Annotated[uuid.UUID | None, Query()] = None,
     status: Annotated[TaskStatus | None, Query()] = None,
     priority_code: Annotated[str | None, Query()] = None,
@@ -107,6 +111,7 @@ async def list_tasks(
         service.TaskFilter(
             project_id=project_id,
             direction_id=direction_id,
+            curator_person_id=curator_person_id,
             assignee_person_id=assignee_person_id,
             status=status,
             priority_code=priority_code,
@@ -120,6 +125,102 @@ async def list_tasks(
         descending=descending,
     )
     return [TaskResponse.of(item) for item in rows]
+
+
+# Выгрузка объявлена **до** `/tasks/{task_id}`, и это не вкусовщина: FastAPI берёт
+# первый подошедший маршрут, и `export.csv` иначе попадает в него как идентификатор.
+# Ответ при этом не «не найдено», а 422 про неразобранный UUID — и полчаса уходит на
+# поиск ошибки там, где её нет.
+CSV_COLUMNS = (
+    ("code", "Номер"),
+    ("title", "Название"),
+    ("status", "Статус"),
+    ("priority", "Приоритет"),
+    ("due_at", "Срок"),
+    ("is_overdue", "Просрочена"),
+    ("assignee", "Исполнитель"),
+    ("project", "Проект"),
+)
+
+
+@router.get("/tasks/export.csv", summary="Выгрузка выборки")
+async def export_tasks(
+    session: SessionDep,
+    settings: SettingsDep,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
+    direction_id: Annotated[uuid.UUID | None, Query()] = None,
+    curator_person_id: Annotated[uuid.UUID | None, Query()] = None,
+    assignee_person_id: Annotated[uuid.UUID | None, Query()] = None,
+    status: Annotated[TaskStatus | None, Query()] = None,
+    priority_code: Annotated[str | None, Query()] = None,
+    is_control: Annotated[bool | None, Query()] = None,
+    overdue: Annotated[bool | None, Query()] = None,
+    without_project: Annotated[bool | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    due_before: Annotated[datetime | None, Query()] = None,
+    sort_by: Annotated[str, Query()] = "due_at",
+    descending: Annotated[bool, Query()] = False,
+) -> Response:
+    """Та же выборка, что на экране, файлом.
+
+    Собирается на сервере, а не из того, что уже лежит на странице: выгрузка — точка
+    выхода наружу, и задачи закрытых проектов через неё не проходят (ADR-0007).
+    Собери файл в браузере — и проверка осталась бы на клиенте, то есть нигде.
+
+    Разделитель — точка с запятой, кодировка с меткой порядка байтов: Excel с русской
+    локалью иначе раскладывает CSV в одну колонку и портит кириллицу, и первое, что
+    делает человек, — закрывает файл.
+    """
+    rows = await service.list_for_export(
+        session,
+        service.TaskFilter(
+            project_id=project_id,
+            direction_id=direction_id,
+            curator_person_id=curator_person_id,
+            assignee_person_id=assignee_person_id,
+            status=status,
+            priority_code=priority_code,
+            is_control=is_control,
+            overdue=overdue,
+            without_project=without_project,
+            search=search,
+            due_before=due_before,
+        ),
+        sort_by=sort_by,
+        descending=descending,
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer.writerow([title for _, title in CSV_COLUMNS])
+    for item in rows:
+        writer.writerow([_cell(item, field, settings.timezone) for field, _ in CSV_COLUMNS])
+
+    return Response(
+        content=buffer.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        # Дата в имени: иначе в папке загрузок копятся «orbita-tasks (3).csv», и через
+        # неделю невозможно понять, какая выгрузка от какого числа.
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="orbita-tasks-{today_in(settings.timezone)}.csv"'
+            )
+        },
+    )
+
+
+def _cell(row: service.ExportRow, field: str, timezone: str) -> str:
+    value = getattr(row, field)
+    if field == "is_overdue":
+        return "да" if value else ""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        # Ташкентское время, а не UTC: хранение и показ — разные вещи (инвариант 5), а
+        # файл читает человек. Вид «14.09.2026 17:00» Excel с русской локалью распознаёт
+        # как дату, а не как строку, — иначе по сроку нельзя ни отсортировать, ни считать.
+        return value.astimezone(ZoneInfo(timezone)).strftime("%d.%m.%Y %H:%M")
+    return str(value)
 
 
 @router.post("/tasks", response_model=TaskResponse, status_code=201, summary="Новая задача")

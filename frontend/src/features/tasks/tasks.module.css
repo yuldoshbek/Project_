@@ -1,0 +1,333 @@
+/*
+ * База задач.
+ *
+ * Просрочка — выделение строки, а не отдельный статус: задача бывает «в работе» и
+ * просроченной одновременно (ADR-0004). Цвет несёт смысл и берётся из токенов.
+ */
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+}
+
+.count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.export {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-target-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.export {
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.export:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  text-decoration: none;
+}
+
+.export:disabled {
+  color: var(--color-text-muted);
+  cursor: progress;
+}
+
+.export:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.exportError {
+  margin: 0 0 var(--space-3);
+  color: var(--color-health-red);
+  font-size: var(--font-size-sm);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.filterLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.select,
+.search {
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.search {
+  flex: 1 1 200px;
+  min-width: 200px;
+}
+
+.select:focus-visible,
+.search:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target-min);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.columns {
+  margin-bottom: var(--space-3);
+}
+
+.columnsSummary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-target-min);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.columnsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.table th {
+  text-align: left;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.sortButton {
+  min-height: var(--tap-target-min);
+  padding: 0 var(--space-1);
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  color: var(--color-text);
+}
+
+.sortButton:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-surface-muted);
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Просроченная строка: полоса слева и мягкий фон. Не отдельный статус — статус у задачи
+   свой, и терять его нельзя (ADR-0004). */
+.overdue td {
+  background: var(--color-health-red-soft);
+}
+
+.overdue td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-health-red);
+}
+
+.overdueMark {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-health-red);
+  font-size: var(--font-size-xs);
+}
+
+/* Классы ячеек начинаются с `cell`, чтобы не столкнуться с `.title` заголовка
+   страницы: столкновение молча меняло кегль в таблице. */
+
+.cellCode {
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Название — то, что читают; выделено насыщенностью, а не кеглем. Крупнее — значит
+   перенос на две строки в каждой строке таблицы и вдвое меньше задач на экране. */
+.cellTitle {
+  width: 40%;
+  font-weight: 500;
+}
+
+.taskTitle {
+  display: block;
+}
+
+.cellStatus,
+.cellPriority {
+  white-space: nowrap;
+}
+
+.cellAssignee {
+  color: var(--color-text-muted);
+}
+
+.cellDue {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: var(--space-1);
+  }
+
+  .filter,
+  .search,
+  .toggle {
+    flex: 0 0 auto;
+  }
+
+  .select,
+  .search {
+    min-height: var(--tap-target-min);
+  }
+
+  .table,
+  .table tbody,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .table td {
+    padding: 2px 0;
+    border: none;
+    width: auto;
+  }
+
+  .table td.cellTitle {
+    width: 100%;
+    order: 2;
+    font-size: var(--font-size-md);
+  }
+
+  .table td.cellCode {
+    order: 1;
+  }
+
+  .table td.cellStatus,
+  .table td.cellPriority,
+  .table td.cellAssignee {
+    order: 3;
+    margin-right: var(--space-3);
+    color: var(--color-text-muted);
+  }
+
+  .table td.cellDue {
+    order: 1;
+    margin-left: auto;
+  }
+
+  /* На телефоне строка — карточка, и заливка принадлежит ей целиком. По ячейкам она
+     ложилась прорехами: между ячейками карточки есть промежутки, и просроченная задача
+     выглядела не выделенной, а неаккуратно закрашенной. */
+  /* Через `.table` — иначе правило слабее, чем `.table tr` выше, и карточка
+     остаётся белой: специфичность решает молча, порядок записи тут ни при чём. */
+  .table tr.overdue {
+    border-left: 3px solid var(--color-health-red);
+    background: var(--color-health-red-soft);
+  }
+
+  .overdue td,
+  .overdue td:first-child {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .tableWrap {
+    overflow-x: visible;
+    border: none;
+    background: transparent;
+  }
+}

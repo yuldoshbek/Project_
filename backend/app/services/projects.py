@@ -179,7 +179,6 @@ async def create(
     validate_progress(draft.progress_pct)
 
     project = Project(
-        code=await next_code(session, today=today),
         title=draft.title.strip(),
         description=draft.description,
         kind=draft.kind.value,
@@ -197,8 +196,7 @@ async def create(
         budget_note=draft.budget_note,
         created_by=created_by,
     )
-    session.add(project)
-    await session.flush()
+    await codes.add_with_code(session, project, assign=lambda: next_code(session, today=today))
     return project
 
 

@@ -35,6 +35,7 @@ function css(relative: string): string {
 const LAYOUT = css('./layout.module.css');
 const TOKENS = css('../styles/tokens.css');
 const PROJECTS = css('../features/projects/projects.module.css');
+const TASKS = css('../features/tasks/tasks.module.css');
 const PAGES = css('../pages/pages.module.css');
 
 function renderApp(path = '/projects') {
@@ -90,6 +91,7 @@ describe('правило целей нажатия', () => {
     for (const [name, source] of [
       ['layout', LAYOUT],
       ['projects', PROJECTS],
+      ['tasks', TASKS],
       ['pages', PAGES],
     ] as const) {
       expect(source, `${name}: цель нажатия задана числом мимо токена`).not.toMatch(
@@ -124,5 +126,37 @@ describe('узкий экран', () => {
     // Найдено замером: без `minmax(0, 1fr)` длинная строка в шапке уводила страницу
     // за край экрана на 726 px.
     expect(LAYOUT).toMatch(/grid-template-columns:\s*var\(--layout-sidebar-width\)\s*minmax\(0/);
+  });
+});
+
+describe('база задач на узком экране', () => {
+  const narrow = TASKS.slice(TASKS.indexOf('@media (max-width: 640px)'));
+
+  it('таблица становится карточками', () => {
+    expect(narrow).toMatch(/\.table tr\s*\{[^}]*display:\s*flex/s);
+    expect(narrow).toMatch(/\.tableWrap\s*\{[^}]*overflow-x:\s*visible/s);
+  });
+
+  it('заливка просрочки принадлежит карточке и переспоривает фон строки', () => {
+    // Найдено вживую: пока правило было записано как `.overdue`, его перебивал
+    // `.table tr` — более сильный селектор, — и просроченная карточка оставалась белой.
+    // Порядок записи тут ни при чём, решает специфичность, и решает молча.
+    expect(narrow).toMatch(/\.table tr\.overdue\s*\{[^}]*background:/s);
+    expect(narrow).toMatch(/\.table tr\.overdue\s*\{[^}]*border-left:/s);
+  });
+
+  it('ячейки просроченной карточки не красятся по отдельности', () => {
+    // По ячейкам заливка ложилась прорехами: между ними в карточке есть промежутки.
+    expect(narrow).toMatch(/\.overdue td[^{]*\{[^}]*background:\s*transparent/s);
+  });
+});
+
+describe('название колонки и заголовок страницы — разные вещи', () => {
+  it('ячейки таблицы задач названы отдельно от заголовка', () => {
+    // Пока класс ячейки брался по имени колонки, `title` совпадал с `.title` заголовка
+    // страницы, и в таблицу протекал его кегль: названия набирались в полтора раза
+    // крупнее, каждая строка переносилась на две, и на экран влезало вдвое меньше задач.
+    expect(TASKS).toMatch(/\.cellTitle\s*\{/);
+    expect(TASKS).not.toMatch(/\.table td\.title\s*\{/);
   });
 });

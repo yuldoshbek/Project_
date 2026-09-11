@@ -74,5 +74,39 @@
     "columnStatus": "Holat",
     "columnDue": "Muddat",
     "columnProgress": "Bajarildi"
+  },
+  "tasks": {
+    "count": "{{count}} vazifa",
+    "count_few": "{{count}} vazifa",
+    "count_many": "{{count}} vazifa",
+    "export": "Faylga yuklash",
+    "searchPlaceholder": "Nomi boʻyicha qidirish",
+    "filterStatus": "Holat",
+    "filterPriority": "Ustuvorlik",
+    "filterAssignee": "Ijrochi",
+    "filterCurator": "Loyiha kuratori",
+    "filterDirection": "Yoʻnalish",
+    "anyStatus": "Barcha holatlar",
+    "anyPriority": "Istalgan ustuvorlik",
+    "anyAssignee": "Istalgan ijrochi",
+    "anyCurator": "Istalgan kurator",
+    "anyDirection": "Barcha yoʻnalishlar",
+    "onlyOverdue": "Faqat muddati oʻtganlar",
+    "onlyControl": "Faqat topshiriqlar",
+    "columns": "Koʻrinadigan ustunlar",
+    "overdueBy_zero": "Muddat oʻtdi",
+    "overdueBy_one": "{{count}} kunga kechikdi",
+    "overdueBy_few": "{{count}} kunga kechikdi",
+    "overdueBy_many": "{{count}} kunga kechikdi",
+    "column": {
+      "code": "Raqam",
+      "title": "Nomi",
+      "status": "Holat",
+      "priority": "Ustuvorlik",
+      "assignee": "Ijrochi",
+      "due": "Muddat"
+    },
+    "exporting": "Fayl tayyorlanmoqda…",
+    "exportFailed": "Faylni tayyorlab boʻlmadi. Qayta urinib koʻring."
   }
 }

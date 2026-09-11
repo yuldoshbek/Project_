@@ -42,6 +42,7 @@ export interface DictionaryItem {
 export interface Dictionaries {
   directions: DictionaryItem[];
   project_statuses: DictionaryItem[];
+  task_statuses: DictionaryItem[];
   priorities: DictionaryItem[];
 }
 

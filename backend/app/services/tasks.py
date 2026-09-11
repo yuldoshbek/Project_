@@ -20,9 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.clock import now_utc
 from app.domain.dictionaries import TaskStatus
 from app.domain.errors import NotFoundError
-from app.domain.projects import ProgressMode, auto_progress
+from app.domain.projects import Classification, ProgressMode, auto_progress
 from app.domain.tasks import days_overdue, is_overdue, validate_transition
-from app.repos.models import Project, Task
+from app.repos.models import Person, PriorityRef, Project, Task, TaskStatusRef
 from app.services import codes
 
 CODE_PREFIX = "TSK"
@@ -54,6 +54,25 @@ class TaskView:
     task: Task
     is_overdue: bool
     days_overdue: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExportRow:
+    """Строка выгрузки — уже словами, а не идентификаторами.
+
+    Отдельный тип, а не `TaskView`: на экране исполнитель приходит идентификатором и
+    интерфейс сам подставляет имя из загруженного справочника, а у файла такого
+    справочника нет — его открывают в Excel, и подставить некому.
+    """
+
+    code: str
+    title: str
+    status: str
+    priority: str
+    due_at: datetime | None
+    is_overdue: bool
+    assignee: str
+    project: str
 
 
 def view(task: Task, *, now: datetime) -> TaskView:
@@ -153,7 +172,6 @@ async def create(
 ) -> Task:
     moment = now or now_utc()
     task = Task(
-        code=await next_code(session, today=today),
         title=draft.title.strip(),
         description=draft.description,
         project_id=draft.project_id,
@@ -166,8 +184,7 @@ async def create(
     )
     _apply_status_side_effects(task, target=draft.status, now=moment)
 
-    session.add(task)
-    await session.flush()
+    await codes.add_with_code(session, task, assign=lambda: next_code(session, today=today))
     await recalculate_project_progress(session, task.project_id)
     await session.flush()
     return task
@@ -224,6 +241,7 @@ async def delete(session: AsyncSession, task_id: uuid.UUID) -> None:
 class TaskFilter:
     project_id: uuid.UUID | None = None
     direction_id: uuid.UUID | None = None
+    curator_person_id: uuid.UUID | None = None
     assignee_person_id: uuid.UUID | None = None
     status: TaskStatus | None = None
     priority_code: str | None = None
@@ -251,8 +269,19 @@ def _apply(statement: Select[Any], filters: TaskFilter, *, now: datetime) -> Sel
     if filters.direction_id is not None:
         # Направление принадлежит проекту, а не задаче: дублировать его в задаче значило
         # бы завести второй источник правды и рассинхронизировать их при переносе задачи.
-        statement = statement.join(Project, Task.project_id == Project.id).where(
-            Project.direction_id == filters.direction_id
+        statement = statement.where(
+            Task.project_id.in_(
+                select(Project.id).where(Project.direction_id == filters.direction_id)
+            )
+        )
+    if filters.curator_person_id is not None:
+        # Куратор — тоже свойство проекта (ТЗ 6.2). Подзапросом, а не соединением: два
+        # соединения с одной таблицей в одном запросе требуют псевдонимов, а забытый
+        # псевдоним даёт не ошибку, а тихо неверную выборку.
+        statement = statement.where(
+            Task.project_id.in_(
+                select(Project.id).where(Project.curator_person_id == filters.curator_person_id)
+            )
         )
     if filters.assignee_person_id is not None:
         statement = statement.where(Task.assignee_person_id == filters.assignee_person_id)
@@ -298,3 +327,67 @@ async def list_tasks(
     statement = statement.order_by(order)
 
     return [view(task, now=moment) for task in await session.scalars(statement)]
+
+
+async def list_for_export(
+    session: AsyncSession,
+    filters: TaskFilter | None = None,
+    *,
+    now: datetime | None = None,
+    sort_by: str = "due_at",
+    descending: bool = False,
+) -> list[ExportRow]:
+    """Задачи для выгрузки наружу.
+
+    **Отдельная функция, а не флаг у списка.** Выгрузка — точка выхода из системы, и
+    задачи закрытых проектов через неё не проходят
+    ([ADR-0007](../../../docs/adr/ADR-0007-restricted-data.md)). Проверка стоит здесь,
+    внутри функции выдачи, а не у вызывающего кода: вызывающих будет много — файл,
+    отчёт, письмо, — и каждый однажды забудет.
+
+    Внутри системы те же задачи видны обоим пользователям: граница проходит по периметру,
+    а не между людьми (ADR-0011). Поэтому список на экране и выгрузка различаются, и это
+    не ошибка, а то самое правило.
+    """
+    filters = filters or TaskFilter()
+    moment = now or now_utc()
+    column = SORTABLE.get(sort_by, Task.due_at)
+
+    # Названия подставляются здесь, а не собираются читающим кодом: файл открывают в
+    # Excel, и идентификатор в колонке «Исполнитель» не значит для человека ничего.
+    statement = (
+        _apply(
+            select(Task, TaskStatusRef.name_ru, PriorityRef.name_ru, Person.full_name, Project),
+            filters,
+            now=moment,
+        )
+        .outerjoin(TaskStatusRef, TaskStatusRef.code == Task.status)
+        .outerjoin(PriorityRef, PriorityRef.code == Task.priority_code)
+        .outerjoin(Person, Person.id == Task.assignee_person_id)
+        .outerjoin(Project, Project.id == Task.project_id)
+    )
+    statement = statement.where(
+        Task.project_id.is_(None)
+        | Task.project_id.in_(
+            select(Project.id).where(Project.classification != Classification.RESTRICTED.value)
+        )
+    )
+
+    order = column.desc() if descending else column.asc()
+    if column is Task.due_at:
+        order = order.nullslast()
+
+    rows = await session.execute(statement.order_by(order))
+    return [
+        ExportRow(
+            code=task.code,
+            title=task.title,
+            status=status_name or task.status,
+            priority=priority_name or task.priority_code,
+            due_at=task.due_at,
+            is_overdue=view(task, now=moment).is_overdue,
+            assignee=assignee_name or "",
+            project="" if project is None else f"{project.code} {project.title}",
+        )
+        for task, status_name, priority_name, assignee_name, project in rows
+    ]

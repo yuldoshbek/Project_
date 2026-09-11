@@ -2,6 +2,7 @@ import type { RouteObject } from 'react-router-dom';
 import { createBrowserRouter } from 'react-router-dom';
 
 import { ProjectsPage } from '../features/projects/ProjectsPage';
+import { TasksPage } from '../features/tasks/TasksPage';
 import { AppLayout } from '../layout/AppLayout';
 import { ForbiddenPage } from '../pages/ForbiddenPage';
 import { LoginPage } from '../pages/LoginPage';
@@ -13,6 +14,7 @@ import { NAV_ITEMS, ROUTES } from './routes';
 /** Готовые экраны по адресу. Заглушка остаётся там, где экрана ещё нет. */
 const SCREENS: Record<string, React.ReactElement> = {
   [ROUTES.projects]: <ProjectsPage />,
+  [ROUTES.tasks]: <TasksPage />,
 };
 
 /**
