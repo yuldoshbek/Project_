@@ -13,14 +13,15 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep
 from app.api.security import Assistant, get_active_user
+from app.api.transaction import transactional_router
 from app.services import partners as service
 
-router = APIRouter(tags=["партнёры"], dependencies=[Depends(get_active_user)])
+router = transactional_router(tags=["партнёры"], dependencies=[Depends(get_active_user)])
 
 ROLE_MAX = 100
 

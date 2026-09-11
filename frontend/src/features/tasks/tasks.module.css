@@ -230,6 +230,46 @@
   color: var(--color-text-muted);
 }
 
+.cellChecklist {
+  white-space: nowrap;
+}
+
+/* Полоса и число рядом: полоса отвечает «много или мало» с одного взгляда, число — на
+   вопрос «сколько осталось». */
+.checklist {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.checklistBar {
+  display: block;
+  width: 48px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.checklistFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-text-muted);
+}
+
+.checklistCount {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.plainHeader {
+  display: inline-block;
+  padding: 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
 .cellDue {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -298,7 +338,8 @@
 
   .table td.cellStatus,
   .table td.cellPriority,
-  .table td.cellAssignee {
+  .table td.cellAssignee,
+  .table td.cellChecklist {
     order: 3;
     margin-right: var(--space-3);
     color: var(--color-text-muted);

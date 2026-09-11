@@ -14,7 +14,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Integer, Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.clock import now_utc
@@ -22,7 +22,14 @@ from app.domain.dictionaries import TaskStatus
 from app.domain.errors import NotFoundError
 from app.domain.projects import Classification, ProgressMode, auto_progress
 from app.domain.tasks import days_overdue, is_overdue, validate_transition
-from app.repos.models import Person, PriorityRef, Project, Task, TaskStatusRef
+from app.repos.models import (
+    Person,
+    PriorityRef,
+    Project,
+    Task,
+    TaskChecklistItem,
+    TaskStatusRef,
+)
 from app.services import codes
 
 CODE_PREFIX = "TSK"
@@ -71,6 +78,7 @@ class ExportRow:
     priority: str
     due_at: datetime | None
     is_overdue: bool
+    checklist: str
     assignee: str
     project: str
 
@@ -377,7 +385,12 @@ async def list_for_export(
     if column is Task.due_at:
         order = order.nullslast()
 
-    rows = await session.execute(statement.order_by(order))
+    rows = list(await session.execute(statement.order_by(order)))
+
+    # Прогресс чек-листа — одним запросом на всю выгрузку, а не по запросу на строку:
+    # выгружают сотни задач, и запрос на каждую превратил бы файл в минуту ожидания.
+    counts = await _checklist_counts(session, [row[0].id for row in rows])
+
     return [
         ExportRow(
             code=task.code,
@@ -386,8 +399,37 @@ async def list_for_export(
             priority=priority_name or task.priority_code,
             due_at=task.due_at,
             is_overdue=view(task, now=moment).is_overdue,
+            checklist=_checklist_cell(counts.get(task.id)),
             assignee=assignee_name or "",
             project="" if project is None else f"{project.code} {project.title}",
         )
         for task, status_name, priority_name, assignee_name, project in rows
     ]
+
+
+async def _checklist_counts(
+    session: AsyncSession, task_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int]]:
+    if not task_ids:
+        return {}
+
+    done = func.sum(case((TaskChecklistItem.is_done, 1), else_=0)).cast(Integer)
+    rows = await session.execute(
+        select(TaskChecklistItem.task_id, done, func.count())
+        .where(TaskChecklistItem.task_id.in_(task_ids))
+        .group_by(TaskChecklistItem.task_id)
+    )
+    return {task_id: (int(done_count or 0), int(total)) for task_id, done_count, total in rows}
+
+
+def _checklist_cell(counts: tuple[int, int] | None) -> str:
+    """«3 из 5» или пусто.
+
+    Пусто, а не «0 из 0»: задача без чек-листа — не задача, в которой ничего не сделано.
+    В колонке Excel эта разница видна сразу, а «0 из 0» в сотне строк — это шум, по
+    которому нельзя отсортировать и в котором тонут те, у кого чек-лист есть.
+    """
+    if counts is None:
+        return ""
+    done, total = counts
+    return f"{done} из {total}"

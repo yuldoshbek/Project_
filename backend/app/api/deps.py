@@ -13,13 +13,29 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.identity import IdentityProvider, create_identity_provider
-from app.repos.database import session_scope
+from app.api.transaction import SESSION_STATE_ATTRIBUTE
+from app.repos.database import new_session
 from app.settings import Settings
 
 
-async def get_session() -> AsyncIterator[AsyncSession]:
-    async for session in session_scope():
-        yield session
+async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """Сессия на время запроса. Фиксирует её не эта функция, а маршрут.
+
+    Разбор зависимости с `yield` происходит **после** отправки ответа, поэтому фиксация
+    здесь означала бы «создано» для клиента раньше, чем запись увидит следующий запрос
+    (`api.transaction` — там замеры и последствия). Фиксирует `CommitOnSuccess`, а сессия
+    кладётся в состояние запроса, чтобы он до неё дотянулся.
+
+    Откат остаётся здесь: он нужен на пути с исключением, а на нём маршрут до фиксации не
+    доходит.
+    """
+    async with new_session() as session:
+        setattr(request.state, SESSION_STATE_ATTRIBUTE, session)
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def get_app_settings(request: Request) -> Settings:

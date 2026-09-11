@@ -1,8 +1,8 @@
 /**
  * Обращения к API базы задач.
  *
- * `is_overdue` и `days_overdue` приходят с сервера и здесь не пересчитываются: просрочка
- * вычисляется одним правилом в одном месте
+ * `is_overdue`, `days_overdue` и доля чек-листа приходят с сервера и здесь не
+ * пересчитываются: каждое из правил вычисляется в одном месте
  * ([ADR-0004](../../../../docs/adr/ADR-0004-overdue-is-computed.md)). Вторая реализация
  * на клиенте разошлась бы с первой, и число «горящих» на экране перестало бы совпадать
  * со сводкой в Telegram.
@@ -26,6 +26,10 @@ export interface Task {
   is_control: boolean;
   is_overdue: boolean;
   days_overdue: number;
+  checklist_done: number;
+  checklist_total: number;
+  /** Доля выполненного или `null`, когда чек-листа нет. Считает сервер, не мы. */
+  checklist_percent: number | null;
 }
 
 export interface Person {

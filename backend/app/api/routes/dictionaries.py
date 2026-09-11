@@ -10,16 +10,17 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from app.api.deps import SessionDep
 from app.api.security import get_active_user
+from app.api.transaction import transactional_router
 from app.services import dictionaries as service
 
 # Требование входа объявлено на роутере, а не на каждом обработчике: забыть его на
 # одном новом эндпоинте — значит открыть данные агентства анонимно.
-router = APIRouter(tags=["справочники"], dependencies=[Depends(get_active_user)])
+router = transactional_router(tags=["справочники"], dependencies=[Depends(get_active_user)])
 
 
 class LocalizedNames(BaseModel):
