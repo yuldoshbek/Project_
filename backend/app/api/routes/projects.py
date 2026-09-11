@@ -16,17 +16,18 @@ import uuid
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep
 from app.api.security import Assistant, get_active_user
+from app.api.transaction import transactional_router
 from app.domain.clock import now_utc, today_in
 from app.domain.dictionaries import Health
 from app.domain.projects import Classification, ProgressMode, ProjectKind
 from app.services import projects as service
 
-router = APIRouter(tags=["проекты"], dependencies=[Depends(get_active_user)])
+router = transactional_router(tags=["проекты"], dependencies=[Depends(get_active_user)])
 
 TITLE_MAX = 300
 COMPUTED = frozenset({"health", "impediment_is_stale", "impediment_is_active"})

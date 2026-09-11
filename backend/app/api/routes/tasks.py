@@ -17,16 +17,19 @@ from datetime import datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep
 from app.api.security import Assistant, get_active_user
+from app.api.transaction import transactional_router
+from app.domain.checklists import ChecklistProgress
 from app.domain.clock import now_utc, today_in
 from app.domain.dictionaries import TaskStatus
+from app.services import checklists as checklist_service
 from app.services import tasks as service
 
-router = APIRouter(tags=["задачи"], dependencies=[Depends(get_active_user)])
+router = transactional_router(tags=["задачи"], dependencies=[Depends(get_active_user)])
 
 TITLE_MAX = 300
 
@@ -50,14 +53,38 @@ class TaskResponse(BaseModel):
     is_overdue: bool
     days_overdue: int
 
+    # Прогресс чек-листа приходит вместе с задачей, а не отдельным запросом на строку:
+    # он нужен в списке (критерий ORB-015), а список — это сотни строк. Не хранится:
+    # считается из самих пунктов (`app.domain.checklists`).
+    checklist_done: int
+    checklist_total: int
+    # Доля считается на сервере, а не на клиенте: правило «пустой чек-лист — это не ноль
+    # процентов» должно жить в одном месте, иначе второй экран однажды нарисует нулевую
+    # полосу там, где чек-листа нет вовсе, и она прочитается как тревога.
+    checklist_percent: int | None
+
     @classmethod
-    def of(cls, item: service.TaskView) -> TaskResponse:
-        stored = {
-            name: getattr(item.task, name)
-            for name in cls.model_fields
-            if name not in {"is_overdue", "days_overdue"}
+    def of(
+        cls, item: service.TaskView, progress: ChecklistProgress = checklist_service.EMPTY
+    ) -> TaskResponse:
+        computed = {
+            "is_overdue",
+            "days_overdue",
+            "checklist_done",
+            "checklist_total",
+            "checklist_percent",
         }
-        return cls(**stored, is_overdue=item.is_overdue, days_overdue=item.days_overdue)
+        stored = {
+            name: getattr(item.task, name) for name in cls.model_fields if name not in computed
+        }
+        return cls(
+            **stored,
+            is_overdue=item.is_overdue,
+            days_overdue=item.days_overdue,
+            checklist_done=progress.done,
+            checklist_total=progress.total,
+            checklist_percent=progress.percent,
+        )
 
 
 class TaskCreate(BaseModel):
@@ -124,7 +151,11 @@ async def list_tasks(
         sort_by=sort_by,
         descending=descending,
     )
-    return [TaskResponse.of(item) for item in rows]
+
+    progress = await checklist_service.progress_for(session, [item.task.id for item in rows])
+    return [
+        TaskResponse.of(item, progress.get(item.task.id, checklist_service.EMPTY)) for item in rows
+    ]
 
 
 # Выгрузка объявлена **до** `/tasks/{task_id}`, и это не вкусовщина: FastAPI берёт
@@ -138,6 +169,7 @@ CSV_COLUMNS = (
     ("priority", "Приоритет"),
     ("due_at", "Срок"),
     ("is_overdue", "Просрочена"),
+    ("checklist", "Чек-лист"),
     ("assignee", "Исполнитель"),
     ("project", "Проект"),
 )
@@ -233,13 +265,19 @@ async def create_task(
         author_id=user.id,
         today=today_in(settings.timezone),
     )
-    return TaskResponse.of(service.view(task, now=now_utc()))
+    return TaskResponse.of(
+        service.view(task, now=now_utc()),
+        await checklist_service.progress_of(session, task.id),
+    )
 
 
 @router.get("/tasks/{task_id}", response_model=TaskResponse, summary="Карточка задачи")
 async def read_task(task_id: uuid.UUID, session: SessionDep) -> TaskResponse:
     task = await service.get(session, task_id)
-    return TaskResponse.of(service.view(task, now=now_utc()))
+    return TaskResponse.of(
+        service.view(task, now=now_utc()),
+        await checklist_service.progress_of(session, task.id),
+    )
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskResponse, summary="Изменение задачи")
@@ -247,7 +285,10 @@ async def update_task(
     task_id: uuid.UUID, payload: TaskUpdate, session: SessionDep, user: Assistant
 ) -> TaskResponse:
     task = await service.update(session, task_id, payload.to_patch())
-    return TaskResponse.of(service.view(task, now=now_utc()))
+    return TaskResponse.of(
+        service.view(task, now=now_utc()),
+        await checklist_service.progress_of(session, task.id),
+    )
 
 
 @router.delete("/tasks/{task_id}", status_code=204, summary="Удаление задачи")

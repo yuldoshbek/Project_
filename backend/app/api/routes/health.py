@@ -16,15 +16,16 @@ import asyncio
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, Response, status
+from fastapi import Response, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.adapters.redis_client import create_redis
 from app.api.deps import SettingsDep
+from app.api.transaction import transactional_router
 from app.repos.database import get_engine
 
-router = APIRouter(tags=["служебные"])
+router = transactional_router(tags=["служебные"])
 logger = structlog.get_logger(__name__)
 
 # Проверка готовности не должна висеть: балансировщик ждёт ответа, а не правды любой ценой.

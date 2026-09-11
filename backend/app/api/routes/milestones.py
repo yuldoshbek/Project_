@@ -14,16 +14,17 @@ import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep
 from app.api.security import Assistant, get_active_user
+from app.api.transaction import transactional_router
 from app.domain.clock import today_in
 from app.domain.milestones import MilestoneState, MilestoneStatus
 from app.services import milestones as service
 
-router = APIRouter(tags=["вехи"], dependencies=[Depends(get_active_user)])
+router = transactional_router(tags=["вехи"], dependencies=[Depends(get_active_user)])
 
 TITLE_MAX = 300
 

@@ -65,6 +65,9 @@ const OVERDUE = {
   is_control: false,
   is_overdue: true,
   days_overdue: 3,
+  checklist_done: 1,
+  checklist_total: 4,
+  checklist_percent: 25,
 };
 
 const ON_TIME = {
@@ -75,6 +78,10 @@ const ON_TIME = {
   status: 'new' as const,
   is_overdue: false,
   days_overdue: 0,
+  // Задача без чек-листа: доля отсутствует, а не равна нулю.
+  checklist_done: 0,
+  checklist_total: 0,
+  checklist_percent: null,
 };
 
 const fetchMock = vi.fn();
@@ -236,6 +243,42 @@ describe('база задач', () => {
     expect(screen.queryByRole('button', { name: 'Приоритет' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Исполнитель' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Название' })).toBeInTheDocument();
+  });
+
+  it('прогресс чек-листа виден в списке числом и полосой', async () => {
+    renderAt('/tasks');
+
+    const row = (await screen.findByText('Смонтировать антенну')).closest('tr');
+    expect(row).not.toBeNull();
+
+    expect(within(row as HTMLElement).getByText('1/4')).toBeInTheDocument();
+    expect(within(row as HTMLElement).getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '25',
+    );
+  });
+
+  it('у задачи без чек-листа ячейка пуста, а не «0 %»', async () => {
+    renderAt('/tasks');
+
+    await screen.findByText('Смонтировать антенну');
+    const row = screen.getByText('Согласовать смету').closest('tr');
+
+    // Ноль означает «взялись и не сделали» — тревожный знак. Отсутствие чек-листа не
+    // сообщает ни о чём, и рисовать вместо него пустую полосу нельзя.
+    expect(within(row as HTMLElement).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(row as HTMLElement).queryByText('0/0')).not.toBeInTheDocument();
+  });
+
+  it('заголовок чек-листа не притворяется кнопкой сортировки', async () => {
+    renderAt('/tasks');
+
+    await screen.findByText('TSK-00001');
+
+    // Сортировать по «1 из 2» и «50 из 100» нет порядка, полезного человеку. Кнопка,
+    // которая молча ничего не делает, читается как поломка.
+    expect(screen.queryByRole('button', { name: 'Чек-лист' })).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Чек-лист' })).toBeInTheDocument();
   });
 
   it('файл просит у сервера с теми же фильтрами, а не собирает из строк на экране', async () => {

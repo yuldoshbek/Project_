@@ -9,16 +9,17 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import Request
 from pydantic import BaseModel, Field
 
 from app.adapters.identity import Credentials
 from app.api.deps import IdentityProviderDep, SessionDep, SettingsDep
 from app.api.security import CurrentUser, create_access_token
+from app.api.transaction import transactional_router
 from app.services import auth as service
 from app.services.auth import ACCESS_TOKEN_LIFETIME
 
-router = APIRouter(tags=["вход"])
+router = transactional_router(tags=["вход"])
 
 
 class LoginRequest(BaseModel):

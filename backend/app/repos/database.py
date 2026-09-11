@@ -62,12 +62,24 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
-async def session_scope() -> AsyncIterator[AsyncSession]:
-    """Сессия на время запроса: фиксация при успехе, откат при исключении."""
+def new_session() -> AsyncSession:
+    """Сессия из фабрики. Закрывать и фиксировать — забота вызывающего."""
     if _session_factory is None:
         raise RuntimeError("фабрика сессий не создана: вызовите init_database")
+    return _session_factory()
 
-    async with _session_factory() as session:
+
+async def session_scope() -> AsyncIterator[AsyncSession]:
+    """Сессия на время работы: фиксация при успехе, откат при исключении.
+
+    Для фоновых заданий, сидов и командной строки — там граница транзакции совпадает с
+    границей работы, и фиксировать в конце правильно.
+
+    **Обработчики HTTP-запросов пользуются не этим**, а `api.deps.get_session`: там
+    фиксация обязана случиться до отправки ответа, а разбор зависимости происходит после
+    (`api.transaction`).
+    """
+    async with new_session() as session:
         try:
             yield session
         except Exception:

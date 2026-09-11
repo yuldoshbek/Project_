@@ -104,9 +104,11 @@
       "status": "Holat",
       "priority": "Ustuvorlik",
       "assignee": "Ijrochi",
-      "due": "Muddat"
+      "due": "Muddat",
+      "checklist": "Roʻyxat"
     },
     "exporting": "Fayl tayyorlanmoqda…",
-    "exportFailed": "Faylni tayyorlab boʻlmadi. Qayta urinib koʻring."
+    "exportFailed": "Faylni tayyorlab boʻlmadi. Qayta urinib koʻring.",
+    "checklistOf": "{{total}} tadan {{done}} tasi bajarildi"
   }
 }

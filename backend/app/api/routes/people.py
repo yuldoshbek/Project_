@@ -15,15 +15,16 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from app.api.deps import SessionDep
 from app.api.security import get_active_user
+from app.api.transaction import transactional_router
 from app.repos.models import Person
 
-router = APIRouter(tags=["сотрудники"], dependencies=[Depends(get_active_user)])
+router = transactional_router(tags=["сотрудники"], dependencies=[Depends(get_active_user)])
 
 
 class PersonItem(BaseModel):

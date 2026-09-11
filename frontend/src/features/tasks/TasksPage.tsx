@@ -39,7 +39,15 @@ const PARAM = {
 } as const;
 
 /** Колонки таблицы. Скрытые перечисляются в адресе, чтобы вид переживал ссылку. */
-const COLUMNS = ['code', 'title', 'status', 'priority', 'assignee', 'due'] as const;
+const COLUMNS = [
+  'code',
+  'title',
+  'status',
+  'priority',
+  'assignee',
+  'checklist',
+  'due',
+] as const;
 type Column = (typeof COLUMNS)[number];
 
 /**
@@ -57,7 +65,26 @@ const CELL_CLASS: Record<Column, string> = {
   status: 'cellStatus',
   priority: 'cellPriority',
   assignee: 'cellAssignee',
+  checklist: 'cellChecklist',
   due: 'cellDue',
+};
+
+/**
+ * Поле, по которому сортирует сервер.
+ *
+ * `null` — колонка не сортируется. Чек-лист именно такой: сортировать по нему значило бы
+ * ставить рядом «1 из 2» и «50 из 100», между которыми нет порядка, полезного человеку.
+ * Заголовок такой колонки не притворяется кнопкой — иначе щелчок по нему молча ничего не
+ * делает, и это читается как поломка.
+ */
+const SORT_FIELD: Record<Column, string | null> = {
+  code: 'code',
+  title: 'title',
+  status: 'status',
+  priority: 'priority_code',
+  assignee: 'assignee',
+  checklist: null,
+  due: 'due_at',
 };
 
 const HIDDEN_PARAM = 'hide';
@@ -115,7 +142,8 @@ export function TasksPage() {
   }
 
   function sortOn(column: Column) {
-    const field = column === 'due' ? 'due_at' : column === 'priority' ? 'priority_code' : column;
+    const field = SORT_FIELD[column];
+    if (field === null) return;
     const next = new URLSearchParams(params);
     next.set(SORT_PARAM, field);
     next.set(DESC_PARAM, String(sortBy === field && !descending));
@@ -306,6 +334,50 @@ export function TasksPage() {
   );
 }
 
+/**
+ * Прогресс чек-листа в строке списка.
+ *
+ * У задачи без чек-листа ячейка пуста. Не «0 %» и не «0 из 0»: ноль означает «взялись и
+ * не сделали» — на экране это тревожный знак, а отсутствие чек-листа не сообщает ни о
+ * чём. Различие приходит с сервера полем `checklist_percent`, равным `null`.
+ *
+ * Число и полоса вместе, а не одна полоса: полоса показывает «много или мало» с одного
+ * взгляда, а «7 из 9» отвечает на вопрос «сколько осталось», ради которого в чек-лист и
+ * заглядывают.
+ */
+function Checklist({ task }: { task: Task }) {
+  const { t } = useTranslation();
+
+  if (task.checklist_percent === null) return null;
+
+  return (
+    <span
+      className={styles.checklist}
+      title={t('tasks.checklistOf', {
+        done: task.checklist_done,
+        total: task.checklist_total,
+      })}
+    >
+      <span
+        className={styles.checklistBar}
+        role="progressbar"
+        aria-valuenow={task.checklist_percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={t('tasks.column.checklist')}
+      >
+        <span
+          className={styles.checklistFill}
+          style={{ width: `${String(task.checklist_percent)}%` }}
+        />
+      </span>
+      <span className={styles.checklistCount}>
+        {task.checklist_done}/{task.checklist_total}
+      </span>
+    </span>
+  );
+}
+
 function Select({
   label,
   value,
@@ -372,8 +444,7 @@ function TaskTable({
   const personOf = (id: string | null) =>
     id === null ? '' : (people.find((person) => person.id === id)?.full_name ?? '');
 
-  const fieldOf = (column: Column) =>
-    column === 'due' ? 'due_at' : column === 'priority' ? 'priority_code' : column;
+  const fieldOf = (column: Column) => SORT_FIELD[column];
 
   const visible = COLUMNS.filter((column) => !hidden.has(column));
 
@@ -390,15 +461,19 @@ function TaskTable({
                   sortBy === fieldOf(column) ? (descending ? 'descending' : 'ascending') : 'none'
                 }
               >
-                <button
-                  type="button"
-                  className={styles.sortButton}
-                  onClick={() => {
-                    onSort(column);
-                  }}
-                >
-                  {t(`tasks.column.${column}`)}
-                </button>
+                {fieldOf(column) === null ? (
+                  <span className={styles.plainHeader}>{t(`tasks.column.${column}`)}</span>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.sortButton}
+                    onClick={() => {
+                      onSort(column);
+                    }}
+                  >
+                    {t(`tasks.column.${column}`)}
+                  </button>
+                )}
               </th>
             ))}
           </tr>
@@ -422,6 +497,7 @@ function TaskTable({
                   {column === 'status' && nameOf(task.status, 'task_statuses')}
                   {column === 'priority' && nameOf(task.priority_code, 'priorities')}
                   {column === 'assignee' && personOf(task.assignee_person_id)}
+                  {column === 'checklist' && <Checklist task={task} />}
                   {column === 'due' && formatDate(task.due_at)}
                 </td>
               ))}
