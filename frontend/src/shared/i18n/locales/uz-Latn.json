@@ -38,5 +38,39 @@
   "placeholder": {
     "title": "Boʻlim ishlab chiqilmoqda",
     "text": "Ekran {{ticket}} tiketida amalga oshiriladi."
+  },
+  "login": {
+    "email": "Elektron pochta manzili",
+    "password": "Parol",
+    "submit": "Kirish",
+    "submitting": "Tekshirilmoqda…",
+    "failed": "Manzil yoki parol notoʻgʻri",
+    "locked": "Bir necha muvaffaqiyatsiz urinishdan soʻng kirish vaqtincha bloklandi. Bir necha daqiqadan soʻng qayta urinib koʻring.",
+    "signOut": "Chiqish"
+  },
+  "health": {
+    "green": "Joyida",
+    "yellow": "Eʼtibor talab qiladi",
+    "red": "Qizil hudud",
+    "grey": "Yakunlangan"
+  },
+  "projects": {
+    "count": "{{count}} loyiha",
+    "count_few": "{{count}} loyiha",
+    "count_many": "{{count}} loyiha",
+    "searchPlaceholder": "Nomi boʻyicha qidirish",
+    "filterDirection": "Yoʻnalish",
+    "filterStatus": "Holat",
+    "filterPriority": "Ustuvorlik",
+    "filterHealth": "Svetofor",
+    "anyDirection": "Barcha yoʻnalishlar",
+    "anyStatus": "Barcha holatlar",
+    "anyPriority": "Istalgan ustuvorlik",
+    "anyHealth": "Istalgan rang",
+    "columnCode": "Raqam",
+    "columnTitle": "Nomi",
+    "columnStatus": "Holat",
+    "columnDue": "Muddat",
+    "columnProgress": "Bajarildi"
   }
 }

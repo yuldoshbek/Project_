@@ -38,5 +38,39 @@
   "placeholder": {
     "title": "Раздел в разработке",
     "text": "Экран будет реализован в тикете {{ticket}}."
+  },
+  "login": {
+    "email": "Адрес электронной почты",
+    "password": "Пароль",
+    "submit": "Войти",
+    "submitting": "Проверяем…",
+    "failed": "Неверный адрес или пароль",
+    "locked": "Вход временно заблокирован после нескольких неудачных попыток. Повторите через несколько минут.",
+    "signOut": "Выйти"
+  },
+  "health": {
+    "green": "В порядке",
+    "yellow": "Требует внимания",
+    "red": "Красная зона",
+    "grey": "Завершён"
+  },
+  "projects": {
+    "count": "{{count}} проект",
+    "count_few": "{{count}} проекта",
+    "count_many": "{{count}} проектов",
+    "searchPlaceholder": "Поиск по названию",
+    "filterDirection": "Направление",
+    "filterStatus": "Статус",
+    "filterPriority": "Приоритет",
+    "filterHealth": "Светофор",
+    "anyDirection": "Все направления",
+    "anyStatus": "Все статусы",
+    "anyPriority": "Любой приоритет",
+    "anyHealth": "Любой цвет",
+    "columnCode": "Номер",
+    "columnTitle": "Название",
+    "columnStatus": "Статус",
+    "columnDue": "Срок",
+    "columnProgress": "Выполнено"
   }
 }

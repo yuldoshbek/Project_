@@ -84,6 +84,8 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  /* Полностью скруглённые метки статуса: цвет несёт смысл, форма отличает метку от кнопки. */
+  --radius-pill: 999px;
 
   --shadow-sm: 0 1px 2px rgb(20 24 31 / 8%);
   --shadow-md: 0 4px 12px rgb(20 24 31 / 10%);
