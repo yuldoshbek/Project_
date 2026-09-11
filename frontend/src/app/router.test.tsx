@@ -3,11 +3,21 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
+import { WithSession } from '../testing/WithSession';
 import { routes } from './router';
 
+/**
+ * Разделы живут за воротами входа (ORB-019), поэтому каркас проверяется от имени
+ * вошедшего пользователя. Что без входа не пускают — отдельный тест в `auth.test.tsx`:
+ * смешивать эти две проверки значит не проверить толком ни одну.
+ */
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
-  return render(<RouterProvider router={router} />);
+  return render(
+    <WithSession>
+      <RouterProvider router={router} />
+    </WithSession>,
+  );
 }
 
 describe('каркас приложения', () => {

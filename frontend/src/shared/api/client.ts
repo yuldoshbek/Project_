@@ -1,0 +1,114 @@
+/**
+ * Обращение к API.
+ *
+ * Один вход для всех запросов: токен подставляется здесь, а не в каждом вызове — иначе
+ * однажды его забудут, и запрос уйдёт без него. Код ответа доходит до вызывающего кода
+ * в виде поля, а не текста: по нему решается, повторять ли запрос и куда вести
+ * пользователя.
+ *
+ * Различие 401 и 403 — не формальность (см. `app/api/errors.py` на стороне сервера).
+ * По 401 пользователя уводят на вход: сессия кончилась. По 403 оставляют на месте и
+ * показывают сообщение: он вошёл, но это действие не его. Пока коды были одинаковыми,
+ * отказ руководителю в записи был неотличим от истёкшей сессии.
+ */
+
+export const API_PREFIX = '/api/v1';
+
+/** Тело ошибки по RFC 9457, как его отдаёт сервер. */
+interface ProblemDetails {
+  type?: string;
+  title?: string;
+  detail?: string;
+  request_id?: string;
+}
+
+export class HttpError extends Error {
+  readonly status: number;
+  readonly type: string | undefined;
+  readonly requestId: string | undefined;
+
+  constructor(status: number, problem: ProblemDetails) {
+    super(problem.detail ?? problem.title ?? `HTTP ${String(status)}`);
+    this.name = 'HttpError';
+    this.status = status;
+    this.type = problem.type;
+    this.requestId = problem.request_id;
+  }
+}
+
+/** Возвращает токен доступа или `null`, если вход ещё не выполнен. */
+export type TokenSource = () => string | null;
+
+/** Вызывается, когда сервер сообщил, что сессия недействительна. */
+export type UnauthorizedHandler = () => void;
+
+let readToken: TokenSource = () => null;
+let onUnauthorized: UnauthorizedHandler = () => {};
+
+export function configureApi(source: TokenSource, handler: UnauthorizedHandler): void {
+  readToken = source;
+  onUnauthorized = handler;
+}
+
+export interface RequestOptions {
+  method?: string;
+  body?: unknown;
+  query?: Record<string, string | number | boolean | undefined>;
+  /** Запрос самого входа: по нему не имеет смысла уводить на вход повторно. */
+  anonymous?: boolean;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', body, query, anonymous = false } = options;
+
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const token = anonymous ? null : readToken();
+  if (token !== null) headers.Authorization = `Bearer ${token}`;
+
+  // Ключ `body` не появляется вовсе, когда тела нет: при строгих необязательных
+  // свойствах `undefined` и «нет свойства» — разные вещи, и `fetch` принимает второе.
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+
+  const response = await fetch(`${API_PREFIX}${path}${buildQuery(query)}`, init);
+
+  if (response.status === 204) return undefined as T;
+
+  if (!response.ok) {
+    const problem = await safeProblem(response);
+    if (response.status === 401 && !anonymous) onUnauthorized();
+    throw new HttpError(response.status, problem);
+  }
+
+  return (await response.json()) as T;
+}
+
+/**
+ * Пустые значения в строку запроса не попадают.
+ *
+ * Иначе адрес обрастает `status_code=&priority_code=`, и по нему нельзя понять, что
+ * именно отфильтровано, — а адрес здесь то, чем делятся и что сохраняют в закладки.
+ */
+function buildQuery(query: RequestOptions['query']): string {
+  if (!query) return '';
+
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === '') continue;
+    params.set(key, String(value));
+  }
+
+  const search = params.toString();
+  return search === '' ? '' : `?${search}`;
+}
+
+/** Сервер отвечает по RFC 9457, но упавший сервер отвечает чем угодно. */
+async function safeProblem(response: Response): Promise<ProblemDetails> {
+  try {
+    return (await response.json()) as ProblemDetails;
+  } catch {
+    return { title: response.statusText };
+  }
+}

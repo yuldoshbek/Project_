@@ -38,3 +38,128 @@
   max-width: 52ch;
   color: var(--color-text-muted);
 }
+
+/* --- Вход ---
+   Отдельная страница без оболочки: меню и хлебные крошки человеку, который ещё не
+   вошёл, ничего не говорят и только мешают найти два поля. */
+
+.loginShell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-4);
+  background: var(--color-bg);
+}
+
+.loginCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 360px;
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.loginTitle {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  letter-spacing: 0.04em;
+}
+
+.loginSubtitle {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.input {
+  /* 44 px — минимальная цель нажатия на телефоне (ADR-0019, ORB-079). */
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.loginError {
+  margin: 0;
+  color: var(--color-health-red);
+  font-size: var(--font-size-sm);
+}
+
+.primaryButton {
+  min-height: 44px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.primaryButton:disabled {
+  background: var(--color-border-strong);
+  cursor: default;
+}
+
+.primaryButton:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* --- Кнопка выхода в шапке --- */
+
+.signOut {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.signOut:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.signOut:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.who {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
