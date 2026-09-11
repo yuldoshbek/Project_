@@ -1,6 +1,9 @@
 .shell {
   display: grid;
-  grid-template-columns: var(--layout-sidebar-width) 1fr;
+  /* `minmax(0, 1fr)`, а не `1fr`: колонка сетки по умолчанию не уже своего содержимого,
+     и одна длинная строка в шапке растягивает всю страницу за край экрана. Найдено
+     замером: на телефоне страница уезжала вправо на 726 px. */
+  grid-template-columns: var(--layout-sidebar-width) minmax(0, 1fr);
   grid-template-rows: var(--layout-header-height) 1fr;
   grid-template-areas:
     'sidebar header'
@@ -12,6 +15,11 @@
   position: absolute;
   left: -9999px;
   z-index: 10;
+  /* Ссылка клавиатурная, пальцем по ней не попадают, — но правило одно на все цели
+     нажатия, и исключения из него заводить не с чего. */
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-target-min);
   padding: var(--space-2) var(--space-4);
   background: var(--color-surface);
   border-radius: var(--radius-sm);
@@ -92,6 +100,14 @@
   padding: 0 var(--space-5);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
+  /* Шапка обязана уметь сжиматься: она стоит в сетке, и её ширина задаёт ширину всей
+     страницы. Без этого длинное имя пользователя выталкивает содержимое за экран. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header > * {
+  min-width: 0;
 }
 
 .breadcrumbs {
@@ -140,11 +156,13 @@
 .main {
   grid-area: main;
   padding: var(--space-5);
+  min-width: 0;
 }
 
 .content {
   max-width: var(--layout-content-max);
   margin: 0 auto;
+  min-width: 0;
 }
 
 /* Планшет и мобильный: меню сворачивается в полосу значков, содержимое во всю ширину.
@@ -158,6 +176,16 @@
   .navLink {
     text-align: center;
   }
+}
+
+.headerBrand {
+  display: none;
+}
+
+/* --- Навигация на телефоне ---
+   Показывается только на узком экране; на широком её роль исполняет боковое меню. */
+.bottomNav {
+  display: none;
 }
 
 @media (max-width: 640px) {
@@ -174,9 +202,11 @@
 
   .shell {
     grid-template-columns: 1fr;
+    grid-template-rows: var(--layout-header-height) 1fr auto;
     grid-template-areas:
       'header'
-      'main';
+      'main'
+      'bottomnav';
   }
 
   .sidebar {
@@ -185,5 +215,83 @@
 
   .main {
     padding: var(--space-4) var(--space-3);
+    /* Место под нижнюю панель: без него последняя строка списка оказывается под ней,
+       и до неё нельзя дотянуться — прокрутка уже кончилась. */
+    padding-bottom: calc(var(--layout-bottom-nav-height) + var(--space-4));
+  }
+
+  .header {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .bottomNav {
+    grid-area: bottomnav;
+    display: block;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 5;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    /* Полоса прокручивается, а не обрезается: семь разделов на узком экране не
+       помещаются, и прятать последние за край — то же, что не иметь их вовсе. */
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .bottomList {
+    display: flex;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: max-content;
+  }
+
+  .bottomLink {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 64px;
+    min-height: var(--tap-target-min);
+    height: var(--layout-bottom-nav-height);
+    padding: 0 var(--space-2);
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+
+  .bottomLink:hover {
+    text-decoration: none;
+  }
+
+  .bottomLinkActive {
+    color: var(--color-accent);
+  }
+
+  .bottomLabel {
+    font-size: 10px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  /* Цели нажатия в шапке подтягиваются до правила из токенов. */
+  .localeSelect {
+    min-height: var(--tap-target-min);
+  }
+
+  /* Хлебные крошки на телефоне лишние: раздел назван в нижней панели, а место нужно
+     под то, ради чего экран открыли. */
+  .breadcrumbs {
+    display: none;
+  }
+
+  .headerBrand {
+    display: block;
+    margin-right: auto;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.04em;
   }
 }

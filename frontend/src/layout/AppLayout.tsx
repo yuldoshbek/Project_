@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 
 import pageStyles from '../pages/pages.module.css';
 import { useSession } from '../shared/auth/useSession';
+import { BottomNav } from './BottomNav';
 import { Breadcrumbs } from './Breadcrumbs';
 import styles from './layout.module.css';
 import { LocaleSwitcher } from './LocaleSwitcher';
@@ -27,6 +28,10 @@ export function AppLayout() {
       <Sidebar />
 
       <header className={styles.header}>
+        {/* На телефоне бокового меню нет, и без названия непонятно, где ты находишься:
+            это первое, что ищут глазами на чужом устройстве. На широком экране название
+            стоит в боковом меню, и здесь оно было бы вторым. */}
+        <span className={styles.headerBrand}>{t('app.name')}</span>
         <Breadcrumbs />
         <LocaleSwitcher />
         {profile !== null && <span className={pageStyles.who}>{profile.full_name}</span>}
@@ -46,6 +51,8 @@ export function AppLayout() {
           <Outlet />
         </div>
       </main>
+
+      <BottomNav />
     </div>
   );
 }

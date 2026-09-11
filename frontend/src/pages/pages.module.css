@@ -88,8 +88,9 @@
 }
 
 .input {
-  /* 44 px — минимальная цель нажатия на телефоне (ADR-0019, ORB-079). */
-  min-height: 44px;
+  /* Правило целей нажатия берётся из токенов, а не повторяется числом: повторённое в
+     семи местах, в восьмом оно будет забыто (ADR-0019, ORB-079). */
+  min-height: var(--tap-target-min);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -110,7 +111,7 @@
 }
 
 .primaryButton {
-  min-height: 44px;
+  min-height: var(--tap-target-min);
   border: none;
   border-radius: var(--radius-sm);
   background: var(--color-accent);
@@ -162,4 +163,20 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  /* На телефоне имя убирается: место нужно под то, ради чего экран открыли, а кто
+     вошёл — видно на экране профиля. Кнопка выхода остаётся: она нужна на чужом
+     устройстве, а чужое устройство — это чаще всего телефон. */
+  .who {
+    display: none;
+  }
+
+  .signOut {
+    min-height: var(--tap-target-min);
+  }
 }

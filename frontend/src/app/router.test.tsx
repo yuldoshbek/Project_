@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +11,16 @@ import { routes } from './router';
  * вошедшего пользователя. Что без входа не пускают — отдельный тест в `auth.test.tsx`:
  * смешивать эти две проверки значит не проверить толком ни одну.
  */
+/**
+ * Разделы теперь в двух местах: боковое меню на широком экране и нижняя панель на
+ * телефоне (ORB-079). В разметке присутствуют оба — прячет одно из них CSS, которого в
+ * тестах нет. Поэтому поиск ссылки идёт внутри нужного ориентира: без этого тест ловит
+ * «найдено несколько ссылок» и молчит о том, какая из них проверяется.
+ */
+function sidebar() {
+  return within(screen.getByRole('navigation', { name: 'Разделы' }));
+}
+
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   return render(
@@ -30,7 +40,7 @@ describe('каркас приложения', () => {
     const user = userEvent.setup();
     renderAt('/');
 
-    await user.click(screen.getByRole('link', { name: 'Проекты' }));
+    await user.click(sidebar().getByRole('link', { name: 'Проекты' }));
 
     expect(screen.getByRole('heading', { name: 'Проекты' })).toBeInTheDocument();
     expect(screen.getByText('Проекты', { selector: '[aria-current="page"]' })).toBeInTheDocument();
@@ -52,7 +62,7 @@ describe('каркас приложения', () => {
     renderAt('/');
 
     for (const name of ['Сегодня', 'База задач', 'Календарь', 'Отчёты', 'Администрирование']) {
-      await user.click(screen.getByRole('link', { name }));
+      await user.click(sidebar().getByRole('link', { name }));
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
   });

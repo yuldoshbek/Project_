@@ -22,7 +22,7 @@ export function Breadcrumbs() {
   const isRoot = pathname === ROUTES.dashboard;
 
   return (
-    <nav aria-label={t('nav.section')}>
+    <nav aria-label={t('nav.breadcrumbs')}>
       <ol className={styles.breadcrumbs}>
         <li>
           {isRoot ? (

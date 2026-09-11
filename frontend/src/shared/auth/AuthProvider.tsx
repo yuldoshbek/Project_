@@ -8,7 +8,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { configureApi, request } from '../api/client';
 import type { Tokens } from './session';
@@ -26,9 +26,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous');
   }, []);
 
-  // Клиент API узнаёт, откуда брать токен и что делать при 401, один раз и до первого
-  // запроса: иначе первый же запрос уйдёт без токена.
-  useMemo(() => configureApi(getAccessToken, drop), [drop]);
+  // Клиент API узнаёт, откуда брать токен и что делать при 401 до первого запроса.
+  // Не в эффекте: эффекты выполняются после отрисовки, а запрос уходит уже из неё.
+  configureApi(getAccessToken, drop);
 
   const adopt = useCallback(async (tokens: Tokens) => {
     rememberTokens(tokens);
@@ -37,7 +37,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('signed-in');
   }, []);
 
+  const restored = useRef(false);
+
   useEffect(() => {
+    // Восстановление ровно одно на монтирование.
+    //
+    // Это не оптимизация. Токен обновления **одноразовый**, и повторное предъявление
+    // сервер считает кражей: он отзывает все сессии пользователя (ORB-006, и это
+    // правильное поведение). В режиме разработки React вызывает эффекты дважды — и
+    // второй вызов уносил сессию сразу после входа. Найдено не рассуждением, а тем,
+    // что приложение само себя разлогинивало при каждой перезагрузке.
+    if (restored.current) return;
+    restored.current = true;
+
     const refresh = getRefreshToken();
     if (refresh === null) {
       setStatus('anonymous');
