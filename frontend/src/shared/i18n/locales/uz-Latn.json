@@ -12,7 +12,9 @@
     "tasks": "Vazifalar bazasi",
     "calendar": "Taqvim",
     "reports": "Hisobotlar",
-    "admin": "Maʼmuriyat"
+    "admin": "Maʼmuriyat",
+    "breadcrumbs": "Siz qayerdasiz",
+    "mobileSections": "Tizim boʻlimlari"
   },
   "locale": {
     "label": "Interfeys tili",

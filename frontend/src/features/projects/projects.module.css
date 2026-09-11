@@ -179,3 +179,122 @@
   height: 100%;
   background: var(--color-accent);
 }
+
+/* --- Телефон (ADR-0019, ORB-079) ---
+   Таблица на узком экране превращается в карточки, а не в прокручиваемую простыню:
+   горизонтальная прокрутка таблицы означает, что название видно без срока, а срок — без
+   названия, и оба по отдельности бесполезны. */
+
+@media (max-width: 640px) {
+  .filters {
+    /* Фильтры прокручиваются полосой, а не переносятся на четыре строки: перенос
+       съедает экран, ради которого телефон и выбран основным видом. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: var(--space-1);
+  }
+
+  .filter,
+  .search {
+    flex: 0 0 auto;
+  }
+
+  .search {
+    min-width: 180px;
+  }
+
+  .select,
+  .search {
+    min-height: var(--tap-target-min);
+  }
+
+  .tableWrap {
+    overflow-x: visible;
+    border: none;
+    background: transparent;
+  }
+
+  .table,
+  .table tbody,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  /* Карточка выкладывается потоком, а порядок ячеек задаётся явно: в разметке таблицы
+     номер и срок стоят через две колонки, и без этого срок оказывался в конце карточки
+     с висящим разделителем перед ним. */
+  .table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+
+  .table thead {
+    /* Заголовки столбцов в карточках не нужны — их роль исполняют подписи строк, —
+       но убирать их из разметки нельзя: программа чтения с экрана связывает по ним
+       ячейку с колонкой. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .table tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .table td {
+    padding: 2px 0;
+    border: none;
+  }
+
+  /* Номер и срок — в одну строку сверху: это то, по чему карточку узнают. */
+  /* Классы `code` и `due` стоят на самих ячейках, а не на вложенных элементах, —
+     поэтому селектор по ячейке, а не `:has()`. Ошибка была видна сразу: срок уезжал
+     на свою строку вместо того, чтобы встать справа от номера. */
+  .table td.code,
+  .table td.due {
+    order: 1;
+    width: auto;
+    font-size: var(--font-size-xs);
+  }
+
+  .table td.due {
+    margin-left: auto;
+  }
+
+  .table td:has(.projectTitle) {
+    order: 2;
+  }
+
+  .table td:has(.health) {
+    order: 3;
+  }
+
+  .table td:has(.progressTrack) {
+    order: 4;
+  }
+
+  .projectTitle {
+    margin: var(--space-1) 0;
+    font-size: var(--font-size-md);
+  }
+
+  .impediment,
+  .stale {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .progressTrack {
+    width: 100%;
+    margin-top: var(--space-2);
+  }
+}
