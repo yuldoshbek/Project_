@@ -22,10 +22,14 @@ from app.domain.dictionaries import Priority, ProjectStatus, TaskStatus
 from app.domain.errors import ConflictError
 from app.domain.tasks import days_overdue, is_overdue, validate_transition
 from app.repos.models import AuditLog, Direction, Person, Project, Task
+from app.services import tasks as tasks_service
 
 pytestmark = pytest.mark.infra
 
 NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
+
+BOM = b"\xef\xbb\xbf"
+"""Метка порядка байтов: по ней Excel понимает, что файл в UTF-8."""
 
 
 class TestOverdueIsComputed:
@@ -91,18 +95,26 @@ class TestStatusTransitions:
 async def a_project(session: AsyncSession, **overrides: Any) -> Project:
     direction = await session.scalar(select(Direction).limit(1))
     assert direction is not None
-    project = Project(
-        code=f"PRJ-2026-{uuid.uuid4().int % 900 + 99:03d}",
-        title="Проект для задач",
-        kind="project",
-        classification="internal",
-        direction_id=direction.id,
-        status_code=ProjectStatus.IN_PROGRESS.value,
-        priority_code=Priority.NORMAL.value,
-        started_on=date(2026, 1, 1),
-        due_on=date(2026, 12, 31),
-        **overrides,
-    )
+
+    curator = Person(full_name="Куратор проекта")
+    session.add(curator)
+    await session.flush()
+
+    fields: dict[str, Any] = {
+        "code": f"PRJ-2026-{uuid.uuid4().int % 900 + 99:03d}",
+        "title": "Проект для задач",
+        "kind": "project",
+        "classification": "internal",
+        "direction_id": direction.id,
+        "curator_person_id": curator.id,
+        "status_code": ProjectStatus.IN_PROGRESS.value,
+        "priority_code": Priority.NORMAL.value,
+        "started_on": date(2026, 1, 1),
+        "due_on": date(2026, 12, 31),
+    }
+    fields.update(overrides)
+
+    project = Project(**fields)
     session.add(project)
     await session.flush()
     return project
@@ -477,6 +489,8 @@ class TestListingAndCode:
         assert await titles(project_id=str(project.id)) == ["Поручение"]
         assert await titles(assignee_person_id=str(person.id)) == ["Поручение"]
         assert await titles(direction_id=str(project.direction_id)) == ["Поручение"]
+        assert project.curator_person_id is not None
+        assert await titles(curator_person_id=str(project.curator_person_id)) == ["Поручение"]
         # Обе задачи без срока: при сортировке по сроку их порядок между собой не
         # определён, и требовать его от базы значило бы проверять случайность.
         assert sorted(await titles(status=TaskStatus.NEW.value)) == [
@@ -524,6 +538,231 @@ class TestSingleTask:
         )
 
         assert [item["title"] for item in response.json()] == ["На неделе"]
+
+
+class TestNumbersDoNotCollide:
+    """Номер занят — запись всё равно заводится.
+
+    Столкновение наблюдалось не в рассуждении, а на живом стенде: ответ «создано» доходит
+    до клиента раньше, чем закрывается транзакция, и следующий запрос читает максимум
+    номера, не видя предыдущей записи. При вводе подряд пропадала **каждая вторая**
+    задача — с ответом «Внутренняя ошибка» и без следа в интерфейсе.
+
+    Номер занимается ровно один раз, как это и происходит: проверять надо не «повтор
+    вообще работает», а что первое же столкновение не уносит задачу.
+    """
+
+    @staticmethod
+    def taken_once(taken: str) -> Any:
+        real = tasks_service.next_code
+        used = {"done": False}
+
+        async def assign(*args: Any, **kwargs: Any) -> str:
+            if not used["done"]:
+                used["done"] = True
+                return taken
+            return str(await real(*args, **kwargs))
+
+        return assign
+
+    async def test_a_taken_number_does_not_lose_the_task(
+        self, assistant_api: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = await assistant_api.post("/api/v1/tasks", json=body(title="Первая"))
+        assert first.status_code == 201
+        taken = str(first.json()["code"])
+
+        monkeypatch.setattr(tasks_service, "next_code", self.taken_once(taken))
+        second = await assistant_api.post("/api/v1/tasks", json=body(title="Вторая"))
+
+        assert second.status_code == 201, second.text
+        assert second.json()["code"] != taken
+
+    async def test_the_whole_task_survives_the_retry_not_only_its_number(
+        self, assistant_api: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Повтор не должен обронить часть записи по дороге.
+
+        Откатывается точка сохранения, а не транзакция запроса: иначе вместе с номером
+        терялось бы всё, что успели сделать до него, — и заметили бы это по дыре в
+        журнале изменений, то есть сильно позже.
+        """
+        project = await a_project(session)
+        first = await assistant_api.post("/api/v1/tasks", json=body(title="Первая"))
+        taken = str(first.json()["code"])
+
+        monkeypatch.setattr(tasks_service, "next_code", self.taken_once(taken))
+        created = await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(title="Вторая", project_id=str(project.id), is_control=True),
+        )
+
+        assert created.status_code == 201, created.text
+        saved = created.json()
+        assert saved["title"] == "Вторая"
+        assert saved["project_id"] == str(project.id)
+        assert saved["is_control"] is True
+
+        entries = list(
+            await session.scalars(
+                select(AuditLog).where(AuditLog.entity_id == uuid.UUID(saved["id"]))
+            )
+        )
+        assert entries, "задача создана, а в журнале изменений её нет"
+
+    async def test_a_number_taken_over_and_over_is_explained_not_hidden(
+        self, assistant_api: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Исчерпание попыток — не «внутренняя ошибка».
+
+        Пять столкновений подряд при двух вносящих означают, что происходит что-то
+        другое. Молчать об этом хуже, чем сказать словами.
+        """
+        first = await assistant_api.post("/api/v1/tasks", json=body(title="Первая"))
+        taken = str(first.json()["code"])
+
+        async def always_taken(*args: Any, **kwargs: Any) -> str:
+            return taken
+
+        monkeypatch.setattr(tasks_service, "next_code", always_taken)
+        refused = await assistant_api.post("/api/v1/tasks", json=body(title="Вторая"))
+
+        assert refused.status_code == 409, refused.text
+        assert "номер" in refused.json()["detail"].lower()
+
+
+class TestExportIsAWayOut:
+    """Выгрузка — точка выхода из системы (ADR-0007), и она отличается от списка.
+
+    Внутри системы оба пользователя видят всё: граница проходит по периметру, а не между
+    людьми (ADR-0011). Наружу задачи закрытых проектов не уходят. Разница между экраном и
+    файлом здесь — не ошибка, а то самое правило, и проверять её надо именно так.
+    """
+
+    async def test_a_task_of_a_classified_project_is_visible_but_not_exported(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        open_project = await a_project(session)
+        closed = await a_project(session, classification="restricted", title="Закрытый проект")
+
+        await assistant_api.post(
+            "/api/v1/tasks", json=body(title="Обычная", project_id=str(open_project.id))
+        )
+        await assistant_api.post(
+            "/api/v1/tasks", json=body(title="Закрытая", project_id=str(closed.id))
+        )
+
+        on_screen = await assistant_api.get("/api/v1/tasks")
+        assert sorted(item["title"] for item in on_screen.json()) == ["Закрытая", "Обычная"]
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv")
+        assert exported.status_code == 200
+        text = exported.content.decode("utf-8-sig")
+        assert "Обычная" in text
+        assert "Закрытая" not in text, "задача закрытого проекта ушла наружу файлом"
+
+    async def test_a_task_without_a_project_is_exported(self, assistant_api: AsyncClient) -> None:
+        """Задача вне проекта грифа не имеет — и выпадать из выгрузки не должна."""
+        await assistant_api.post("/api/v1/tasks", json=body(title="Поручение без проекта"))
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv")
+
+        assert "Поручение без проекта" in exported.content.decode("utf-8-sig")
+
+    async def test_the_file_opens_in_excel_with_russian_locale(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        """Точка с запятой и метка порядка байтов.
+
+        Без них Excel с русской локалью раскладывает файл в одну колонку и портит
+        кириллицу — и первое, что делает человек, это закрывает файл.
+        """
+        await assistant_api.post("/api/v1/tasks", json=body(title="Проверка кодировки"))
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv")
+
+        assert exported.content.startswith(BOM), "нет метки порядка байтов"
+        assert "Номер;Название;" in exported.content.decode("utf-8-sig")
+        assert "attachment" in exported.headers["content-disposition"]
+
+    async def test_the_export_obeys_the_same_filters_as_the_screen(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        await assistant_api.post("/api/v1/tasks", json=body(title="Поручение", is_control=True))
+        await assistant_api.post("/api/v1/tasks", json=body(title="Обычная задача"))
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv", params={"is_control": True})
+
+        text = exported.content.decode("utf-8-sig")
+        assert "Поручение" in text
+        assert "Обычная задача" not in text
+
+    async def test_the_file_names_people_and_projects_in_words(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Идентификатор в колонке «Исполнитель» не значит для человека ничего.
+
+        Файл открывают в Excel, где подставить имя из справочника уже некому: всё, что
+        не подставлено здесь, остаётся набором из тридцати шести знаков. Ровно поэтому
+        колонки «Статус» и «Приоритет» тоже приходят названиями, а не кодами.
+        """
+        project = await a_project(session, title="Приёмная станция ДЗЗ")
+        executor = Person(full_name="Рахимов Р.")
+        session.add(executor)
+        await session.flush()
+
+        await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(
+                title="Смонтировать антенну",
+                project_id=str(project.id),
+                assignee_person_id=str(executor.id),
+            ),
+        )
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv")
+
+        line = next(
+            row
+            for row in exported.content.decode("utf-8-sig").splitlines()
+            if "Смонтировать антенну" in row
+        )
+        assert "Рахимов Р." in line
+        assert "Приёмная станция ДЗЗ" in line
+        assert "Новая" in line, "статус пришёл кодом, а не названием"
+        assert str(executor.id) not in line
+        assert str(project.id) not in line
+
+    async def test_the_due_date_is_in_agency_time(self, assistant_api: AsyncClient) -> None:
+        """Хранение в UTC, показ — в Ташкенте (инвариант 5). Файл — это показ.
+
+        Разница в пять часов превращает «до конца дня» в «до обеда следующего», и
+        замечают это по сорванному сроку, а не по файлу.
+        """
+        await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(title="Срок под вечер", due_at="2026-09-14T12:00:00+00:00"),
+        )
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv")
+
+        line = next(
+            row
+            for row in exported.content.decode("utf-8-sig").splitlines()
+            if "Срок под вечер" in row
+        )
+        assert "14.09.2026 17:00" in line, f"срок не переведён в ташкентское время: {line}"
+
+    async def test_overdue_is_marked_in_the_file_too(self, assistant_api: AsyncClient) -> None:
+        past = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+        await assistant_api.post("/api/v1/tasks", json=body(title="Горит", due_at=past))
+
+        exported = await assistant_api.get("/api/v1/tasks/export.csv")
+
+        line = next(
+            row for row in exported.content.decode("utf-8-sig").splitlines() if "Горит" in row
+        )
+        assert ";да;" in line
 
 
 class TestEveryChangeIsInTheJournal:

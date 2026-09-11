@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,3 +178,91 @@ class TestStaffDirectory:
         await session.flush()
 
         assert await session.scalar(select(func.count()).select_from(Person)) == 2
+
+
+class TestStaffDirectoryIsReadable:
+    """Выдача списка сотрудников наружу интерфейса (ORB-020).
+
+    Список нужен фильтрам базы задач: «чьё» и «с кого спрашивать» (ТЗ 6.2). Пока его не
+    было, оба фильтра было нечем наполнить — и это обнаружилось не при чтении плана, а
+    при сборке экрана.
+    """
+
+    @staticmethod
+    async def names(api: AsyncClient, **params: object) -> list[str]:
+        response = await api.get("/api/v1/people", params=params)
+        assert response.status_code == 200, response.text
+        return [item["full_name"] for item in response.json()]
+
+    async def test_staff_come_back_ordered_by_name(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Порядок задаёт сервер.
+
+        Выпадающий список сортируется один раз здесь, а не в каждом месте, где он
+        показан: расходящийся порядок в двух фильтрах на одном экране читается как сбой.
+        """
+        session.add_all(
+            [
+                Person(full_name="Юсупов Ю."),
+                Person(full_name="Абдуллаев А."),
+                Person(full_name="Мирзаев М."),
+            ]
+        )
+        await session.flush()
+
+        assert await self.names(assistant_api) == [
+            "Абдуллаев А.",
+            "Мирзаев М.",
+            "Юсупов Ю.",
+        ]
+
+    async def test_a_dismissed_employee_is_hidden_from_new_assignments(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        session.add_all(
+            [
+                Person(full_name="Действующий Д."),
+                Person(full_name="Уволенный У.", is_active=False),
+            ]
+        )
+        await session.flush()
+
+        assert await self.names(assistant_api) == ["Действующий Д."]
+
+    async def test_a_dismissed_employee_is_still_reachable_on_request(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Иначе из старой записи пропал бы тот, на кого её когда-то завели.
+
+        Задача, выданная уволившемуся, никуда не делась: её видно на экране, и фильтр
+        «чьи задачи» обязан суметь его назвать. Отключение — не удаление.
+        """
+        session.add(Person(full_name="Уволенный У.", is_active=False))
+        await session.flush()
+
+        assert await self.names(assistant_api, active_only=False) == ["Уволенный У."]
+
+    async def test_search_matches_a_part_of_the_name_in_any_case(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Человек набирает фамилию как помнит, а не как она записана."""
+        session.add_all([Person(full_name="Каримов Кабул"), Person(full_name="Рахимов Р.")])
+        await session.flush()
+
+        assert await self.names(assistant_api, search="КАРИМ") == ["Каримов Кабул"]
+        assert await self.names(assistant_api, search="  каримов  ") == ["Каримов Кабул"]
+        assert await self.names(assistant_api, search="нет такого") == []
+
+    async def test_the_leader_reads_the_directory_too(
+        self, leader_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Граница проходит по периметру системы, а не между пользователями (ADR-0011).
+
+        Руководитель не пишет, но видит всё: список сотрудников ему нужен ровно так же —
+        отфильтровать задачи по исполнителю.
+        """
+        session.add(Person(full_name="Рахимов Р."))
+        await session.flush()
+
+        assert await self.names(leader_api) == ["Рахимов Р."]

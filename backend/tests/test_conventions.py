@@ -34,3 +34,18 @@ def test_no_naive_utcnow() -> None:
     assert not offenders, (
         f"дата без часового пояса запрещена, используйте datetime.now(UTC): {offenders}"
     )
+
+
+def test_no_route_hides_from_the_schema() -> None:
+    """Маршрут не исключают из описания API (`include_in_schema=False`).
+
+    Схема — не украшение: по ней собирается клиент интерфейса, и по ней же обходит все
+    маршруты проверка «ни один не отвечает без сессии» (`test_roles`). Спрятанный из
+    схемы эндпоинт выпадает из обоих — и незаметнее всего из второго.
+    """
+    offenders = [
+        path.relative_to(BACKEND_ROOT)
+        for path in python_sources()
+        if "include_in_schema" in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"маршрут, скрытый из схемы, не попадёт под проверку доступа: {offenders}"

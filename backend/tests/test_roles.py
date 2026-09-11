@@ -11,10 +11,15 @@
 Отдельно проверяется, что от снятого разграничения по проектам не осталось следов в коде
 (COUNCIL-0002). Мёртвая матрица прав опаснее отсутствующей: её однажды примут за
 работающую и начнут на неё опираться.
+
+И, наконец, что каждый маршрут вообще требует сессию. Это единственная проверка, которая
+растёт вместе с системой сама: новый роутер попадает в неё в тот момент, когда его
+подключают, а не когда о нём вспомнят.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import jwt
@@ -24,6 +29,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.router import API_PREFIX
 from app.api.security import Assistant, create_access_token
 from app.domain.people import Role
 from app.repos.models import User
@@ -31,9 +37,9 @@ from app.settings import Settings
 
 pytestmark = pytest.mark.infra
 
-# Точка, в которой проверяется охранник. Своих пишущих эндпоинтов у системы пока нет:
-# первым станет ORB-011. Пробный маршрут проверяет зависимость насквозь — через
-# маршрутизацию, обработчик ошибок и формат ответа, — а не вызовом функции напрямую.
+# Точка, в которой проверяется охранник. Пробный маршрут, а не настоящий: он проверяет
+# зависимость насквозь — через маршрутизацию, обработчик ошибок и формат ответа, — и при
+# этом не зависит от того, что именно умеет делать конкретный раздел сегодня.
 probe = APIRouter()
 
 
@@ -175,3 +181,70 @@ class TestNoTracesOfProjectLevelAccess:
         assert not found, (
             "разграничение по проектам снято, но в коде остались его следы:\n" + "\n".join(found)
         )
+
+
+# Маршруты, которые обязаны отвечать без сессии: ими её получают и ею же заканчивают.
+# Список закрытый и короткий — всё, что в него попадает, попадает осознанно.
+PUBLIC_PATHS = frozenset(
+    {
+        f"{API_PREFIX}/auth/login",
+        f"{API_PREFIX}/auth/refresh",
+        f"{API_PREFIX}/auth/logout",
+    }
+)
+
+SAMPLE_ID = "00000000-0000-0000-0000-000000000000"
+
+
+def api_endpoints(application: FastAPI) -> list[tuple[str, str]]:
+    """Метод и путь каждого маршрута API — по описанию схемы.
+
+    Схема, а не обход `app.routes`: внутреннее устройство списка маршрутов у FastAPI
+    менялось (в 0.141 включённый роутер лежит там одним непрозрачным объектом), и обход
+    по нему однажды молча перестал бы что-либо находить. Схема — это то, что FastAPI
+    обещает наружу; по ней же собирается клиент интерфейса.
+    """
+    schema = application.openapi()
+    return sorted(
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
+        if path.startswith(API_PREFIX)
+    )
+
+
+class TestEveryEndpointNeedsASession:
+    """Ни один маршрут не отвечает без сессии.
+
+    Проверка написана обходом приложения, а не перечислением путей, потому что забывают
+    именно новые роутеры: зависимость ставится на роутер один раз, и её отсутствие ничем
+    себя не проявляет — эндпоинт работает, просто работает для всех. Отсюда же выбор
+    проверять живым запросом, а не осмотром зависимостей: осмотр видит, что зависимость
+    объявлена, но не то, что она срабатывает раньше разбора запроса.
+    """
+
+    def test_the_check_has_something_to_check(self, app: FastAPI) -> None:
+        """Страховка от тихого вырождения: пустой обход прошёл бы молча."""
+        guarded = [route for route in api_endpoints(app) if route[1] not in PUBLIC_PATHS]
+
+        assert len(guarded) > 10, f"маршрутов почти не нашлось, обход сломан: {guarded}"
+
+    async def test_no_route_answers_without_a_session(
+        self, app: FastAPI, client: AsyncClient
+    ) -> None:
+        open_routes = []
+        for method, path in api_endpoints(app):
+            if path in PUBLIC_PATHS:
+                continue
+            response = await client.request(method, re.sub(r"\{[^}]+\}", SAMPLE_ID, path))
+            if response.status_code != 401:
+                open_routes.append(f"{method} {path} → {response.status_code}")
+
+        assert not open_routes, f"маршруты отвечают без сессии: {open_routes}"
+
+    async def test_the_refusal_says_how_to_get_a_session(self, client: AsyncClient) -> None:
+        """401 без `WWW-Authenticate` — это отказ, из которого не следует, что делать."""
+        response = await client.get(f"{API_PREFIX}/tasks")
+
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"

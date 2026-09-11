@@ -9,9 +9,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
+import { configureApi } from '../shared/api/client';
 import type { SessionValue } from '../shared/auth/SessionContext';
 import { SessionContext } from '../shared/auth/SessionContext';
 import { ASSISTANT, sessionOf } from './profiles';
+
+/** Токен вошедшего — такой же условный, как и профиль рядом. */
+export const TEST_ACCESS_TOKEN = 'test-access-token';
 
 export function WithSession({
   children,
@@ -23,6 +27,14 @@ export function WithSession({
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
+
+  // То же, что делает `AuthProvider` в приложении. Без этого клиент API в тестах не
+  // знает, откуда брать токен, и ни один запрос не уходит с ним — а значит, пропажу
+  // заголовка `Authorization` не заметил бы ни один тест: они все и так проходили бы.
+  configureApi(
+    () => (value.status === 'signed-in' ? TEST_ACCESS_TOKEN : null),
+    () => {},
+  );
 
   return (
     <QueryClientProvider client={client}>

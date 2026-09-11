@@ -85,6 +85,51 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return (await response.json()) as T;
 }
 
+/** Файл вместе с именем, под которым его предложено сохранить. */
+export interface DownloadedFile {
+  blob: Blob;
+  filename: string;
+}
+
+/**
+ * Файл, собранный сервером.
+ *
+ * Отдельная функция, а не ссылка `<a href>` в разметке: браузер не приложит к переходу
+ * по ссылке заголовок `Authorization`, а токен живёт в памяти вкладки, и класть его в
+ * адрес нельзя — адрес попадает в журналы, историю и в пересланную ссылку. Поэтому файл
+ * забирается обычным запросом, с тем же токеном, что и всё остальное.
+ *
+ * Собирает файл по-прежнему сервер: выгрузка — точка выхода наружу, и проверка грифа
+ * стоит там (ADR-0007). Здесь только сохранение того, что пришло.
+ */
+export async function requestFile(
+  path: string,
+  query?: RequestOptions['query'],
+): Promise<DownloadedFile> {
+  const headers: Record<string, string> = {};
+  const token = readToken();
+  if (token !== null) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_PREFIX}${path}${buildQuery(query)}`, { headers });
+
+  if (!response.ok) {
+    const problem = await safeProblem(response);
+    if (response.status === 401) onUnauthorized();
+    throw new HttpError(response.status, problem);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFrom(response.headers.get('Content-Disposition')),
+  };
+}
+
+/** Имя файла из заголовка. Своё имя придумывается только когда сервер его не прислал. */
+function filenameFrom(disposition: string | null): string {
+  const match = /filename="?([^";]+)"?/.exec(disposition ?? '');
+  return match?.[1] ?? 'orbita.csv';
+}
+
 /**
  * Пустые значения в строку запроса не попадают.
  *

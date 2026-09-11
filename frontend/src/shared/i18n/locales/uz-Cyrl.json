@@ -74,5 +74,39 @@
     "columnStatus": "Ҳолат",
     "columnDue": "Муддат",
     "columnProgress": "Бажарилди"
+  },
+  "tasks": {
+    "count": "{{count}} вазифа",
+    "count_few": "{{count}} вазифа",
+    "count_many": "{{count}} вазифа",
+    "export": "Файлга юклаш",
+    "searchPlaceholder": "Номи бўйича қидириш",
+    "filterStatus": "Ҳолат",
+    "filterPriority": "Устуворлик",
+    "filterAssignee": "Ижрочи",
+    "filterCurator": "Лойиҳа куратори",
+    "filterDirection": "Йўналиш",
+    "anyStatus": "Барча ҳолатлар",
+    "anyPriority": "Исталган устуворлик",
+    "anyAssignee": "Исталган ижрочи",
+    "anyCurator": "Исталган куратор",
+    "anyDirection": "Барча йўналишлар",
+    "onlyOverdue": "Фақат муддати ўтганлар",
+    "onlyControl": "Фақат топшириқлар",
+    "columns": "Кўринадиган устунлар",
+    "overdueBy_zero": "Муддат ўтди",
+    "overdueBy_one": "{{count}} кунга кечикди",
+    "overdueBy_few": "{{count}} кунга кечикди",
+    "overdueBy_many": "{{count}} кунга кечикди",
+    "column": {
+      "code": "Рақам",
+      "title": "Номи",
+      "status": "Ҳолат",
+      "priority": "Устуворлик",
+      "assignee": "Ижрочи",
+      "due": "Муддат"
+    },
+    "exporting": "Файл тайёрланмоқда…",
+    "exportFailed": "Файлни тайёрлаб бўлмади. Қайта уриниб кўринг."
   }
 }

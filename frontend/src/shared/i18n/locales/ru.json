@@ -74,5 +74,39 @@
     "columnStatus": "Статус",
     "columnDue": "Срок",
     "columnProgress": "Выполнено"
+  },
+  "tasks": {
+    "count": "{{count}} задача",
+    "count_few": "{{count}} задачи",
+    "count_many": "{{count}} задач",
+    "export": "Выгрузить в файл",
+    "searchPlaceholder": "Поиск по названию",
+    "filterStatus": "Статус",
+    "filterPriority": "Приоритет",
+    "filterAssignee": "Исполнитель",
+    "filterCurator": "Куратор проекта",
+    "filterDirection": "Направление",
+    "anyStatus": "Все статусы",
+    "anyPriority": "Любой приоритет",
+    "anyAssignee": "Любой исполнитель",
+    "anyCurator": "Любой куратор",
+    "anyDirection": "Все направления",
+    "onlyOverdue": "Только просроченные",
+    "onlyControl": "Только поручения",
+    "columns": "Видимые колонки",
+    "overdueBy_zero": "Срок прошёл",
+    "overdueBy_one": "Просрочена на {{count}} день",
+    "overdueBy_few": "Просрочена на {{count}} дня",
+    "overdueBy_many": "Просрочена на {{count}} дней",
+    "column": {
+      "code": "Номер",
+      "title": "Название",
+      "status": "Статус",
+      "priority": "Приоритет",
+      "assignee": "Исполнитель",
+      "due": "Срок"
+    },
+    "exporting": "Собираем файл…",
+    "exportFailed": "Не удалось собрать файл. Повторите."
   }
 }
