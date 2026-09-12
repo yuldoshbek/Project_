@@ -26,7 +26,10 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.api.deps import get_session
+from app.adapters.antivirus import AntivirusUnavailableError, ScanResult
+from app.adapters.queue import RecordingQueue
+from app.adapters.storage.memory import InMemoryStorage
+from app.api.deps import get_job_queue, get_session, get_storage, get_virus_scanner
 from app.api.security import create_access_token
 from app.domain.people import Role
 from app.main import create_app
@@ -148,15 +151,66 @@ def settings_for_session() -> Settings:
     return build_settings()
 
 
+class FakeScanner:
+    """Антивирус, приговор которого назначает тест.
+
+    Настоящий clamd в наборе тестов не участвует: поднятый контейнер с гигабайтом
+    сигнатур проверял бы заодно сеть, образ и свежесть баз — и падал бы по любой из трёх
+    причин, не имеющих отношения к проверяемому поведению. Что разговор с clamd устроен
+    верно, проверяется вживую, на поднятом окружении.
+    """
+
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.infected: set[bytes] = set()
+        self.unavailable = False
+        self.scanned: list[int] = []
+
+    async def scan(self, data: bytes) -> ScanResult:
+        if self.unavailable:
+            raise AntivirusUnavailableError("антивирус не отвечает")
+        self.scanned.append(len(data))
+        if data in self.infected:
+            return ScanResult(is_clean=False, signature="Test.Signature")
+        return ScanResult(is_clean=True)
+
+
 @pytest.fixture
-async def app(settings: Settings) -> AsyncIterator[FastAPI]:
+def storage() -> InMemoryStorage:
+    """Хранилище вложений на время теста."""
+    return InMemoryStorage()
+
+
+@pytest.fixture
+def scanner() -> FakeScanner:
+    return FakeScanner()
+
+
+@pytest.fixture
+def queue() -> RecordingQueue:
+    return RecordingQueue()
+
+
+@pytest.fixture
+async def app(
+    settings: Settings, storage: InMemoryStorage, scanner: FakeScanner, queue: RecordingQueue
+) -> AsyncIterator[FastAPI]:
     """Приложение с поднятым подключением к базе.
 
     `ASGITransport` не выполняет lifespan, поэтому подключение создаётся здесь вручную.
     Что сам lifespan отрабатывает, проверяется отдельно в `test_lifespan_opens_database`.
+
+    Хранилище, антивирус и очередь подменены на всём наборе тестов, а не только там, где
+    они проверяются. Иначе первый же тест, случайно задевший загрузку файла, полез бы в
+    MinIO и в clamd — и упал бы на машине, где их не подняли, показав при этом ошибку про
+    что угодно, кроме настоящей причины.
     """
     application = create_app(settings)
     init_database(settings)
+    application.dependency_overrides[get_storage] = lambda: storage
+    application.dependency_overrides[get_virus_scanner] = lambda: scanner
+    application.dependency_overrides[get_job_queue] = lambda: queue
     try:
         yield application
     finally:
@@ -292,7 +346,7 @@ async def api(app: FastAPI, session: AsyncSession) -> AsyncIterator[AsyncClient]
         async with AsyncClient(transport=transport, base_url="http://test") as http_client:
             yield http_client
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_session, None)
 
 
 async def _client_for(
@@ -330,7 +384,7 @@ async def _client_for(
         ) as http_client:
             yield http_client
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_session, None)
 
 
 @pytest.fixture

@@ -110,5 +110,30 @@
     "exporting": "Собираем файл…",
     "exportFailed": "Не удалось собрать файл. Повторите.",
     "checklistOf": "Выполнено {{done}} из {{total}}"
+  },
+  "documents": {
+    "title": "Файлы",
+    "count": "{{count}} файл",
+    "count_few": "{{count}} файла",
+    "count_many": "{{count}} файлов",
+    "dropHere": "Перетащите файл сюда или выберите",
+    "uploading": "Загружаем…",
+    "uploadFailed": "Не удалось загрузить файл. Повторите.",
+    "alreadyAttached": "Этот файл уже приложен — под именем «{{name}}»",
+    "loadFailed": "Не удалось загрузить список файлов",
+    "loadFailedHint": "Проверьте связь и повторите",
+    "empty": "Файлов пока нет",
+    "emptyHint": "Перетащите сюда смету, письмо или снимок экрана",
+    "version": "версия {{number}}",
+    "versions": "Версии",
+    "show": "Показать",
+    "hide": "Скрыть",
+    "download": "Скачать",
+    "remove": "Удалить",
+    "previewPending": "предпросмотр готовится",
+    "previewFailed": "предпросмотр не построен",
+    "drawerLabel": "Файлы: {{name}}",
+    "open": "Файлы записи «{{name}}»",
+    "close": "Закрыть"
   }
 }

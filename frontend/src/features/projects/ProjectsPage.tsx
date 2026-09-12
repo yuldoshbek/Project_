@@ -12,12 +12,14 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { EmptyState } from '../../shared/ui/EmptyState';
 import { ErrorState } from '../../shared/ui/ErrorState';
 import { Skeleton } from '../../shared/ui/Skeleton';
+import { AttachmentsButton, AttachmentsDrawer } from '../documents/AttachmentsDrawer';
 import styles from './projects.module.css';
 import type { Dictionaries, Project } from './api';
 import { fetchDictionaries, fetchProjects } from './api';
@@ -35,6 +37,11 @@ const PARAM = {
 export function ProjectsPage() {
   const { t, i18n } = useTranslation();
   const [params, setParams] = useSearchParams();
+
+  // Вложения живут в ящике поверх списка, пока нет карточки проекта (ORB-018).
+  // Состояние здесь, а не в строке таблицы: ящик один на экран, и два открытых
+  // одновременно — это два предпросмотра, борющихся за место.
+  const [filesOf, setFilesOf] = useState<Project | null>(null);
 
   // Явная запись, а не сборка из массива: тип должен знать, что значение есть у
   // каждого ключа, иначе каждое обращение к фильтру приходится проверять на пустоту.
@@ -161,7 +168,22 @@ export function ProjectsPage() {
       {projects.data?.length === 0 && <EmptyState />}
 
       {projects.data !== undefined && projects.data.length > 0 && (
-        <ProjectTable projects={projects.data} dictionaries={dictionaries.data} />
+        <ProjectTable
+          projects={projects.data}
+          dictionaries={dictionaries.data}
+          onOpenFiles={setFilesOf}
+        />
+      )}
+
+      {filesOf !== null && (
+        <AttachmentsDrawer
+          target="project"
+          entityId={filesOf.id}
+          title={filesOf.title}
+          onClose={() => {
+            setFilesOf(null);
+          }}
+        />
       )}
     </section>
   );
@@ -204,9 +226,11 @@ function Select({
 function ProjectTable({
   projects,
   dictionaries,
+  onOpenFiles,
 }: {
   projects: Project[];
   dictionaries: Dictionaries | undefined;
+  onOpenFiles: (project: Project) => void;
 }) {
   const { t, i18n } = useTranslation();
 
@@ -230,6 +254,11 @@ function ProjectTable({
             <th scope="col">{t('projects.columnStatus')}</th>
             <th scope="col">{t('projects.columnDue')}</th>
             <th scope="col">{t('projects.columnProgress')}</th>
+            {/* Столбец действия, а не данных: заголовка у него нет, но он должен быть
+                назван — иначе программа чтения с экрана объявляет пустую ячейку. */}
+            <th scope="col">
+              <span className={styles.srOnly}>{t('documents.title')}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -267,6 +296,14 @@ function ProjectTable({
                     style={{ width: `${String(project.progress_pct)}%` }}
                   />
                 </div>
+              </td>
+              <td className={styles.filesCell}>
+                <AttachmentsButton
+                  label={t('documents.open', { name: project.title })}
+                  onOpen={() => {
+                    onOpenFiles(project);
+                  }}
+                />
               </td>
             </tr>
           ))}

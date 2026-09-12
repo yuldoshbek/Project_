@@ -19,8 +19,10 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.storage import FileStorage
 from app.domain.comments import CommentTarget
 from app.domain.dictionaries import Health, ProjectStatus, SettingKey
+from app.domain.documents import DocumentTarget
 from app.domain.errors import NotFoundError
 from app.domain.projects import (
     DEFAULT_IMPEDIMENT_STALE_DAYS,
@@ -35,7 +37,7 @@ from app.domain.projects import (
 )
 from app.domain.projects import health as compute_health
 from app.repos.models import Organization, PriorityRef, Project, ProjectPartner, Task
-from app.services import codes, comments
+from app.services import codes, comments, documents
 from app.services.dictionaries import get_setting
 
 DEFAULT_WARN_DAYS = 3
@@ -249,19 +251,22 @@ async def set_impediment(
     return project
 
 
-async def delete(session: AsyncSession, project_id: uuid.UUID) -> None:
+async def delete(session: AsyncSession, storage: FileStorage, project_id: uuid.UUID) -> None:
     """Удаляет проект вместе со всем, что к нему относилось.
 
-    Задачи уносит сама база (`ON DELETE CASCADE`), а их обсуждения — нет: комментарий
-    ссылается на задачу полем `entity_id`, которое указывает то на одну таблицу, то на
-    другую, и внешним ключом такое не выразить. Поэтому реплики задач убираются здесь, до
-    удаления проекта, — иначе они осели бы в базе навсегда, не появляясь ни в одной ленте.
+    Задачи уносит сама база (`ON DELETE CASCADE`), а их обсуждения и вложения — нет: и
+    комментарий, и документ ссылаются на владельца полем `entity_id`, которое указывает
+    то на одну таблицу, то на другую, и внешним ключом такое не выразить. Поэтому они
+    убираются здесь, до удаления проекта, — иначе реплики осели бы в базе навсегда, не
+    появляясь ни в одной ленте, а файлы остались бы в хранилище без единой ссылки на них.
     """
     project = await get(session, project_id)
 
     for task_id in await session.scalars(select(Task.id).where(Task.project_id == project_id)):
         await comments.delete_for(session, CommentTarget.TASK, task_id)
+        await documents.delete_for(session, storage, DocumentTarget.TASK, task_id)
     await comments.delete_for(session, CommentTarget.PROJECT, project_id)
+    await documents.delete_for(session, storage, DocumentTarget.PROJECT, project_id)
 
     await session.delete(project)
     await session.flush()

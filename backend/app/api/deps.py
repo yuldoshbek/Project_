@@ -12,7 +12,10 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.antivirus import VirusScanner, create_virus_scanner
 from app.adapters.identity import IdentityProvider, create_identity_provider
+from app.adapters.queue import JobQueue, create_job_queue
+from app.adapters.storage import FileStorage, create_file_storage
 from app.api.transaction import SESSION_STATE_ATTRIBUTE
 from app.repos.database import new_session
 from app.settings import Settings
@@ -62,6 +65,24 @@ def get_identity_provider(request: Request) -> IdentityProvider:
     return create_identity_provider(get_app_settings(request).identity_provider)
 
 
+def get_storage(request: Request) -> FileStorage:
+    """Хранилище вложений (ADR-0009)."""
+    return create_file_storage(get_app_settings(request))
+
+
+def get_virus_scanner(request: Request) -> VirusScanner:
+    """Антивирус (Q7). Зависимость, а не прямой вызов: тест подменяет её целиком."""
+    return create_virus_scanner(get_app_settings(request))
+
+
+def get_job_queue(request: Request) -> JobQueue:
+    """Очередь фоновых заданий."""
+    return create_job_queue(get_app_settings(request))
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 IdentityProviderDep = Annotated[IdentityProvider, Depends(get_identity_provider)]
+StorageDep = Annotated[FileStorage, Depends(get_storage)]
+ScannerDep = Annotated[VirusScanner, Depends(get_virus_scanner)]
+QueueDep = Annotated[JobQueue, Depends(get_job_queue)]

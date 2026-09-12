@@ -29,7 +29,7 @@ class Notification(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "notifications"
 
     # Кому показать. Упомянутый сотрудник здесь стоять не может: сотрудники — не
-    # пользователи системы, и показать им внутри неё нечего (Q24, ADR-0011).
+    # пользователи системы, и показать им внутри неё нечего (Q25, ADR-0011).
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )

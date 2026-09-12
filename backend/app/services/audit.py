@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any
 
 from sqlalchemy import event, insert, inspect
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.base import NO_VALUE
 
@@ -125,6 +126,39 @@ def _changes_on_create(target: Any) -> Changes:
             continue
         changes[key] = {"from": None, "to": _plain(value)}
     return changes
+
+
+async def record_access(
+    session: AsyncSession,
+    *,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    action: AuditAction,
+    changes: Changes,
+) -> None:
+    """Записывает событие доступа, которое ничего не изменило.
+
+    Исключение из правила «журнал пишется сам», и единственное. Сессия сообщает об
+    изменениях — а выдача ссылки на файл закрытого проекта изменением не является, и
+    заметить её сессии неоткуда (ADR-0009).
+
+    Отсюда и узость: функция не принимает объект модели и не годится на роль общего
+    `write_audit(...)`, от которого предостерегает ADR-0010. Появление её второго
+    вызывающего — повод не дописать вызов, а спросить, почему изменение не видно сессии.
+    """
+    await session.execute(
+        insert(AuditLog).values(
+            actor_id=(actor := get_actor()).id,
+            actor_kind=actor.kind.value,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action.value,
+            changes=changes,
+            request_id=get_request_id(),
+            ip=actor.ip,
+            user_agent=actor.user_agent,
+        )
+    )
 
 
 @event.listens_for(Session, "before_flush")

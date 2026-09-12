@@ -18,6 +18,8 @@ from typing import Literal
 from pydantic import SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.domain.documents import DEFAULT_MAX_UPLOAD_MB, MEGABYTE
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 Environment = Literal["development", "test", "production"]
@@ -60,6 +62,45 @@ class Settings(BaseSettings):
     # --- Redis ---
     redis_url: str = "redis://127.0.0.1:56379/0"
 
+    # --- Хранилище файлов (ADR-0009) ---
+    s3_endpoint: str = "http://127.0.0.1:59000"
+    s3_bucket: str = "orbita"
+    s3_access_key: SecretStr = SecretStr("orbita")
+    s3_secret_key: SecretStr = SecretStr("orbita-secret")
+    # MinIO область не использует, но подпись запроса её требует. Имя значения не имеет
+    # и должно лишь совпадать у того, кто подписывает, и у того, кто проверяет.
+    s3_region: str = "us-east-1"
+    # Первый уровень ключа. Отделяет наши файлы от чужих, если бакет однажды окажется
+    # общим с ассистентом SETA (ADR-0001).
+    s3_prefix: str = "orbita"
+
+    # --- Вложения ---
+    max_upload_mb: int = DEFAULT_MAX_UPLOAD_MB
+    # Время жизни ссылки на файл. Пять минут: столько нужно, чтобы браузер успел начать
+    # скачивание большого файла, и слишком мало, чтобы ссылка пережила пересылку.
+    download_link_seconds: int = 300
+    # Для проектов с грифом — минута (ADR-0007, ADR-0009). Ссылка на такой файл не
+    # должна доживать до того момента, когда её кто-то перешлёт.
+    restricted_link_seconds: int = 60
+
+    # --- Антивирус (Q7) ---
+    # clamav — проверять, disabled — не проверять. Второе значение существует ради
+    # тестов и разработки без поднятого окружения; на рабочем контуре оно означает, что
+    # требование СБ не выполняется, и это видно по одной строке настроек.
+    antivirus: str = "clamav"
+    antivirus_host: str = "127.0.0.1"
+    antivirus_port: int = 53310
+    # Проверка идёт в запросе на загрузку: пятьдесят мегабайт clamd просматривает
+    # секунды. Больше минуты — это не «медленно», а «не отвечает».
+    antivirus_timeout_seconds: float = 60.0
+
+    # --- Предпросмотр офисных форматов (ADR-0009) ---
+    # gotenberg — LibreOffice в отдельном контейнере за HTTP; disabled — не строить
+    # производный PDF.
+    preview_converter: str = "gotenberg"
+    preview_url: str = "http://127.0.0.1:53000"
+    preview_timeout_seconds: float = 120.0
+
     # --- Наблюдаемость ---
     log_level: str = "INFO"
     # В разработке читаемый вывод, в остальных случаях JSON для сбора логов.
@@ -90,6 +131,12 @@ class Settings(BaseSettings):
             f"postgresql+asyncpg://{self.db_user}:{password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def upload_max_bytes(self) -> int:
+        """Предел вложения в байтах. В настройках он в мегабайтах — так его читают люди."""
+        return self.max_upload_mb * MEGABYTE
 
     @computed_field  # type: ignore[prop-decorator]
     @property

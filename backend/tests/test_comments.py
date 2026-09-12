@@ -271,7 +271,7 @@ class TestMentionsNotify:
     async def test_a_mention_creates_a_notification_for_the_other_user(
         self, assistant_api: AsyncClient, session: AsyncSession
     ) -> None:
-        """Извещается второй пользователь, а не упомянутый (Q24).
+        """Извещается второй пользователь, а не упомянутый (Q25).
 
         Сотрудники в систему не входят (ADR-0011), и показать им внутри неё нечего. Кого
         упомянули — сохраняется, чтобы доставку можно было изменить без потери данных.

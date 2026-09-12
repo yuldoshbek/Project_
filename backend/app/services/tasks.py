@@ -17,9 +17,11 @@ from typing import Any
 from sqlalchemy import Integer, Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.storage import FileStorage
 from app.domain.clock import now_utc
 from app.domain.comments import CommentTarget
 from app.domain.dictionaries import TaskStatus
+from app.domain.documents import DocumentTarget
 from app.domain.errors import NotFoundError
 from app.domain.projects import Classification, ProgressMode, auto_progress
 from app.domain.tasks import days_overdue, is_overdue, validate_transition
@@ -31,7 +33,7 @@ from app.repos.models import (
     TaskChecklistItem,
     TaskStatusRef,
 )
-from app.services import codes, comments
+from app.services import codes, comments, documents
 
 CODE_PREFIX = "TSK"
 CODE_DIGITS = 5
@@ -237,13 +239,15 @@ async def update(
     return task
 
 
-async def delete(session: AsyncSession, task_id: uuid.UUID) -> None:
+async def delete(session: AsyncSession, storage: FileStorage, task_id: uuid.UUID) -> None:
     task = await get(session, task_id)
     project_id = task.project_id
 
-    # Обсуждение уходит вместе с задачей. Внешним ключом это не выражается: `entity_id`
-    # у комментария указывает то на задачи, то на проекты, и база такую связь не поймёт.
+    # Обсуждение и вложения уходят вместе с задачей. Внешним ключом это не выражается:
+    # `entity_id` у них указывает то на задачи, то на проекты, и база такую связь не
+    # поймёт.
     await comments.delete_for(session, CommentTarget.TASK, task_id)
+    await documents.delete_for(session, storage, DocumentTarget.TASK, task_id)
 
     await session.delete(task)
     await session.flush()
