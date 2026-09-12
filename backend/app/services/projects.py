@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.comments import CommentTarget
 from app.domain.dictionaries import Health, ProjectStatus, SettingKey
 from app.domain.errors import NotFoundError
 from app.domain.projects import (
@@ -33,8 +34,8 @@ from app.domain.projects import (
     validate_status_reason,
 )
 from app.domain.projects import health as compute_health
-from app.repos.models import Organization, PriorityRef, Project, ProjectPartner
-from app.services import codes
+from app.repos.models import Organization, PriorityRef, Project, ProjectPartner, Task
+from app.services import codes, comments
 from app.services.dictionaries import get_setting
 
 DEFAULT_WARN_DAYS = 3
@@ -249,7 +250,19 @@ async def set_impediment(
 
 
 async def delete(session: AsyncSession, project_id: uuid.UUID) -> None:
+    """Удаляет проект вместе со всем, что к нему относилось.
+
+    Задачи уносит сама база (`ON DELETE CASCADE`), а их обсуждения — нет: комментарий
+    ссылается на задачу полем `entity_id`, которое указывает то на одну таблицу, то на
+    другую, и внешним ключом такое не выразить. Поэтому реплики задач убираются здесь, до
+    удаления проекта, — иначе они осели бы в базе навсегда, не появляясь ни в одной ленте.
+    """
     project = await get(session, project_id)
+
+    for task_id in await session.scalars(select(Task.id).where(Task.project_id == project_id)):
+        await comments.delete_for(session, CommentTarget.TASK, task_id)
+    await comments.delete_for(session, CommentTarget.PROJECT, project_id)
+
     await session.delete(project)
     await session.flush()
 

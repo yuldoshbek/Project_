@@ -18,6 +18,7 @@ from sqlalchemy import Integer, Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.clock import now_utc
+from app.domain.comments import CommentTarget
 from app.domain.dictionaries import TaskStatus
 from app.domain.errors import NotFoundError
 from app.domain.projects import Classification, ProgressMode, auto_progress
@@ -30,7 +31,7 @@ from app.repos.models import (
     TaskChecklistItem,
     TaskStatusRef,
 )
-from app.services import codes
+from app.services import codes, comments
 
 CODE_PREFIX = "TSK"
 CODE_DIGITS = 5
@@ -239,6 +240,11 @@ async def update(
 async def delete(session: AsyncSession, task_id: uuid.UUID) -> None:
     task = await get(session, task_id)
     project_id = task.project_id
+
+    # Обсуждение уходит вместе с задачей. Внешним ключом это не выражается: `entity_id`
+    # у комментария указывает то на задачи, то на проекты, и база такую связь не поймёт.
+    await comments.delete_for(session, CommentTarget.TASK, task_id)
+
     await session.delete(task)
     await session.flush()
     await recalculate_project_progress(session, project_id)
