@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     auth,
     checklists,
+    comments,
     dictionaries,
     milestones,
     partners,
@@ -30,6 +31,7 @@ api_router.include_router(people.router)
 api_router.include_router(projects.router)
 api_router.include_router(tasks.router)
 api_router.include_router(checklists.router)
+api_router.include_router(comments.router)
 api_router.include_router(milestones.router)
 api_router.include_router(partners.router)
 
