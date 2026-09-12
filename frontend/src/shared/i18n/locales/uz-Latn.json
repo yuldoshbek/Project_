@@ -110,5 +110,30 @@
     "exporting": "Fayl tayyorlanmoqda…",
     "exportFailed": "Faylni tayyorlab boʻlmadi. Qayta urinib koʻring.",
     "checklistOf": "{{total}} tadan {{done}} tasi bajarildi"
+  },
+  "documents": {
+    "title": "Fayllar",
+    "count": "{{count}} fayl",
+    "count_few": "{{count}} fayl",
+    "count_many": "{{count}} fayl",
+    "dropHere": "Faylni bu yerga tashlang yoki tanlang",
+    "uploading": "Yuklanmoqda…",
+    "uploadFailed": "Faylni yuklab bo‘lmadi. Qayta urinib ko‘ring.",
+    "alreadyAttached": "Bu fayl «{{name}}» nomi bilan allaqachon ilova qilingan",
+    "loadFailed": "Fayllar ro‘yxatini yuklab bo‘lmadi",
+    "loadFailedHint": "Ulanishni tekshiring va qayta urinib ko‘ring",
+    "empty": "Hozircha fayllar yo‘q",
+    "emptyHint": "Smeta, xat yoki ekran suratini bu yerga tashlang",
+    "version": "{{number}}-nashr",
+    "versions": "Nashrlar",
+    "show": "Ko‘rsatish",
+    "hide": "Yashirish",
+    "download": "Yuklab olish",
+    "remove": "O‘chirish",
+    "previewPending": "ko‘rib chiqish tayyorlanmoqda",
+    "previewFailed": "ko‘rib chiqish tuzilmadi",
+    "drawerLabel": "Fayllar: {{name}}",
+    "open": "«{{name}}» yozuvi fayllari",
+    "close": "Yopish"
   }
 }

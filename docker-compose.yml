@@ -92,6 +92,59 @@ services:
       "
     restart: 'no'
 
+  # Предпросмотр офисных форматов (ТЗ 6.6, ADR-0009): LibreOffice в headless-режиме с
+  # HTTP-обёрткой. Отдельный контейнер, а не пакет рядом с приложением: семьсот мегабайт
+  # ради одного вызова, и на машине разработчика под Windows его нет вовсе.
+  #
+  # Маршруты Chromium и работы с готовыми PDF выключены: мы пользуемся одним — офисным.
+  # Выход в сеть из документа запрещён в обе стороны: связанная картинка в DOCX — это
+  # адрес, по которому пойдёт преобразователь, и указать его может тот, кто прислал файл.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --chromium-disable-routes
+      - --pdfengines-disable-routes
+      - --libreoffice-deny-private-ips
+      - --libreoffice-deny-public-ips
+      - --api-timeout=120s
+    ports:
+      - '127.0.0.1:${ORBITA_PREVIEW_PORT:-53000}:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '--silent', '--fail', 'http://localhost:3000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Антивирус (OPEN-QUESTIONS Q7). Проверка идёт до того, как файл попадёт в хранилище,
+  # в базу и в интерфейс, — поэтому без поднятого clamav загрузка вложений не работает
+  # вовсе. Это намеренно: недоступный антивирус означает непроверенный файл, а не
+  # проверенный.
+  #
+  # Первый запуск долгий: базы сигнатур весят под гигабайт и распаковываются минутами.
+  # `start_period` это учитывает; дальше базы лежат в томе и загружаются заново только
+  # обновлением.
+  clamav:
+    image: clamav/clamav:latest
+    restart: unless-stopped
+    environment:
+      # Обновлять базы раз в сутки. По умолчанию образ проверяет обновления каждый час —
+      # для машины разработчика это лишний трафик и лишний шум в логах.
+      FRESHCLAM_CHECKS: 1
+    ports:
+      - '127.0.0.1:${ORBITA_ANTIVIRUS_PORT:-53310}:3310'
+    volumes:
+      - clamav-data:/var/lib/clamav
+      - ./docker/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+    healthcheck:
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
   # Перехватывает исходящую почту в разработке: письма видны в веб-интерфейсе и никуда не уходят.
   # Вместо MailHog из карточки тикета — Mailpit: MailHog не поддерживается с 2020 года,
   # Mailpit его прямой преемник с теми же портами (SMTP 1025, интерфейс 8025).
@@ -115,3 +168,4 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
+  clamav-data:

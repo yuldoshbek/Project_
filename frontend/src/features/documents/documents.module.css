@@ -1,0 +1,298 @@
+/*
+ * Вложения.
+ *
+ * Панель встраиваемая: своих отступов по краям у неё нет, их задаёт то, во что её
+ * вставили, — карточка проекта, карточка задачи или ящик поверх списка. Панель с
+ * собственными полями выглядит в карточке вложенной коробкой.
+ *
+ * Предпросмотр — самая крупная часть, и высота у него задана. Рамка просмотра PDF без
+ * высоты схлопывается в ноль: содержимое лежит в чужом документе, и родитель о нём
+ * ничего не знает.
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* --- Загрузка --- */
+
+.dropZone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.dropActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.dropLabel {
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.dropLabel:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+/*
+ * Поле выбора файла остаётся в потоке и остаётся доступным с клавиатуры: спрятать его
+ * через `display: none` значит убрать его из порядка обхода, и загрузить файл, не беря
+ * мышь, станет нельзя. Здесь оно просто узкое и без рамки, а нажимают на подпись.
+ */
+.fileInput {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.uploading {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-health-yellow);
+  border-radius: var(--radius-sm);
+  background: var(--color-health-yellow-soft);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+/* --- Список --- */
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.item {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  /* Длинное имя переносится, а не уезжает за край: имя файла — это то, по чему его
+     узнают, и обрезанное «Смета работ по объ…» не отличить от соседнего. */
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.version {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.action {
+  min-height: var(--tap-target-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.action:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.danger:hover {
+  border-color: var(--color-health-red);
+  color: var(--color-health-red);
+}
+
+.pending {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* --- Предпросмотр --- */
+
+.preview {
+  margin-top: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: 60vh;
+  min-height: 320px;
+  border: 0;
+}
+
+/* Ширина по содержимому, а не во всю панель: снимок экрана бывает 8×8, и растянутый
+   до полуметра он превращается в цветные квадраты. Ограничение только сверху. */
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+/* --- Версии --- */
+
+.versions {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.versionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* --- Ящик поверх списка --- */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgb(20 24 31 / 45%);
+}
+
+.drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--color-bg);
+  box-shadow: -8px 0 24px rgb(20 24 31 / 18%);
+}
+
+.drawerHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.drawerTitle {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.close {
+  margin-left: auto;
+  min-width: var(--tap-target-min);
+  min-height: var(--tap-target-min);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+/* Кнопка-скрепка в строке списка. */
+.clip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap-target-min);
+  min-height: var(--tap-target-min);
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.clip:hover {
+  color: var(--color-accent);
+}
+
+@media (width <= 640px) {
+  .drawer {
+    width: 100%;
+    padding: var(--space-4);
+  }
+
+  .frame {
+    height: 50vh;
+  }
+}

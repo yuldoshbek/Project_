@@ -170,6 +170,8 @@ make password EMAIL=assistant@orbita.local
 | PostgreSQL 16 | `127.0.0.1:55432`, базы `orbita` и `orbita_test` | данные; расширения `pg_trgm`, `unaccent`, `citext`, `pgcrypto` включены при создании |
 | Redis 7 | `127.0.0.1:56379` | очередь фоновых задач |
 | MinIO | http://localhost:59001 (консоль), логин `orbita` / `orbita-secret` | хранилище вложений, бакет `orbita` |
+| Преобразователь (Gotenberg) | `127.0.0.1:53000` | LibreOffice в headless-режиме: производный PDF для предпросмотра DOCX, XLSX, PPTX (ADR-0009) |
+| Антивирус (ClamAV) | `127.0.0.1:53310` | проверка вложений до сохранения (Q7). **Первый запуск долгий:** базы сигнатур весят под гигабайт |
 | Почта (Mailpit) | http://localhost:58025 | письма разработки не уходят наружу |
 
 **Порты смещены намеренно.** Стандартный 5432 часто занят нативным PostgreSQL: контейнер
@@ -219,6 +221,7 @@ GitHub Secrets.
 | Тестовые данные | база `orbita_test` | — | пересоздаётся |
 | Очередь фоновых задач | Redis, том `orbita_redis-data` | сохраняется | удаляется |
 | Вложения | MinIO, том `orbita_minio-data`, бакет `orbita` | сохраняется | удаляется |
+| Базы сигнатур антивируса | ClamAV, том `orbita_clamav-data` | сохраняются | удаляются и скачиваются заново |
 | Письма разработки | Mailpit, только память | теряются | теряются |
 
 Потеря очереди не теряет данных: фоновые задания идемпотентны
@@ -240,7 +243,7 @@ GitHub Secrets.
 | Разбор «делать ли и как» | [COUNCIL-0001](docs/council/COUNCIL-0001.md) |
 | Смена объёма: система на двоих | [COUNCIL-0002](docs/council/COUNCIL-0002.md) |
 | Тикеты, зависимости, волны | [docs/tickets/INDEX.md](docs/tickets/INDEX.md) |
-| Вопросы заказчику (Q1…Q24) и допущения | [docs/OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) |
+| Вопросы заказчику (Q1…Q25) и допущения | [docs/OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) |
 | Процесс разработки | [docs/PIPELINE.md](docs/PIPELINE.md) |
 | Как вести работу над проектом | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Политика безопасности | [.github/SECURITY.md](.github/SECURITY.md) |

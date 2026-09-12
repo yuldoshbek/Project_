@@ -85,6 +85,33 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return (await response.json()) as T;
 }
 
+/**
+ * Загрузка файла на сервер.
+ *
+ * Тело собирается `FormData`, и заголовок `Content-Type` здесь **не ставится**: браузер
+ * дописывает к нему границу частей, без которой сервер не разберёт тело. Поставить его
+ * руками — значит получить отказ на каждой загрузке.
+ *
+ * Файл идёт через приложение, а не прямой подписанной ссылкой в хранилище, и это
+ * намеренно: только так его успевают проверить антивирусом и посчитать отпечаток до
+ * того, как он где-либо окажется (Q7, ADR-0009). Ссылкой файл только **раздаётся**.
+ */
+export async function requestUpload<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const token = readToken();
+  if (token !== null) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_PREFIX}${path}`, { method: 'POST', headers, body: form });
+
+  if (!response.ok) {
+    const problem = await safeProblem(response);
+    if (response.status === 401) onUnauthorized();
+    throw new HttpError(response.status, problem);
+  }
+
+  return (await response.json()) as T;
+}
+
 /** Файл вместе с именем, под которым его предложено сохранить. */
 export interface DownloadedFile {
   blob: Blob;

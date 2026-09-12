@@ -19,7 +19,7 @@ from typing import Annotated, Any
 from fastapi import Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import SessionDep, SettingsDep, StorageDep
 from app.api.security import Assistant, get_active_user
 from app.api.transaction import transactional_router
 from app.domain.clock import now_utc, today_in
@@ -243,10 +243,12 @@ async def set_impediment(
 
 
 @router.delete("/projects/{project_id}", status_code=204, summary="Удаление проекта")
-async def delete_project(project_id: uuid.UUID, session: SessionDep, user: Assistant) -> None:
+async def delete_project(
+    project_id: uuid.UUID, session: SessionDep, storage: StorageDep, user: Assistant
+) -> None:
     """Полное удаление.
 
     Обычный способ убрать проект с глаз — архив (ORB-025), а не удаление: завершённая
     работа остаётся историей агентства. Удаление нужно для заведённого по ошибке.
     """
-    await service.delete(session, project_id)
+    await service.delete(session, storage, project_id)

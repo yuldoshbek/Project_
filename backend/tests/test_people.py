@@ -189,7 +189,7 @@ class TestStaffDirectoryIsReadable:
     """
 
     @staticmethod
-    async def names(api: AsyncClient, **params: object) -> list[str]:
+    async def names(api: AsyncClient, **params: str | int | bool) -> list[str]:
         response = await api.get("/api/v1/people", params=params)
         assert response.status_code == 200, response.text
         return [item["full_name"] for item in response.json()]

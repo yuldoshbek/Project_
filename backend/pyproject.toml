@@ -24,6 +24,16 @@ dependencies = [
     # ни в облегчённых образах Linux — приложение падало бы при первом расчёте
     # светофора, на машине, где его никто не проверял.
     "tzdata>=2025.2",
+    # --- ORB-017, вложения ---
+    # Разбор multipart/form-data. FastAPI без него отказывается объявить `UploadFile`
+    # и падает на старте, а не на первой загрузке файла — и это правильно.
+    "python-multipart>=0.0.20",
+    # Клиент S3. Асинхронный намеренно: загрузка идёт в том же цикле, что и запрос,
+    # и синхронный boto3 останавливал бы обработку всех остальных запросов на время
+    # передачи пятидесяти мегабайт.
+    "aioboto3>=14.1",
+    # Обращения к преобразователю документов (ORB-017) и, дальше, к Google и Telegram.
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
@@ -31,7 +41,6 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
-    "httpx>=0.28",
     "python-dotenv>=1.0",
     "ruff>=0.8",
     "mypy>=1.13",
@@ -107,7 +116,7 @@ disallow_untyped_calls = false
 
 # Библиотеки без маркера py.typed: аннотации внутри есть, но mypy их не видит.
 [[tool.mypy.overrides]]
-module = ["asyncpg.*"]
+module = ["asyncpg.*", "aioboto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------
@@ -118,7 +127,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers --cov=app --cov-report=term-missing"
 markers = [
-    "infra: тест требует поднятого окружения — make up (PostgreSQL, Redis)",
+    "infra: тест требует поднятого окружения — make up (PostgreSQL, Redis, MinIO)",
     "db: тест работает с базой данных",
     "slow: длительный тест, не входит в быстрый прогон",
 ]

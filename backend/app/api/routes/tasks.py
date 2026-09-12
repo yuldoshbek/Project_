@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import SessionDep, SettingsDep, StorageDep
 from app.api.security import Assistant, get_active_user
 from app.api.transaction import transactional_router
 from app.domain.checklists import ChecklistProgress
@@ -292,5 +292,7 @@ async def update_task(
 
 
 @router.delete("/tasks/{task_id}", status_code=204, summary="Удаление задачи")
-async def delete_task(task_id: uuid.UUID, session: SessionDep, user: Assistant) -> None:
-    await service.delete(session, task_id)
+async def delete_task(
+    task_id: uuid.UUID, session: SessionDep, storage: StorageDep, user: Assistant
+) -> None:
+    await service.delete(session, storage, task_id)

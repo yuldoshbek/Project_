@@ -340,9 +340,18 @@ class TestTheWholeThingStartsAndStops:
 class TestSchedule:
     def test_the_cleanup_runs_by_schedule_and_not_at_startup(self) -> None:
         """Задание при старте — это задание при каждой выкладке, а не раз в сутки."""
+        from app.services.documents import PREVIEW_JOB
         from app.workers.main import CRON_JOBS, FUNCTIONS, WorkerSettings
 
-        assert [handler.__name__ for handler in FUNCTIONS] == ["purge_stale_sessions"]
+        registered = [handler.__name__ for handler in FUNCTIONS]
+        assert "purge_stale_sessions" in registered
+        assert PREVIEW_JOB in registered, (
+            "задание предпросмотра ставится из обработчика запроса по имени "
+            f"{PREVIEW_JOB!r}; не зарегистрированное здесь — это задание, которое "
+            "никогда не выполнится, и никто об этом не узнает"
+        )
+
+        # По расписанию ходит только уборка: предпросмотр ставится по событию.
         assert len(CRON_JOBS) == 1
         assert CRON_JOBS[0].run_at_startup is False
         assert WorkerSettings.max_tries == MAX_TRIES, (

@@ -371,4 +371,23 @@
     border: none;
     background: transparent;
   }
+
+  /* Скрепка — последней: без явного порядка ячейка встаёт с order 0, то есть **перед**
+     номером проекта, и каждая карточка на телефоне начинается со значка вложений. */
+  .table td.filesCell {
+    order: 9;
+    width: auto;
+    margin-left: auto;
+  }
+}
+
+/* Название столбца действий: на глаз не нужно, программе чтения с экрана — обязательно.
+   `display: none` лишил бы ячейку имени вовсе, и столбец объявлялся бы пустым. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

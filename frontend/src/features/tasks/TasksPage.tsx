@@ -14,6 +14,7 @@
  */
 
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -22,6 +23,7 @@ import { fetchDictionaries } from '../projects/api';
 import { EmptyState } from '../../shared/ui/EmptyState';
 import { ErrorState } from '../../shared/ui/ErrorState';
 import { Skeleton } from '../../shared/ui/Skeleton';
+import { AttachmentsButton, AttachmentsDrawer } from '../documents/AttachmentsDrawer';
 import { formatDate } from '../../shared/time';
 import type { Person, Task } from './api';
 import { fetchPeople, fetchTasks, fetchTasksFile } from './api';
@@ -39,15 +41,7 @@ const PARAM = {
 } as const;
 
 /** Колонки таблицы. Скрытые перечисляются в адресе, чтобы вид переживал ссылку. */
-const COLUMNS = [
-  'code',
-  'title',
-  'status',
-  'priority',
-  'assignee',
-  'checklist',
-  'due',
-] as const;
+const COLUMNS = ['code', 'title', 'status', 'priority', 'assignee', 'checklist', 'due'] as const;
 type Column = (typeof COLUMNS)[number];
 
 /**
@@ -94,6 +88,9 @@ const DESC_PARAM = 'descending';
 export function TasksPage() {
   const { t, i18n } = useTranslation();
   const [params, setParams] = useSearchParams();
+
+  // Вложения живут в ящике поверх списка, пока нет карточки задачи (ORB-022).
+  const [filesOf, setFilesOf] = useState<Task | null>(null);
 
   const filters: Record<string, string> = {};
   for (const name of Object.values(PARAM)) filters[name] = params.get(name) ?? '';
@@ -328,6 +325,18 @@ export function TasksPage() {
           onSort={sortOn}
           dictionaries={dictionaries.data}
           people={people.data ?? []}
+          onOpenFiles={setFilesOf}
+        />
+      )}
+
+      {filesOf !== null && (
+        <AttachmentsDrawer
+          target="task"
+          entityId={filesOf.id}
+          title={filesOf.title}
+          onClose={() => {
+            setFilesOf(null);
+          }}
         />
       )}
     </section>
@@ -420,6 +429,7 @@ function TaskTable({
   onSort,
   dictionaries,
   people,
+  onOpenFiles,
 }: {
   tasks: Task[];
   hidden: Set<string>;
@@ -428,6 +438,7 @@ function TaskTable({
   onSort: (column: Column) => void;
   dictionaries: Dictionaries | undefined;
   people: Person[];
+  onOpenFiles: (task: Task) => void;
 }) {
   const { t, i18n } = useTranslation();
 
@@ -476,6 +487,12 @@ function TaskTable({
                 )}
               </th>
             ))}
+            {/* Столбец действия, а не данных: он не входит в выбор столбцов и не
+                сортируется, но должен быть назван — иначе программа чтения с экрана
+                объявляет пустую ячейку. */}
+            <th scope="col">
+              <span className={styles.srOnly}>{t('documents.title')}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -501,6 +518,14 @@ function TaskTable({
                   {column === 'due' && formatDate(task.due_at)}
                 </td>
               ))}
+              <td className={styles.filesCell}>
+                <AttachmentsButton
+                  label={t('documents.open', { name: task.title })}
+                  onOpen={() => {
+                    onOpenFiles(task);
+                  }}
+                />
+              </td>
             </tr>
           ))}
         </tbody>

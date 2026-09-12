@@ -17,6 +17,7 @@ from app.repos.models.dictionaries import (
     Setting,
     TaskStatusRef,
 )
+from app.repos.models.documents import Document, DocumentVersion
 from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.partners import ProjectPartner
@@ -29,6 +30,8 @@ __all__ = [
     "Auditable",
     "Comment",
     "Direction",
+    "Document",
+    "DocumentVersion",
     "Milestone",
     "Notification",
     "Organization",

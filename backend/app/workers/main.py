@@ -28,11 +28,11 @@ from app.observability import configure_logging, route_library_logs
 from app.repos.database import dispose_database, init_database
 from app.settings import Settings, get_settings
 from app.workers.context import MAX_TRIES
-from app.workers.jobs import purge_stale_sessions_job
+from app.workers.jobs import build_preview_job, purge_stale_sessions_job
 
 logger = structlog.get_logger(__name__)
 
-FUNCTIONS = [purge_stale_sessions_job]
+FUNCTIONS = [purge_stale_sessions_job, build_preview_job]
 
 CRON_JOBS = [
     # Ночью и в минуту, отличную от нуля: в ноль минут просыпаются все задания всех

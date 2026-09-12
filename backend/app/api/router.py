@@ -13,6 +13,7 @@ from app.api.routes import (
     checklists,
     comments,
     dictionaries,
+    documents,
     milestones,
     partners,
     people,
@@ -32,6 +33,7 @@ api_router.include_router(projects.router)
 api_router.include_router(tasks.router)
 api_router.include_router(checklists.router)
 api_router.include_router(comments.router)
+api_router.include_router(documents.router)
 api_router.include_router(milestones.router)
 api_router.include_router(partners.router)
 
