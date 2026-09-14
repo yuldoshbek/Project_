@@ -19,6 +19,7 @@ export interface Project {
   priority_code: string;
   direction_id: string;
   due_on: string;
+  status_reason: string | null;
   progress_pct: number;
   impediment: string | null;
   impediment_updated_at: string | null;
@@ -39,9 +40,21 @@ export interface DictionaryItem {
   name: LocalizedNames;
 }
 
+/**
+ * Статус проекта вместе с его правилом.
+ *
+ * `requires_reason` приходит с сервера, а не записан здесь списком «пауза и отмена»:
+ * правило живёт в домене (ТЗ 7), и второй его экземпляр в интерфейсе однажды
+ * разошёлся бы с первым — доска перестала бы спрашивать причину, а сервер продолжал бы
+ * её требовать, и каждый перенос заканчивался бы отказом.
+ */
+export interface ProjectStatusEntry extends DictionaryItem {
+  requires_reason: boolean;
+}
+
 export interface Dictionaries {
   directions: DictionaryItem[];
-  project_statuses: DictionaryItem[];
+  project_statuses: ProjectStatusEntry[];
   task_statuses: DictionaryItem[];
   priorities: DictionaryItem[];
 }
@@ -52,4 +65,23 @@ export function fetchProjects(filters: Record<string, string>): Promise<Project[
 
 export function fetchDictionaries(): Promise<Dictionaries> {
   return request<Dictionaries>('/dictionaries');
+}
+
+/**
+ * Перенос в другой статус.
+ *
+ * Причина уходит только тогда, когда её спросили: отправка пустой причины вместе с
+ * переносом «в работу» стёрла бы причину прошлой паузы, а она — история проекта.
+ */
+export function updateProjectStatus(id: string, status: string, reason?: string): Promise<Project> {
+  const body: Record<string, string> = { status_code: status };
+  if (reason !== undefined) body.status_reason = reason;
+  return request<Project>(`/projects/${id}`, { method: 'PATCH', body });
+}
+
+/** Название из справочника на языке интерфейса. */
+export function localizedName(names: LocalizedNames, language: string): string {
+  if (language === 'uz-Cyrl') return names.uz_cyrl;
+  if (language === 'uz-Latn') return names.uz_latn;
+  return names.ru;
 }

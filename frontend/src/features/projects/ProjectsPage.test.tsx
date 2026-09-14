@@ -93,7 +93,8 @@ describe('портфель проектов', () => {
 
     expect(await screen.findByText('PRJ-2026-001')).toBeInTheDocument();
     expect(screen.getByText('Приёмная станция ДЗЗ')).toBeInTheDocument();
-    expect(screen.getByText('2026-08-28')).toBeInTheDocument();
+    // Срок — по времени агентства и в привычном виде, а не строкой ISO.
+    expect(screen.getByText('28.08.2026')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '80');
   });
 

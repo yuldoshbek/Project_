@@ -73,7 +73,27 @@
     "columnTitle": "Nomi",
     "columnStatus": "Holat",
     "columnDue": "Muddat",
-    "columnProgress": "Bajarildi"
+    "columnProgress": "Bajarildi",
+    "viewLabel": "Ko‘rinish",
+    "viewList": "Ro‘yxat",
+    "viewBoard": "Taxta",
+    "board": {
+      "empty": "Bo‘sh",
+      "moveLabel": "Ustunga ko‘chirish",
+      "moveFailed": "«{{title}}» ko‘chirilmadi: {{reason}}",
+      "percent": "{{value}}%",
+      "reasonTitle": "«{{status}}» holatining sababi",
+      "reasonLabel": "Sabab",
+      "reasonHint": "Usiz bir oydan keyin loyiha nimani kutayotganini hech kim eslamaydi.",
+      "reasonConfirm": "Ko‘chirish",
+      "reasonCancel": "Ko‘chirmaslik",
+      "reasonShown": "Sabab: {{reason}}",
+      "dragHint": "Kartochkani sichqoncha bilan sudrash yoki «Ustunga ko‘chirish» maydoni orqali ko‘chirish mumkin.",
+      "announceStart": "«{{title}}» loyihasi olindi",
+      "announceOver": "«{{status}}» ustuni ustida",
+      "announceEnd": "«{{title}}» loyihasi «{{status}}» ustuniga ko‘chirildi",
+      "announceCancel": "Ko‘chirish bekor qilindi"
+    }
   },
   "tasks": {
     "count": "{{count}} vazifa",

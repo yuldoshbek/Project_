@@ -16,6 +16,9 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { HttpError } from '../../shared/api/client';
+import { useSession } from '../../shared/auth/useSession';
+import { formatDate } from '../../shared/time';
 import { EmptyState } from '../../shared/ui/EmptyState';
 import { ErrorState } from '../../shared/ui/ErrorState';
 import { Skeleton } from '../../shared/ui/Skeleton';
@@ -23,6 +26,8 @@ import { AttachmentsButton, AttachmentsDrawer } from '../documents/AttachmentsDr
 import styles from './projects.module.css';
 import type { Dictionaries, Project } from './api';
 import { fetchDictionaries, fetchProjects } from './api';
+import { ProjectBoard } from './ProjectBoard';
+import { useMoveProject } from './useMoveProject';
 
 /** Имена параметров адреса. Строками по месту не пишутся: опечатка тихо ломает фильтр. */
 const PARAM = {
@@ -34,6 +39,13 @@ const PARAM = {
   search: 'search',
 } as const;
 
+/**
+ * Вид экрана — тоже в адресе, но отдельно от фильтров: фильтры уходят в запрос к серверу,
+ * а вид серверу не нужен. Список — вид по умолчанию и параметра не оставляет.
+ */
+const VIEW_PARAM = 'view';
+const BOARD = 'board';
+
 export function ProjectsPage() {
   const { t, i18n } = useTranslation();
   const [params, setParams] = useSearchParams();
@@ -42,6 +54,11 @@ export function ProjectsPage() {
   // Состояние здесь, а не в строке таблицы: ящик один на экран, и два открытых
   // одновременно — это два предпросмотра, борющихся за место.
   const [filesOf, setFilesOf] = useState<Project | null>(null);
+
+  const { profile } = useSession();
+  const mayEdit = profile?.role === 'assistant';
+  const view = params.get(VIEW_PARAM) === BOARD ? BOARD : 'list';
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   // Явная запись, а не сборка из массива: тип должен знать, что значение есть у
   // каждого ключа, иначе каждое обращение к фильтру приходится проверять на пустоту.
@@ -67,6 +84,26 @@ export function ProjectsPage() {
     queryFn: () => fetchProjects(filters),
   });
 
+  const moveProject = useMoveProject(['projects', filters]);
+
+  const onMove = (project: Project, status: string, reason?: string) => {
+    setMoveError(null);
+    moveProject.mutate(
+      { project, status, ...(reason === undefined ? {} : { reason }) },
+      {
+        onError: (error) => {
+          // Слова сервера, а не свои: там сказано, почему именно перенос не принят.
+          setMoveError(
+            t('projects.board.moveFailed', {
+              title: project.title,
+              reason: error instanceof HttpError ? error.message : t('state.errorHint'),
+            }),
+          );
+        },
+      },
+    );
+  };
+
   function apply(name: string, value: string) {
     const next = new URLSearchParams(params);
     if (value === '') next.delete(name);
@@ -90,6 +127,28 @@ export function ProjectsPage() {
             {t('projects.count', { count: projects.data.length })}
           </span>
         )}
+        <div className={styles.views} role="group" aria-label={t('projects.viewLabel')}>
+          <button
+            type="button"
+            className={styles.viewButton}
+            aria-pressed={view !== BOARD}
+            onClick={() => {
+              apply(VIEW_PARAM, '');
+            }}
+          >
+            {t('projects.viewList')}
+          </button>
+          <button
+            type="button"
+            className={styles.viewButton}
+            aria-pressed={view === BOARD}
+            onClick={() => {
+              apply(VIEW_PARAM, BOARD);
+            }}
+          >
+            {t('projects.viewBoard')}
+          </button>
+        </div>
       </header>
 
       <div className={styles.filters}>
@@ -167,13 +226,32 @@ export function ProjectsPage() {
       )}
       {projects.data?.length === 0 && <EmptyState />}
 
-      {projects.data !== undefined && projects.data.length > 0 && (
+      {moveError !== null && (
+        <p className={styles.moveError} role="alert">
+          {moveError}
+        </p>
+      )}
+
+      {projects.data !== undefined && projects.data.length > 0 && view !== BOARD && (
         <ProjectTable
           projects={projects.data}
           dictionaries={dictionaries.data}
           onOpenFiles={setFilesOf}
         />
       )}
+
+      {projects.data !== undefined &&
+        projects.data.length > 0 &&
+        view === BOARD &&
+        dictionaries.data !== undefined && (
+          <ProjectBoard
+            projects={projects.data}
+            dictionaries={dictionaries.data}
+            mayEdit={mayEdit}
+            onMove={onMove}
+            onOpenFiles={setFilesOf}
+          />
+        )}
 
       {filesOf !== null && (
         <AttachmentsDrawer
@@ -281,7 +359,7 @@ function ProjectTable({
                   {statusName(project.status_code)}
                 </span>
               </td>
-              <td className={styles.due}>{project.due_on}</td>
+              <td className={styles.due}>{formatDate(project.due_on)}</td>
               <td>
                 <div
                   className={styles.progressTrack}
