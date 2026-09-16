@@ -317,3 +317,52 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* --- Вид: список или доска --- */
+
+.views {
+  display: inline-flex;
+  margin-left: auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.viewButton {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.viewButton + .viewButton {
+  border-left: 1px solid var(--color-border-strong);
+}
+
+/* Выбранный вид отмечен и цветом, и начертанием: одного цвета мало тому, кто его не
+   различает. */
+.viewButton[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.moveError {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-health-red);
+  border-radius: var(--radius-sm);
+  background: var(--color-health-red-soft);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 640px) {
+  .viewButton {
+    min-height: var(--tap-target-min);
+  }
+}

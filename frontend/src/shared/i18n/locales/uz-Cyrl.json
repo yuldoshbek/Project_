@@ -73,7 +73,27 @@
     "columnTitle": "Номи",
     "columnStatus": "Ҳолат",
     "columnDue": "Муддат",
-    "columnProgress": "Бажарилди"
+    "columnProgress": "Бажарилди",
+    "viewLabel": "Кўриниш",
+    "viewList": "Рўйхат",
+    "viewBoard": "Тахта",
+    "board": {
+      "empty": "Бўш",
+      "moveLabel": "Устунга кўчириш",
+      "moveFailed": "«{{title}}» кўчирилмади: {{reason}}",
+      "percent": "{{value}}%",
+      "reasonTitle": "«{{status}}» ҳолатининг сабаби",
+      "reasonLabel": "Сабаб",
+      "reasonHint": "Усиз бир ойдан кейин лойиҳа нимани кутаётганини ҳеч ким эсламайди.",
+      "reasonConfirm": "Кўчириш",
+      "reasonCancel": "Кўчирмаслик",
+      "reasonShown": "Сабаб: {{reason}}",
+      "dragHint": "Карточкани сичқонча билан судраш ёки «Устунга кўчириш» майдони орқали кўчириш мумкин.",
+      "announceStart": "«{{title}}» лойиҳаси олинди",
+      "announceOver": "«{{status}}» устуни устида",
+      "announceEnd": "«{{title}}» лойиҳаси «{{status}}» устунига кўчирилди",
+      "announceCancel": "Кўчириш бекор қилинди"
+    }
   },
   "tasks": {
     "count": "{{count}} вазифа",

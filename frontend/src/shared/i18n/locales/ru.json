@@ -73,7 +73,27 @@
     "columnTitle": "Название",
     "columnStatus": "Статус",
     "columnDue": "Срок",
-    "columnProgress": "Выполнено"
+    "columnProgress": "Выполнено",
+    "viewLabel": "Вид",
+    "viewList": "Список",
+    "viewBoard": "Доска",
+    "board": {
+      "empty": "Пусто",
+      "moveLabel": "Перенести в колонку",
+      "moveFailed": "Не удалось перенести «{{title}}»: {{reason}}",
+      "percent": "{{value}}%",
+      "reasonTitle": "Причина статуса «{{status}}»",
+      "reasonLabel": "Причина",
+      "reasonHint": "Без неё через месяц никто не вспомнит, чего ждёт проект.",
+      "reasonConfirm": "Перенести",
+      "reasonCancel": "Не переносить",
+      "reasonShown": "Причина: {{reason}}",
+      "dragHint": "Карточку можно перетащить мышью или перенести полем «Перенести в колонку».",
+      "announceStart": "Взят проект «{{title}}»",
+      "announceOver": "Над колонкой «{{status}}»",
+      "announceEnd": "Проект «{{title}}» перенесён в «{{status}}»",
+      "announceCancel": "Перенос отменён"
+    }
   },
   "tasks": {
     "count": "{{count}} задача",
