@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -46,6 +47,11 @@ class Person(Auditable, UUIDPrimaryKey, Timestamps, Base):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    external_seta_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    """Тот же сотрудник в SETA. Нужен, чтобы узнавать гостя, участника встречи или
+    исполнителя поручения между прогонами обмена, а не заводить его заново каждый раз
+    ([договор с SETA](../../../../docs/integration/SETA-ORBITA.md), раздел 5)."""
 
     __table_args__ = (
         # Поиск по ФИО — основной способ выбрать куратора в форме создания (ТЗ 10.5:
@@ -93,9 +99,14 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     """Пароль выдан администратором и должен быть заменён при первом входе."""
 
-    telegram_id: Mapped[int | None] = mapped_column(nullable=True, unique=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     """Получатель сообщений бота. Белый список — это буквально непустые значения
-    этого столбца ([ADR-0013](../../../docs/adr/ADR-0013-telegram-bot.md))."""
+    этого столбца ([ADR-0013](../../../docs/adr/ADR-0013-telegram-bot.md)).
+
+    Тип задан явно: `Mapped[int]` означает `Integer`, а Telegram выдаёт 64-битные
+    идентификаторы с 2021 года. Неявный тип означал, что база и код ошибались
+    одинаково, и расхождение со [SPEC.md](../../../docs/SPEC.md) не поймал ни один
+    тест (исправлено миграцией 0014)."""
 
     external_seta_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
 
