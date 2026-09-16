@@ -227,7 +227,7 @@
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: rgb(20 24 31 / 45%);
+  background: var(--color-scrim);
 }
 
 .drawer {
@@ -240,7 +240,7 @@
   padding: var(--space-5);
   overflow-y: auto;
   background: var(--color-bg);
-  box-shadow: -8px 0 24px rgb(20 24 31 / 18%);
+  box-shadow: var(--shadow-drawer);
 }
 
 .drawerHead {

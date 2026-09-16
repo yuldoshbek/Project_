@@ -22,6 +22,12 @@
     "uz-Cyrl": "Ўзбекча",
     "uz-Latn": "Oʻzbekcha"
   },
+  "theme": {
+    "label": "Mavzu",
+    "system": "Tizimdagidek",
+    "light": "Yorugʻ",
+    "dark": "Qorongʻi"
+  },
   "state": {
     "loading": "Yuklanmoqda",
     "empty": "Hech narsa topilmadi",

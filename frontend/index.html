@@ -3,8 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light" />
+    <!-- Обе темы, а не одна: по этому объявлению браузер красит полосы прокрутки и
+         системные части полей ввода. Оставь здесь light — и они останутся светлыми даже
+         там, где токены уже переключились (ADR-0021). -->
+    <meta name="color-scheme" content="dark light" />
     <title>ORBITA</title>
+    <!--
+      Тема ставится до первой отрисовки, иначе светлая вспышка на тёмном экране видна
+      глазом. Скрипт встроенный и выполняется синхронно намеренно: внешний файл
+      загрузился бы после разбора разметки, и вспышка вернулась бы.
+
+      Состояние «система» не снимает атрибут, а подставляет вычисленное значение —
+      поэтому в CSS хватает одного блока на светлую тему вместо двух (медиа-запрос и
+      атрибут), которые разошлись бы на первой правке.
+    -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('orbita.theme');
+          var mode = saved === 'light' || saved === 'dark' ? saved : 'system';
+          var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = mode === 'system' ? (dark ? 'dark' : 'light') : mode;
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (error) {
+          // Хранилище недоступно — приватное окно, запрет на данные сайта. Тема остаётся
+          // тёмной по умолчанию из :root, и это рабочее состояние, а не отказ.
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

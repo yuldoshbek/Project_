@@ -86,7 +86,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  box-shadow: 0 1px 2px rgb(20 24 31 / 8%);
+  box-shadow: var(--shadow-sm);
 }
 
 .grab {
@@ -100,7 +100,7 @@
 
 .lifted {
   cursor: grabbing;
-  box-shadow: 0 10px 28px rgb(20 24 31 / 22%);
+  box-shadow: var(--shadow-md);
 }
 
 .cardHead {
@@ -256,7 +256,7 @@
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: rgb(20 24 31 / 45%);
+  background: var(--color-scrim);
 }
 
 .dialog {
@@ -272,7 +272,7 @@
   padding: var(--space-5);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: 0 16px 40px rgb(20 24 31 / 24%);
+  box-shadow: var(--shadow-lg);
 }
 
 .dialogTitle {

@@ -8,6 +8,7 @@ import { Breadcrumbs } from './Breadcrumbs';
 import styles from './layout.module.css';
 import { LocaleSwitcher } from './LocaleSwitcher';
 import { Sidebar } from './Sidebar';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 /**
  * Оболочка приложения: боковое меню, шапка с хлебными крошками, область содержимого.
@@ -33,6 +34,7 @@ export function AppLayout() {
             стоит в боковом меню, и здесь оно было бы вторым. */}
         <span className={styles.headerBrand}>{t('app.name')}</span>
         <Breadcrumbs />
+        <ThemeSwitcher />
         <LocaleSwitcher />
         {profile !== null && <span className={pageStyles.who}>{profile.full_name}</span>}
         <button

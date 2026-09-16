@@ -22,6 +22,12 @@
     "uz-Cyrl": "Ўзбекча",
     "uz-Latn": "Oʻzbekcha"
   },
+  "theme": {
+    "label": "Тема",
+    "system": "Как в системе",
+    "light": "Светлая",
+    "dark": "Тёмная"
+  },
   "state": {
     "loading": "Загрузка",
     "empty": "Ничего не найдено",
