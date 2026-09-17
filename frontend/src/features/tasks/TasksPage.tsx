@@ -103,8 +103,8 @@ export function TasksPage() {
   const query = { ...filters, [SORT_PARAM]: sortBy, [DESC_PARAM]: String(descending) };
 
   const dictionaries = useQuery({
-    queryKey: ['dictionaries'],
-    queryFn: fetchDictionaries,
+    queryKey: ['dictionaries', { includeInactive: false }],
+    queryFn: () => fetchDictionaries(),
     staleTime: 10 * 60_000,
   });
   const people = useQuery({ queryKey: ['people'], queryFn: fetchPeople, staleTime: 10 * 60_000 });

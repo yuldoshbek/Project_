@@ -7,7 +7,8 @@
 
 .head {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
@@ -105,9 +106,52 @@
   white-space: nowrap;
 }
 
-.projectTitle {
+/* Название проекта в списке — ссылка на карточку. Подчёркивание появляется по
+   наведению, а не стоит всегда: в таблице из двадцати строк постоянные подчёркивания
+   читаются как сетка, а не как ссылки. Цвет здесь обычный текстовый — ссылка узнаётся
+   по месту и по курсору, а синие названия в каждой строке спорят со светофором за
+   внимание, и светофор проигрывает. */
+.projectLink {
   display: block;
+  min-height: var(--tap-target-min);
+  padding: var(--space-2) 0;
   color: var(--color-text);
+  text-decoration: none;
+}
+
+.projectLink:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+.projectLink:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Ссылка на создание оформлена кнопкой, но остаётся ссылкой: её открывают в новой
+   вкладке и присылают друг другу, а кнопка этого не умеет. */
+.create {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.create:hover {
+  background: var(--color-accent-hover);
+}
+
+.create:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 /* Строка «что мешает» видна прямо в списке: она и есть ответ на вопрос

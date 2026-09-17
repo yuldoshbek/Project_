@@ -20,6 +20,8 @@ interface ProblemDetails {
   title?: string;
   detail?: string;
   request_id?: string;
+  /** Разбор по полям — только у 422 (`app/api/errors.py`, обработчик проверки запроса). */
+  errors?: { field?: string; message?: string }[];
 }
 
 export class HttpError extends Error {
@@ -27,12 +29,31 @@ export class HttpError extends Error {
   readonly type: string | undefined;
   readonly requestId: string | undefined;
 
+  /**
+   * Отказы по полям: имя поля → сообщение сервера.
+   *
+   * Разбор живёт здесь, а не в каждой форме: форм будет несколько, а форма ответа одна.
+   * Ошибка, показанная только сверху общей строкой, заставляет искать поле глазами — и
+   * на форме из четырнадцати полей это ищут долго.
+   */
+  readonly fieldErrors: Readonly<Record<string, string>>;
+
   constructor(status: number, problem: ProblemDetails) {
     super(problem.detail ?? problem.title ?? `HTTP ${String(status)}`);
     this.name = 'HttpError';
     this.status = status;
     this.type = problem.type;
     this.requestId = problem.request_id;
+
+    const byField: Record<string, string> = {};
+    for (const entry of problem.errors ?? []) {
+      // Первое сообщение на поле, а не последнее: у одного поля отказов может быть
+      // несколько, и человеку нужен первый, а не тот, что оказался в конце списка.
+      if (entry.field !== undefined && entry.message !== undefined && !(entry.field in byField)) {
+        byField[entry.field] = entry.message;
+      }
+    }
+    this.fieldErrors = byField;
   }
 }
 
@@ -126,8 +147,9 @@ export interface DownloadedFile {
  * адрес нельзя — адрес попадает в журналы, историю и в пересланную ссылку. Поэтому файл
  * забирается обычным запросом, с тем же токеном, что и всё остальное.
  *
- * Собирает файл по-прежнему сервер: выгрузка — точка выхода наружу, и проверка грифа
- * стоит там (ADR-0007). Здесь только сохранение того, что пришло.
+ * Собирает файл по-прежнему сервер: выгрузка — одна из пяти точек выхода наружу, и
+ * проверка `share_externally` стоит там, внутри функции выдачи (ADR-0024). Здесь только
+ * сохранение того, что пришло.
  */
 export async function requestFile(
   path: string,

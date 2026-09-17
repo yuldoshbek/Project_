@@ -9,6 +9,14 @@ export const ROUTES = {
   dashboard: '/',
   today: '/today',
   projects: '/projects',
+  /**
+   * Вложенные адреса портфеля. `new` стоит раньше `:id` не по порядку в объекте, а по
+   * правилу маршрутизатора: статический отрезок адреса точнее динамического и выигрывает
+   * у него независимо от порядка объявления. Порядок здесь — для чтения.
+   */
+  projectNew: '/projects/new',
+  projectCard: '/projects/:id',
+  projectEdit: '/projects/:id/edit',
   tasks: '/tasks',
   calendar: '/calendar',
   reports: '/reports',
@@ -16,6 +24,22 @@ export const ROUTES = {
   login: '/login',
   forbidden: '/403',
 } as const;
+
+/**
+ * Адрес карточки проекта по идентификатору.
+ *
+ * Функция, а не сборка строки по месту: `projectCard` содержит `:id`, и подставлять его
+ * руками в четырёх местах — значит однажды подставить не туда и получить переход на
+ * страницу «не найдено» вместо проекта.
+ */
+export function projectPath(id: string): string {
+  return `${ROUTES.projects}/${id}`;
+}
+
+/** Адрес формы правки того же проекта. */
+export function projectEditPath(id: string): string {
+  return `${projectPath(id)}/edit`;
+}
 
 export interface NavItem {
   to: string;

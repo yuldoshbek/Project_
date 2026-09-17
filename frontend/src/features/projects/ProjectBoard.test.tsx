@@ -47,30 +47,38 @@ const DICTIONARIES = {
   priorities: [{ id: 'pr-1', code: 'urgent', name: NAMES('Срочно') }],
 };
 
-const STATION = {
+const STATION: Project = {
   id: 'p-1',
   code: 'PRJ-2026-001',
   title: 'Приёмная станция ДЗЗ',
+  description: null,
+  kind: 'project',
+  share_externally: true,
   status_code: 'in_progress',
   status_reason: null,
   priority_code: 'urgent',
   direction_id: 'dir-1',
+  curator_person_id: null,
+  started_on: '2026-01-15',
   due_on: '2026-08-28',
+  finished_on: null,
   progress_pct: 80,
+  progress_mode: 'auto',
+  budget_note: null,
   impediment: null,
   impediment_updated_at: null,
   impediment_is_stale: false,
   impediment_is_active: false,
-  health: 'red' as const,
+  health: 'red',
 };
 
-const CATALOG = {
+const CATALOG: Project = {
   ...STATION,
   id: 'p-2',
   code: 'PRJ-2026-005',
   title: 'Каталог спутниковых снимков',
   status_code: 'initiation',
-  health: 'green' as const,
+  health: 'green',
 };
 
 const fetchMock = vi.fn();

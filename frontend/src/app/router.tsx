@@ -1,6 +1,8 @@
 import type { RouteObject } from 'react-router-dom';
 import { createBrowserRouter } from 'react-router-dom';
 
+import { ProjectCardPage } from '../features/projects/ProjectCardPage';
+import { EditProjectPage, NewProjectPage } from '../features/projects/ProjectFormPage';
 import { ProjectsPage } from '../features/projects/ProjectsPage';
 import { TasksPage } from '../features/tasks/TasksPage';
 import { AppLayout } from '../layout/AppLayout';
@@ -44,6 +46,12 @@ export const routes: RouteObject[] = [
               ? { index: true, element }
               : { path: item.to.slice(1), element };
           }),
+          // Экраны портфеля, которых нет в меню: на них приводят из списка и из
+          // карточки, а не из бокового меню. Собираются не из `NAV_ITEMS` именно
+          // поэтому — пункт меню «Новый проект» был бы разделом, которым он не является.
+          { path: ROUTES.projectNew.slice(1), element: <NewProjectPage /> },
+          { path: ROUTES.projectEdit.slice(1), element: <EditProjectPage /> },
+          { path: ROUTES.projectCard.slice(1), element: <ProjectCardPage /> },
           { path: ROUTES.forbidden.slice(1), element: <ForbiddenPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
