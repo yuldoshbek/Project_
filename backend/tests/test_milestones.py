@@ -110,7 +110,7 @@ async def a_project(session: AsyncSession, **overrides: Any) -> Project:
         "code": f"PRJ-2026-{uuid.uuid4().int % 800 + 150:03d}",
         "title": "Проект с вехами",
         "kind": "project",
-        "classification": "internal",
+        "share_externally": True,
         "direction_id": direction.id,
         "status_code": ProjectStatus.IN_PROGRESS.value,
         "priority_code": Priority.NORMAL.value,

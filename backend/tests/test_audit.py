@@ -295,7 +295,7 @@ class TestClassifiedContent:
         Гриф появляется у проектов в ORB-011; здесь он подставляется, чтобы проверить
         саму проводку, а не только чистую функцию маскирования.
         """
-        monkeypatch.setattr(Person, "audit_is_classified", True)
+        monkeypatch.setattr(Person, "audit_hides_values", True)
 
         subject = Person(full_name="Закрытая запись", position="Не для журнала")
         session.add(subject)

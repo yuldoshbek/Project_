@@ -24,7 +24,7 @@ from app.api.security import Assistant, get_active_user
 from app.api.transaction import transactional_router
 from app.domain.clock import now_utc, today_in
 from app.domain.dictionaries import Health
-from app.domain.projects import Classification, ProgressMode, ProjectKind
+from app.domain.projects import SHARE_EXTERNALLY_DEFAULT, ProgressMode, ProjectKind
 from app.services import projects as service
 
 router = transactional_router(tags=["проекты"], dependencies=[Depends(get_active_user)])
@@ -56,7 +56,7 @@ class ProjectResponse(BaseModel):
     title: str
     description: str | None
     kind: ProjectKind
-    classification: Classification
+    share_externally: bool
     direction_id: uuid.UUID
     curator_person_id: uuid.UUID | None
     status_code: str
@@ -97,7 +97,7 @@ class ProjectCreate(BaseModel):
     started_on: date
     due_on: date
     kind: ProjectKind = ProjectKind.PROJECT
-    classification: Classification = Classification.INTERNAL
+    share_externally: bool = SHARE_EXTERNALLY_DEFAULT
     description: str | None = None
     curator_person_id: uuid.UUID | None = None
     status_reason: str | None = None
@@ -118,7 +118,7 @@ class ProjectUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
     description: str | None = None
     kind: ProjectKind | None = None
-    classification: Classification | None = None
+    share_externally: bool | None = None
     direction_id: uuid.UUID | None = None
     curator_person_id: uuid.UUID | None = None
     status_code: str | None = None
@@ -143,7 +143,10 @@ async def list_projects(
     status_code: Annotated[str | None, Query()] = None,
     priority_code: Annotated[str | None, Query()] = None,
     kind: Annotated[ProjectKind | None, Query()] = None,
-    classification: Annotated[Classification | None, Query()] = None,
+    share_externally: Annotated[
+        bool | None,
+        Query(description="Только те, что можно показывать наружу, или только те, что нельзя"),
+    ] = None,
     curator_person_id: Annotated[uuid.UUID | None, Query()] = None,
     search: Annotated[str | None, Query(description="Совпадение по части названия")] = None,
     health: Annotated[Health | None, Query(description="Цвет светофора")] = None,
@@ -167,7 +170,7 @@ async def list_projects(
             status_code=status_code,
             priority_code=priority_code,
             kind=kind,
-            classification=classification,
+            share_externally=share_externally,
             curator_person_id=curator_person_id,
             search=search,
             health=health,

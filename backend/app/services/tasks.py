@@ -23,7 +23,7 @@ from app.domain.comments import CommentTarget
 from app.domain.dictionaries import TaskStatus
 from app.domain.documents import DocumentTarget
 from app.domain.errors import NotFoundError
-from app.domain.projects import Classification, ProgressMode, auto_progress
+from app.domain.projects import ProgressMode, auto_progress
 from app.domain.tasks import days_overdue, is_overdue, validate_transition
 from app.repos.models import (
     Person,
@@ -357,15 +357,19 @@ async def list_for_export(
 ) -> list[ExportRow]:
     """Задачи для выгрузки наружу.
 
-    **Отдельная функция, а не флаг у списка.** Выгрузка — точка выхода из системы, и
-    задачи закрытых проектов через неё не проходят
-    ([ADR-0007](../../../docs/adr/ADR-0007-restricted-data.md)). Проверка стоит здесь,
-    внутри функции выдачи, а не у вызывающего кода: вызывающих будет много — файл,
-    отчёт, письмо, — и каждый однажды забудет.
+    **Отдельная функция, а не флаг у списка.** Выгрузка — одна из пяти точек выхода из
+    системы, и задачи проектов с `share_externally = false` через неё не проходят
+    ([ADR-0024](../../../docs/adr/ADR-0024-share-externally.md)). Проверка стоит здесь,
+    внутри функции выдачи, а не у вызывающего кода: вызывающих будет много — файл, отчёт,
+    письмо, — и каждый однажды забудет. Причина теперь не защита от обхода, а защита от
+    забывчивости: гриф снят, а точек выхода стало пять, и шестую добавят через полгода.
 
     Внутри системы те же задачи видны обоим пользователям: граница проходит по периметру,
     а не между людьми (ADR-0011). Поэтому список на экране и выгрузка различаются, и это
     не ошибка, а то самое правило.
+
+    Задача без проекта проходит всегда: спросить `share_externally` не у кого, а прятать
+    её значило бы терять из отчёта работу, которую никто не закрывал.
     """
     filters = filters or TaskFilter()
     moment = now or now_utc()
@@ -386,9 +390,7 @@ async def list_for_export(
     )
     statement = statement.where(
         Task.project_id.is_(None)
-        | Task.project_id.in_(
-            select(Project.id).where(Project.classification != Classification.RESTRICTED.value)
-        )
+        | Task.project_id.in_(select(Project.id).where(Project.share_externally.is_(True)))
     )
 
     order = column.desc() if descending else column.asc()

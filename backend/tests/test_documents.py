@@ -55,7 +55,6 @@ from app.domain.documents import (
     preview_key,
     storage_key,
 )
-from app.domain.projects import Classification
 from app.repos.models import AuditLog, Direction, Document, DocumentVersion, Project
 from app.settings import Settings
 from app.workers.jobs import build_preview_once
@@ -79,7 +78,7 @@ async def a_project(session: AsyncSession, **overrides: Any) -> Project:
         "code": f"PRJ-2026-{uuid.uuid4().int % 900 + 99:03d}",
         "title": "Проект с вложениями",
         "kind": "project",
-        "classification": Classification.INTERNAL.value,
+        "share_externally": True,
         "direction_id": direction.id,
         "status_code": ProjectStatus.IN_PROGRESS.value,
         "priority_code": Priority.NORMAL.value,
@@ -365,32 +364,22 @@ class TestContentLeavesByLink:
             response = await assistant_api.get(path)
             assert PDF not in response.content
 
-    async def test_restricted_project_gets_a_shorter_link(
+    async def test_the_link_lives_the_same_time_for_every_file(
         self, assistant_api: AsyncClient, session: AsyncSession
     ) -> None:
-        """Ссылка действует сама по себе, без входа. У закрытого проекта — минуту."""
-        project = await a_project(session, classification=Classification.RESTRICTED.value)
-        created = await attach(assistant_api, project.id, "Смета.xlsx", XLSX)
+        """Срок жизни ссылки один для всех — и это новое правило, а не упущение.
+
+        Раньше файл проекта с грифом получал минуту вместо пяти, а выдача ссылки писалась
+        в журнал. И то, и другое защищало от пересылки ссылки; пересылать её теперь
+        некому — ссылку получают те же двое (ADR-0024, ADR-0011). Проверяется именно на
+        непубличном проекте: у него срок обязан быть тем же, что у остальных.
+        """
+        private = await a_project(session, share_externally=False)
+        created = await attach(assistant_api, private.id, "Смета.xlsx", XLSX)
         document_id = created.json()["document"]["id"]
 
         response = await assistant_api.get(f"{API}/documents/{document_id}/link")
-        assert response.json()["expires_in"] == 60
-
-    async def test_link_to_a_restricted_file_is_written_down(
-        self, assistant_api: AsyncClient, session: AsyncSession
-    ) -> None:
-        project = await a_project(session, classification=Classification.RESTRICTED.value)
-        created = await attach(assistant_api, project.id, "Смета.xlsx", XLSX)
-        document_id = created.json()["document"]["id"]
-
-        await assistant_api.get(f"{API}/documents/{document_id}/link")
-
-        written = await session.scalar(
-            select(func.count())
-            .select_from(AuditLog)
-            .where(AuditLog.entity_id == uuid.UUID(document_id), AuditLog.action == "downloaded")
-        )
-        assert written == 1, "вынос содержимого закрытого проекта не оставил следа"
+        assert response.json()["expires_in"] == 300
 
     async def test_the_name_of_a_file_never_reaches_the_journal(
         self, assistant_api: AsyncClient, session: AsyncSession
@@ -398,10 +387,11 @@ class TestContentLeavesByLink:
         """Журнал переживает и удаление проекта, и очистку хранилища.
 
         «Смета по объекту в Кашкадарье.xlsx» рассказывает о проекте столько же, сколько
-        его название. Факт появления вложения при этом остаётся: иначе к закрытому
-        проекту можно было бы приложить файл бесследно (ADR-0007, ADR-0010).
+        его название, а вторую копию из журнала уже не вычистить: он только на дозапись.
+        Факт появления вложения при этом остаётся — иначе файл можно было бы приложить
+        бесследно (ADR-0010).
         """
-        project = await a_project(session, classification=Classification.RESTRICTED.value)
+        project = await a_project(session)
         await attach(assistant_api, project.id, "Смета по объекту.xlsx", XLSX)
 
         entry = await session.scalar(
@@ -413,43 +403,26 @@ class TestContentLeavesByLink:
         assert "name" in entry.changes, "непонятно даже, что именно менялось"
         assert "Смета" not in str(entry.changes)
 
-    async def test_ordinary_download_is_not_written_down(
+    async def test_issuing_a_link_is_never_written_down(
         self, assistant_api: AsyncClient, session: AsyncSession
     ) -> None:
-        """Журнал, в который попадает каждое открытие, перестают читать."""
-        project = await a_project(session)
-        created = await attach(assistant_api, project.id, "Смета.xlsx", XLSX)
-        document_id = created.json()["document"]["id"]
+        """Выдача ссылки в журнал не пишется — ни для какого файла.
 
-        await assistant_api.get(f"{API}/documents/{document_id}/link")
+        Писатель у действия `downloaded` был один, и он ушёл вместе с грифом (ADR-0024).
+        Тест проверяет оба вида проекта, а не только обычный: иначе он остался бы зелёным
+        и после того, как запись выдачи вернут «на всякий случай» для непубличных. Журнал,
+        в который попадает каждое открытие каждого вложения, перестают читать — а вместе
+        с ним перестают замечать записи, ради которых он заводился.
+        """
+        for shared in (True, False):
+            project = await a_project(session, share_externally=shared)
+            created = await attach(assistant_api, project.id, "Смета.xlsx", XLSX)
+            await assistant_api.get(f"{API}/documents/{created.json()['document']['id']}/link")
 
         written = await session.scalar(
             select(func.count()).select_from(AuditLog).where(AuditLog.action == "downloaded")
         )
         assert written == 0
-
-    async def test_a_task_inherits_the_secrecy_of_its_project(
-        self, assistant_api: AsyncClient, session: AsyncSession
-    ) -> None:
-        """Файл задачи закрытого проекта — такой же закрытый файл."""
-        project = await a_project(session, classification=Classification.RESTRICTED.value)
-        task = await assistant_api.post(
-            f"{API}/tasks",
-            json={
-                "title": "Задача закрытого проекта",
-                "priority_code": Priority.NORMAL.value,
-                "project_id": str(project.id),
-            },
-        )
-        assert task.status_code == 201, task.text
-
-        created = await attach(
-            assistant_api, task.json()["id"], "Смета.xlsx", XLSX, DocumentTarget.TASK.value
-        )
-        document_id = created.json()["document"]["id"]
-
-        response = await assistant_api.get(f"{API}/documents/{document_id}/link")
-        assert response.json()["expires_in"] == 60
 
     async def test_an_older_version_can_be_asked_for_by_number(
         self, assistant_api: AsyncClient, session: AsyncSession, storage: InMemoryStorage
