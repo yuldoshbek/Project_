@@ -136,6 +136,9 @@ jobs:
       - name: eslint
         run: npm run lint
 
+      - name: stylelint — запрет цветовых литералов вне tokens.css
+        run: npm run lint:css
+
       - name: Типы
         run: npm run typecheck
 

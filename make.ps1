@@ -85,6 +85,7 @@ switch ($Target) {
         Invoke-In $backend 'uv' @('run', 'mypy', 'app', 'tests')
         Invoke-In $backend 'uv' @('run', 'lint-imports')
         Invoke-In $frontend 'npm' @('run', 'lint')
+        Invoke-In $frontend 'npm' @('run', 'lint:css')
         Invoke-In $frontend 'npm' @('run', 'typecheck')
         Invoke-In $frontend 'npm' @('run', 'fmt:check')
     }

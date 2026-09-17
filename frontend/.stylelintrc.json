@@ -1,0 +1,32 @@
+{
+  "rules": {
+    "color-no-hex": [
+      true,
+      {
+        "message": "Цвет задаётся токеном из src/styles/tokens.css, а не значением здесь. Иначе «красный» в одном месте перестанет означать то же, что в другом, и вторая тема сломается молча (ADR-0021)."
+      }
+    ],
+    "color-named": [
+      "never",
+      {
+        "message": "Имя цвета — то же прямое значение, что и шестнадцатеричное. Возьми токен из src/styles/tokens.css."
+      }
+    ],
+    "function-disallowed-list": [
+      ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch"],
+      {
+        "message": "Цветовая функция вне tokens.css. Шесть таких значений уже появились так и сломали бы тёмную тему: чернильная тень на тёмной поверхности не отделяет ничего (ADR-0021)."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/styles/tokens.css"],
+      "rules": {
+        "color-no-hex": null,
+        "color-named": null,
+        "function-disallowed-list": null
+      }
+    }
+  ]
+}

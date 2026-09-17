@@ -76,12 +76,13 @@ test-back:
 test-front:
 	cd $(FRONTEND) && npm run test
 
-check: ## Линтеры и типы: ruff, mypy, import-linter, eslint, tsc, prettier
+check: ## Линтеры и типы: ruff, mypy, import-linter, eslint, stylelint, tsc, prettier
 	cd $(BACKEND) && uv run ruff check .
 	cd $(BACKEND) && uv run ruff format --check .
 	cd $(BACKEND) && uv run mypy app tests
 	cd $(BACKEND) && uv run lint-imports
 	cd $(FRONTEND) && npm run lint
+	cd $(FRONTEND) && npm run lint:css
 	cd $(FRONTEND) && npm run typecheck
 	cd $(FRONTEND) && npm run fmt:check
 
