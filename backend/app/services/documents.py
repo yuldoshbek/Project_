@@ -32,7 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.antivirus import AntivirusUnavailableError, VirusScanner
 from app.adapters.queue import JobQueue
 from app.adapters.storage import FileStorage, StorageError
-from app.domain.audit import AuditAction
 from app.domain.clock import now_utc
 from app.domain.documents import (
     MAX_SIGNATURE_BYTES,
@@ -51,9 +50,7 @@ from app.domain.errors import (
     NotFoundError,
     RuleViolationError,
 )
-from app.domain.projects import Classification
 from app.repos.models import Document, DocumentVersion, Project, Task, User
-from app.services.audit import record_access
 
 logger = structlog.get_logger(__name__)
 
@@ -67,7 +64,6 @@ class Limits:
     max_bytes: int
     prefix: str
     link_lifetime: timedelta
-    restricted_link_lifetime: timedelta
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,19 +120,6 @@ async def target_exists(
 ) -> bool:
     model = _TABLE[entity_type]
     return await session.scalar(select(model.id).where(model.id == entity_id)) is not None
-
-
-async def owning_project(
-    session: AsyncSession, entity_type: DocumentTarget, entity_id: uuid.UUID
-) -> Project | None:
-    """Проект, которому принадлежит вложение. У задачи вне проекта его нет."""
-    if entity_type is DocumentTarget.PROJECT:
-        return await session.get(Project, entity_id)
-
-    task = await session.get(Task, entity_id)
-    if task is None or task.project_id is None:
-        return None
-    return await session.get(Project, task.project_id)
 
 
 async def list_for(
@@ -369,23 +352,16 @@ async def link_for(
 ) -> Link:
     """Подписанная ссылка на содержимое (ADR-0009).
 
-    **Проверка грифа стоит здесь, а не в роутере** (CLAUDE.md, инвариант 1). Ссылка — это
-    и есть та точка, где содержимое покидает систему: она действует сама по себе, без
-    входа, пока не истечёт. Проверка в вызывающем коде означала бы, что второй вызывающий
-    её не сделает.
+    Срок жизни один для всех файлов. Раньше их было два: файл проекта с грифом получал
+    минуту вместо пяти, а выдача записывалась в журнал действием `DOWNLOADED`. И то, и
+    другое защищало от пересылки ссылки — а пересылать её теперь некому, ссылку получают
+    те же двое ([ADR-0024](../../../docs/adr/ADR-0024-share-externally.md),
+    [ADR-0011](../../../docs/adr/ADR-0011-two-user-scope.md)).
 
-    Файл закрытого проекта ссылку получает — оба пользователя видят всё (ADR-0011), и
-    запретить её значило бы запретить работать с закрытыми проектами вовсе. Ограничены
-    две вещи: срок жизни ссылки (минута вместо пяти) и её незаметность — выдача
-    записывается в журнал.
+    `share_externally` здесь не спрашивается намеренно. Ссылка живёт внутри периметра:
+    её открывает вошедший пользователь, а не Google, SETA и не внешняя модель. Точек
+    выхода наружу пять, и эта в их число не входит.
     """
-    project = await owning_project(
-        session, DocumentTarget(document.entity_type), document.entity_id
-    )
-    is_restricted = (
-        project is not None and project.classification == Classification.RESTRICTED.value
-    )
-
     key = version.storage_key
     filename = document.name
     content_type = version.content_type
@@ -396,7 +372,7 @@ async def link_for(
         filename = f"{document.name}.pdf"
         content_type = "application/pdf"
 
-    lifetime = limits.restricted_link_lifetime if is_restricted else limits.link_lifetime
+    lifetime = limits.link_lifetime
 
     try:
         url = await storage.link(
@@ -408,18 +384,6 @@ async def link_for(
         )
     except StorageError as error:
         raise ExternalServiceError("Хранилище файлов недоступно") from error
-
-    if is_restricted:
-        await record_access(
-            session,
-            entity_type=Document.__tablename__,
-            entity_id=document.id,
-            action=AuditAction.DOWNLOADED,
-            changes={
-                "version": {"to": version.number},
-                "lifetime_seconds": {"to": int(lifetime.total_seconds())},
-            },
-        )
 
     return Link(url=url, lifetime=lifetime, filename=filename)
 

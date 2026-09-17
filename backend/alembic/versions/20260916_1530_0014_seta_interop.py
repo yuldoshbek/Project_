@@ -56,14 +56,10 @@ def upgrade() -> None:
     )
 
     op.add_column("people", sa.Column("external_seta_id", sa.String(length=100), nullable=True))
-    op.create_unique_constraint(
-        op.f("uq_people_external_seta_id"), "people", ["external_seta_id"]
-    )
+    op.create_unique_constraint(op.f("uq_people_external_seta_id"), "people", ["external_seta_id"])
 
     values = ", ".join(f"'{code}'" for code in KNOWN_LOCALES)
-    op.create_check_constraint(
-        op.f("ck_users_locale_is_known"), "users", f"locale IN ({values})"
-    )
+    op.create_check_constraint(op.f("ck_users_locale_is_known"), "users", f"locale IN ({values})")
 
 
 def downgrade() -> None:

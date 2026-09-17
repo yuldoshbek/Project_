@@ -43,7 +43,6 @@ def limits_from(settings: Settings) -> service.Limits:
         max_bytes=settings.upload_max_bytes,
         prefix=settings.s3_prefix,
         link_lifetime=timedelta(seconds=settings.download_link_seconds),
-        restricted_link_lifetime=timedelta(seconds=settings.restricted_link_seconds),
     )
 
 

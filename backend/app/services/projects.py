@@ -26,7 +26,7 @@ from app.domain.documents import DocumentTarget
 from app.domain.errors import NotFoundError
 from app.domain.projects import (
     DEFAULT_IMPEDIMENT_STALE_DAYS,
-    Classification,
+    SHARE_EXTERNALLY_DEFAULT,
     ProgressMode,
     ProjectKind,
     has_active_impediment,
@@ -125,7 +125,7 @@ class ProjectDraft:
     started_on: date
     due_on: date
     kind: ProjectKind = ProjectKind.PROJECT
-    classification: Classification = Classification.INTERNAL
+    share_externally: bool = SHARE_EXTERNALLY_DEFAULT
     description: str | None = None
     curator_person_id: uuid.UUID | None = None
     status_reason: str | None = None
@@ -142,7 +142,7 @@ class ProjectPatch:
     title: Any = _UNSET
     description: Any = _UNSET
     kind: Any = _UNSET
-    classification: Any = _UNSET
+    share_externally: Any = _UNSET
     direction_id: Any = _UNSET
     curator_person_id: Any = _UNSET
     status_code: Any = _UNSET
@@ -185,7 +185,7 @@ async def create(
         title=draft.title.strip(),
         description=draft.description,
         kind=draft.kind.value,
-        classification=draft.classification.value,
+        share_externally=draft.share_externally,
         direction_id=draft.direction_id,
         curator_person_id=draft.curator_person_id,
         status_code=draft.status_code,
@@ -280,7 +280,7 @@ class ProjectFilter:
     status_code: str | None = None
     priority_code: str | None = None
     kind: ProjectKind | None = None
-    classification: Classification | None = None
+    share_externally: bool | None = None
     curator_person_id: uuid.UUID | None = None
     search: str | None = None
     health: Health | None = None
@@ -307,8 +307,8 @@ def _apply(statement: Select[Any], filters: ProjectFilter) -> Select[Any]:
         statement = statement.where(Project.priority_code == filters.priority_code)
     if filters.kind is not None:
         statement = statement.where(Project.kind == filters.kind.value)
-    if filters.classification is not None:
-        statement = statement.where(Project.classification == filters.classification.value)
+    if filters.share_externally is not None:
+        statement = statement.where(Project.share_externally.is_(filters.share_externally))
     if filters.curator_person_id is not None:
         statement = statement.where(Project.curator_person_id == filters.curator_person_id)
     if filters.organization_id is not None:

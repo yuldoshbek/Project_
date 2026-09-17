@@ -104,7 +104,7 @@ async def a_project(session: AsyncSession, **overrides: Any) -> Project:
         "code": f"PRJ-2026-{uuid.uuid4().int % 900 + 99:03d}",
         "title": "Проект для задач",
         "kind": "project",
-        "classification": "internal",
+        "share_externally": True,
         "direction_id": direction.id,
         "curator_person_id": curator.id,
         "status_code": ProjectStatus.IN_PROGRESS.value,
@@ -632,37 +632,42 @@ class TestNumbersDoNotCollide:
 
 
 class TestExportIsAWayOut:
-    """Выгрузка — точка выхода из системы (ADR-0007), и она отличается от списка.
+    """Выгрузка — одна из пяти точек выхода (ADR-0024), и она отличается от списка.
 
     Внутри системы оба пользователя видят всё: граница проходит по периметру, а не между
-    людьми (ADR-0011). Наружу задачи закрытых проектов не уходят. Разница между экраном и
-    файлом здесь — не ошибка, а то самое правило, и проверять её надо именно так.
+    людьми (ADR-0011). Наружу не уходят задачи проектов с `share_externally = false`.
+    Разница между экраном и файлом здесь — не ошибка, а то самое правило, и проверять её
+    надо именно так.
     """
 
-    async def test_a_task_of_a_classified_project_is_visible_but_not_exported(
+    async def test_a_task_of_a_private_project_is_visible_but_not_exported(
         self, assistant_api: AsyncClient, session: AsyncSession
     ) -> None:
         open_project = await a_project(session)
-        closed = await a_project(session, classification="restricted", title="Закрытый проект")
+        closed = await a_project(session, share_externally=False, title="Непубличный проект")
 
         await assistant_api.post(
             "/api/v1/tasks", json=body(title="Обычная", project_id=str(open_project.id))
         )
         await assistant_api.post(
-            "/api/v1/tasks", json=body(title="Закрытая", project_id=str(closed.id))
+            "/api/v1/tasks", json=body(title="Непубличная", project_id=str(closed.id))
         )
 
         on_screen = await assistant_api.get("/api/v1/tasks")
-        assert sorted(item["title"] for item in on_screen.json()) == ["Закрытая", "Обычная"]
+        assert sorted(item["title"] for item in on_screen.json()) == ["Непубличная", "Обычная"]
 
         exported = await assistant_api.get("/api/v1/tasks/export.csv")
         assert exported.status_code == 200
         text = exported.content.decode("utf-8-sig")
         assert "Обычная" in text
-        assert "Закрытая" not in text, "задача закрытого проекта ушла наружу файлом"
+        assert "Непубличная" not in text, "задача непубличного проекта ушла наружу файлом"
 
     async def test_a_task_without_a_project_is_exported(self, assistant_api: AsyncClient) -> None:
-        """Задача вне проекта грифа не имеет — и выпадать из выгрузки не должна."""
+        """Задачу вне проекта спрашивать не у кого — и выпадать из выгрузки она не должна.
+
+        Иначе поручение без проекта пропадало бы из отчёта молча, а это и есть та потеря
+        строк, от которой отчёт перестаёт быть отчётом.
+        """
         await assistant_api.post("/api/v1/tasks", json=body(title="Поручение без проекта"))
 
         exported = await assistant_api.get("/api/v1/tasks/export.csv")
