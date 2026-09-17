@@ -14,8 +14,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
+import { projectPath, ROUTES } from '../../app/routes';
 import { HttpError } from '../../shared/api/client';
 import { useSession } from '../../shared/auth/useSession';
 import { formatDate } from '../../shared/time';
@@ -74,8 +75,8 @@ export function ProjectsPage() {
   const filterOf = (name: string): string => filters[name] ?? '';
 
   const dictionaries = useQuery({
-    queryKey: ['dictionaries'],
-    queryFn: fetchDictionaries,
+    queryKey: ['dictionaries', { includeInactive: false }],
+    queryFn: () => fetchDictionaries(),
     staleTime: 10 * 60_000,
   });
 
@@ -149,6 +150,14 @@ export function ProjectsPage() {
             {t('projects.viewBoard')}
           </button>
         </div>
+
+        {/* Кнопка создания — в шапке списка и только у помощника. Руководителю она
+            показывала бы действие, которое сервер ему всё равно не даст (ADR-0011). */}
+        {mayEdit && (
+          <Link className={styles.create} to={ROUTES.projectNew}>
+            {t('projects.form.createTitle')}
+          </Link>
+        )}
       </header>
 
       <div className={styles.filters}>
@@ -344,7 +353,11 @@ function ProjectTable({
             <tr key={project.id}>
               <td className={styles.code}>{project.code}</td>
               <td>
-                <span className={styles.projectTitle}>{project.title}</span>
+                {/* Название — ссылка на карточку, а не текст: открыть проект иначе
+                    нечем, и это первое, чего ждут от списка. */}
+                <Link className={styles.projectLink} to={projectPath(project.id)}>
+                  {project.title}
+                </Link>
                 {project.impediment !== null && (
                   <span
                     className={project.impediment_is_active ? styles.impediment : styles.stale}

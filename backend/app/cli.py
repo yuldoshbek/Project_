@@ -24,17 +24,35 @@ from app.settings import get_settings
 
 
 async def _set_password(email: str, password: str) -> int:
+    """Назначает пароль и фиксирует его.
+
+    **Из тела `async for` здесь нельзя выходить `return`.** `session_scope` —
+    асинхронный генератор, и фиксация стоит у него после `yield`; выход из цикла
+    закрывает генератор, поднимая в точке `yield` `GeneratorExit`. Он не наследник
+    `Exception`, поэтому ни ветка откатa, ни ветка фиксации не срабатывают — сессия
+    просто закрывается, и записанное теряется.
+
+    Так и было до 17.09: команда печатала «пароль назначен» и не записывала ничего.
+    Признаком успеха служило сообщение, а оно печаталось до фиксации, поэтому команда
+    сообщала об успехе всегда. Теперь сообщение печатается **после** цикла, когда
+    фиксация уже произошла: печатать успех до записи — значит иметь инструмент, который
+    врёт по построению, а не по ошибке.
+
+    `break` для «пользователь не найден» безопасен: до него ничего не записано, и откат
+    закрытого генератора терять нечего.
+    """
     settings = get_settings()
     configure_logging(level=settings.log_level, json_output=False)
     init_database(settings)
 
+    saved = False
     try:
         async for session in session_scope():
             user = await session.scalar(select(User).where(User.email == email))
             if user is None:
                 print(f"Пользователь {email!r} не найден.", file=sys.stderr)
                 print("Заведите его командой make seed или в администрировании.", file=sys.stderr)
-                return 1
+                break
 
             validate_password(password)
             user.password_hash = hash_password(password)
@@ -42,13 +60,15 @@ async def _set_password(email: str, password: str) -> int:
             # при первом входе система потребует заменить.
             user.must_change_password = True
             await revoke_all(session, user.id, reason="password_set_by_admin")
-
-            print(f"Пароль для {email} назначен. При первом входе система попросит его сменить.")
-            return 0
+            saved = True
     finally:
         await dispose_database()
 
-    return 1
+    if not saved:
+        return 1
+
+    print(f"Пароль для {email} назначен. При первом входе система попросит его сменить.")
+    return 0
 
 
 def read_password(email: str) -> str | None:
