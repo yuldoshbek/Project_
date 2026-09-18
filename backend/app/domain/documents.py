@@ -54,6 +54,13 @@ class DocumentTarget(StrEnum):
 
     PROJECT = "project"
     TASK = "task"
+    IJRO_ASSIGNMENT = "ijro_assignment"
+    """Подтверждение исполнения поручения: ответное письмо, справка, скан.
+
+    Механизм вложений переиспользуется целиком — версии по sha256, антивирус, производный
+    PDF. Заводить своё хранилище ради одного владельца значило бы написать всё это второй
+    раз ([ADR-0025](../../../docs/adr/ADR-0025-ijro-standalone-register.md)).
+    """
 
 
 class PreviewState(StrEnum):

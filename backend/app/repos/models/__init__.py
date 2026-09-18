@@ -17,6 +17,13 @@ from app.repos.models.dictionaries import (
     TaskStatusRef,
 )
 from app.repos.models.documents import Document, DocumentVersion
+from app.repos.models.ijro import (
+    IjroAssignment,
+    IjroDocument,
+    IjroImport,
+    IjroOrgAlias,
+    IjroPersonAlias,
+)
 from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.partners import ProjectPartner
@@ -31,6 +38,11 @@ __all__ = [
     "Direction",
     "Document",
     "DocumentVersion",
+    "IjroAssignment",
+    "IjroDocument",
+    "IjroImport",
+    "IjroOrgAlias",
+    "IjroPersonAlias",
     "Milestone",
     "Notification",
     "Organization",
