@@ -110,7 +110,7 @@ class TestTheRepeatKey:
 
 
 class TestOneDocumentIsOneRow:
-    """57 документов на 164 поручения: склейка написаний держится этой уникальностью."""
+    """59 документов на 164 поручения: склейка написаний держится этой уникальностью."""
 
     async def test_the_same_normalised_number_cannot_be_written_twice(
         self, session: AsyncSession
