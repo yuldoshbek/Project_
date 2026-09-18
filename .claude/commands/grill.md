@@ -13,7 +13,7 @@ argument-hint: <раздел ТЗ, требование или тикет>
 ## Порядок
 
 1. Прочитай первоисточник: соответствующий раздел [ТЗ](../../tz/TZ-ORBITA-v1.0.md), затем
-   [CONTEXT.md](../../docs/CONTEXT.md), [SPEC.md](../../docs/SPEC.md), [ADR](../../docs/adr)
+   [CONTEXT.md](../../docs/CONTEXT.md), [PLAN.md](../../docs/PLAN.md), [ADR](../../docs/adr)
    и [OPEN-QUESTIONS](../../docs/OPEN-QUESTIONS.md). Не пересказывай прочитанное.
 
 2. Задай мне вопросы — по одному за раз, начиная с того, который сильнее всего меняет

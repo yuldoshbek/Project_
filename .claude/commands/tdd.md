@@ -6,7 +6,7 @@ argument-hint: ORB-NNN
 # TDD по тикету $1
 
 Прочитай карточку тикета $1 в `docs/tickets/`, затем связанные ADR и разделы
-[SPEC.md](../../docs/SPEC.md). Работай в отдельном worktree (скилл `using-git-worktrees`).
+[PLAN.md](../../docs/PLAN.md). Работай в отдельном worktree (скилл `using-git-worktrees`).
 
 ## Цикл
 

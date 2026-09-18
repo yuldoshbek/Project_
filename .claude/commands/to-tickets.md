@@ -7,7 +7,7 @@ argument-hint: <раздел спецификации или эпик>
 
 Предмет: **$ARGUMENTS**
 
-Вход: [SPEC.md](../../docs/SPEC.md), [CONTEXT.md](../../docs/CONTEXT.md),
+Вход: [PLAN.md](../../docs/PLAN.md), [CONTEXT.md](../../docs/CONTEXT.md),
 [ADR](../../docs/adr). Выход: карточки в `docs/tickets/E*-*.md` и обновлённый
 [INDEX.md](../../docs/tickets/INDEX.md).
 
