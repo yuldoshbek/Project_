@@ -817,3 +817,131 @@ class TestControlFlag:
 
         stored = await session.get(Task, uuid.UUID(task_id))
         assert stored is not None and stored.is_control is True
+
+
+class TestTwoDeadlinesAreNotOneField:
+    """Плановый и действующий сроки — разные поля, и путать их нельзя (ADR-0015).
+
+    Колонка `planned_due_at` была объявлена в SPEC.md и ADR-0015 и отсутствовала в коде
+    целиком до 17.09 — ни в миграции, ни в модели, ни в схемах. Нашлось это не сверкой
+    документов, а попыткой сделать форму правки задачи: в ней нет поля, которое требует
+    критерий приёмки ORB-087.
+
+    Проверяется здесь именно независимость полей. Если бы они однажды съехались в одно,
+    тесты на просрочку остались бы зелёными — просрочку считают по `due_at`, и подмена
+    плана фактом ей безразлична. Сломался бы только ответ на вопрос «на сколько это уже
+    сдвинулось», и сломался бы молча.
+    """
+
+    async def test_a_task_carries_both_deadlines_independently(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        created = await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(due_at="2026-10-15T09:00:00Z", planned_due_at="2026-09-30T09:00:00Z"),
+        )
+
+        assert created.status_code == 201, created.text
+        stored = created.json()
+        assert stored["planned_due_at"] is not None
+        assert stored["due_at"] != stored["planned_due_at"], "два срока стали одним значением"
+
+    async def test_moving_the_effective_deadline_leaves_the_plan_alone(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        """Главное обещание второй колонки: продление не затирает план.
+
+        Так выглядит продление, пришедшее снаружи: меняется `due_at`, а `planned_due_at`
+        обязан остаться прежним — иначе вопрос «на сколько сдвинулось» остаётся без
+        ответа, и второй срок не нужен вовсе.
+        """
+        created = await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(due_at="2026-09-30T09:00:00Z", planned_due_at="2026-09-30T09:00:00Z"),
+        )
+        task_id = created.json()["id"]
+
+        extended = await assistant_api.patch(
+            f"/api/v1/tasks/{task_id}", json={"due_at": "2026-11-20T09:00:00Z"}
+        )
+
+        assert extended.status_code == 200, extended.text
+        assert extended.json()["planned_due_at"].startswith("2026-09-30")
+        assert extended.json()["due_at"].startswith("2026-11-20")
+
+    async def test_the_plan_can_be_cleared_without_touching_the_effective_deadline(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        """Пустое значение приходит как `null`, а не «поле не прислали».
+
+        Различие держится на `model_fields_set` (см. `TaskUpdate`), и без этого теста
+        очистка плана выглядела бы как «оставить как было» — то есть кнопка не работала
+        бы, ничего об этом не сообщая.
+        """
+        created = await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(due_at="2026-10-15T09:00:00Z", planned_due_at="2026-09-30T09:00:00Z"),
+        )
+        task_id = created.json()["id"]
+
+        cleared = await assistant_api.patch(
+            f"/api/v1/tasks/{task_id}", json={"planned_due_at": None}
+        )
+
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["planned_due_at"] is None
+        assert cleared.json()["due_at"] is not None, "очистка плана задела действующий срок"
+
+    async def test_overdue_is_computed_from_the_effective_deadline_not_the_plan(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        """Просрочка считается по действующему сроку (ADR-0004), а не по плану.
+
+        Проверяется на задаче, у которой план давно прошёл, а действующий срок впереди:
+        именно так выглядит продлённое поручение, и объявлять его просроченным нельзя —
+        продление на то и продление.
+        """
+        created = await assistant_api.post(
+            "/api/v1/tasks",
+            json=body(due_at="2099-01-01T09:00:00Z", planned_due_at="2020-01-01T09:00:00Z"),
+        )
+
+        assert created.json()["is_overdue"] is False
+        assert created.json()["days_overdue"] == 0
+
+    async def test_a_control_task_keeps_its_plan_empty_unless_a_human_sets_it(
+        self, assistant_api: AsyncClient
+    ) -> None:
+        """У поручения план пуст по умолчанию, хотя действующий срок задан.
+
+        Действующим сроком поручения владеет SETA, и подставить его в наш план значило бы
+        объявить чужое продление нашим планом — то есть уничтожить смысл второй колонки.
+        Миграция `0016` по той же причине исключила поручения из переноса значений.
+        """
+        created = await assistant_api.post(
+            "/api/v1/tasks", json=body(is_control=True, due_at="2026-10-15T09:00:00Z")
+        )
+
+        assert created.json()["planned_due_at"] is None
+        assert created.json()["due_at"] is not None
+
+    async def test_the_plan_is_a_sortable_column(self, assistant_api: AsyncClient) -> None:
+        """Сортировка по плану разрешена: «план против факта» смотрят по нему.
+
+        Список разрешённых полей закрыт (`service.SORTABLE`), и неизвестное имя тихо
+        заменяется сроком по умолчанию. Поэтому проверяется не код ответа, а порядок:
+        иначе тест прошёл бы и в случае, когда сортировка не применилась вовсе.
+        """
+        await assistant_api.post(
+            "/api/v1/tasks", json=body(title="Поздний план", planned_due_at="2026-12-01T09:00:00Z")
+        )
+        await assistant_api.post(
+            "/api/v1/tasks", json=body(title="Ранний план", planned_due_at="2026-01-05T09:00:00Z")
+        )
+
+        listed = await assistant_api.get(
+            "/api/v1/tasks", params={"sort_by": "planned_due_at", "descending": False}
+        )
+
+        titles = [item["title"] for item in listed.json() if item["planned_due_at"] is not None]
+        assert titles[:2] == ["Ранний план", "Поздний план"]

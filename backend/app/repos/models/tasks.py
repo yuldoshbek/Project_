@@ -50,7 +50,14 @@ class Task(Auditable, UUIDPrimaryKey, Timestamps, Base):
 
     # Срок — момент, а не дата: «до конца дня» и «к десяти утра» — разные обещания, и
     # напоминание за час до срока без времени не построить.
+    #
+    # Сроков два, и это сознательно (ADR-0015). `due_at` — действующий, с учётом
+    # продлений; у поручения руководителя им владеет SETA. `planned_due_at` — плановый
+    # по проекту, наш всегда. Один срок на двоих означал бы, что пришедшее снаружи
+    # продление затирает наш план, и вопрос «на сколько это уже сдвинулось» остаётся без
+    # ответа — а к поручению это главный вопрос.
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    planned_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -47,6 +47,7 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     priority_code: str
     due_at: datetime | None
+    planned_due_at: datetime | None
     started_at: datetime | None
     completed_at: datetime | None
     is_control: bool
@@ -95,6 +96,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     assignee_person_id: uuid.UUID | None = None
     due_at: datetime | None = None
+    planned_due_at: datetime | None = None
     is_control: bool = False
 
 
@@ -108,6 +110,7 @@ class TaskUpdate(BaseModel):
     status: TaskStatus | None = None
     priority_code: str | None = None
     due_at: datetime | None = None
+    planned_due_at: datetime | None = None
     is_control: bool | None = None
 
     def to_patch(self) -> service.TaskPatch:

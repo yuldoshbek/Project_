@@ -104,6 +104,7 @@ class TaskDraft:
     description: str | None = None
     assignee_person_id: uuid.UUID | None = None
     due_at: datetime | None = None
+    planned_due_at: datetime | None = None
     is_control: bool = False
 
 
@@ -116,6 +117,7 @@ class TaskPatch:
     status: Any = _UNSET
     priority_code: Any = _UNSET
     due_at: Any = _UNSET
+    planned_due_at: Any = _UNSET
     is_control: Any = _UNSET
 
     def assigned(self) -> dict[str, Any]:
@@ -191,6 +193,7 @@ async def create(
         status=draft.status.value,
         priority_code=draft.priority_code,
         due_at=draft.due_at,
+        planned_due_at=draft.planned_due_at,
         is_control=draft.is_control,
     )
     _apply_status_side_effects(task, target=draft.status, now=moment)
@@ -274,6 +277,7 @@ SORTABLE = {
     "code": Task.code,
     "title": Task.title,
     "due_at": Task.due_at,
+    "planned_due_at": Task.planned_due_at,
     "status": Task.status,
     "created_at": Task.created_at,
 }
