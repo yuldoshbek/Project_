@@ -30,7 +30,7 @@ from app.adapters.antivirus import AntivirusUnavailableError, ScanResult
 from app.adapters.queue import RecordingQueue
 from app.adapters.storage.memory import InMemoryStorage
 from app.api.deps import get_job_queue, get_session, get_storage, get_virus_scanner
-from app.api.security import create_access_token
+from app.api.security import ACTOR_HEADER
 from app.domain.people import Role
 from app.main import create_app
 from app.repos.database import dispose_database, init_database
@@ -329,9 +329,11 @@ async def session(settings: Settings, migrated_database: str) -> AsyncIterator[A
 
 @pytest.fixture
 async def api(app: FastAPI, session: AsyncSession) -> AsyncIterator[AsyncClient]:
-    """Клиент API **без входа**, в той же откатываемой транзакции, что и тест.
+    """Клиент API **без заголовка роли**, в той же откатываемой транзакции, что и тест.
 
-    Для запросов от имени пользователя есть `assistant_api` и `leader_api`.
+    Входа в системе нет (ADR-0026), поэтому такой клиент не «неавторизован» — он просто
+    не назвался, и сервер считает его помощником. Когда роль важна, берите
+    `assistant_api` или `leader_api`.
 
     Без подмены зависимости роутеры открыли бы собственную сессию и своё соединение —
     и не увидели бы данных, подготовленных тестом.
@@ -355,21 +357,18 @@ async def _client_for(
     settings: Settings,
     role: Role,
 ) -> AsyncIterator[AsyncClient]:
-    """Клиент, вошедший под указанной ролью.
+    """Клиент, действующий в указанной роли.
 
-    Токен выписывается напрямую, без обращения к /auth/login: тесту про справочники не
-    должно быть дела до того, как устроен вход, — иначе поломка входа роняет половину
-    набора и прячет настоящую причину.
+    Входа в системе нет (ADR-0026): роль приезжает заголовком, и сервер верит ему на
+    слово. Заголовок подписывает действие в журнале, а не охраняет данные — охраной
+    занимается периметр, которого в тестах нет и быть не должно.
+
+    Пользователь всё равно ищется в базе: его идентификатор попадает в `audit_log`, и
+    если сиды не загружены, тест обязан упасть здесь, а не на разборе пустого журнала.
     """
     user = await session.scalar(select(User).where(User.role == role))
     if user is None:
         pytest.fail(f"в сидах нет пользователя с ролью {role}")
-
-    # В сидах пароля нет и стоит требование сменить временный (ORB-007). Для тестов,
-    # которые проверяют не вход, а работу с данными, это лишнее препятствие: сам
-    # запрет проверяется отдельно, в test_auth.
-    user.must_change_password = False
-    await session.flush()
 
     async def use_test_session() -> AsyncIterator[AsyncSession]:
         yield session
@@ -380,7 +379,7 @@ async def _client_for(
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Authorization": f"Bearer {create_access_token(user, settings)}"},
+            headers={ACTOR_HEADER: role.value},
         ) as http_client:
             yield http_client
     finally:

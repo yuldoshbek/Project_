@@ -25,7 +25,7 @@ import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { HttpError } from '../../shared/api/client';
-import { useSession } from '../../shared/auth/useSession';
+import { useMayEdit } from '../../shared/mode/useMode';
 import { formatDateTime } from '../../shared/time';
 import { EmptyState } from '../../shared/ui/EmptyState';
 import { ErrorState } from '../../shared/ui/ErrorState';
@@ -53,7 +53,6 @@ export interface AttachmentsProps {
 
 export function Attachments({ target, entityId }: AttachmentsProps) {
   const { t } = useTranslation();
-  const { profile } = useSession();
   const client = useQueryClient();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +62,7 @@ export function Attachments({ target, entityId }: AttachmentsProps) {
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const mayEdit = profile?.role === 'assistant';
+  const mayEdit = useMayEdit();
   const key = ['documents', target, entityId];
 
   const list = useQuery({

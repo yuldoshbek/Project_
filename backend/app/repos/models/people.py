@@ -6,15 +6,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    DateTime,
     ForeignKey,
     Index,
-    SmallInteger,
     String,
     Text,
 )
@@ -93,12 +90,6 @@ class User(UUIDPrimaryKey, Timestamps, Base):
 
     person: Mapped[Person | None] = relationship(lazy="joined")
 
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    """Пусто, когда вход идёт через внешнего провайдера (ADR-0001)."""
-
-    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    """Пароль выдан администратором и должен быть заменён при первом входе."""
-
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     """Получатель сообщений бота. Белый список — это буквально непустые значения
     этого столбца ([ADR-0013](../../../docs/adr/ADR-0013-telegram-bot.md)).
@@ -113,14 +104,3 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     locale: Mapped[str] = mapped_column(String(10), nullable=False, default="ru")
     timezone: Mapped[str] = mapped_column(String(50), nullable=False, default="Asia/Tashkent")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    failed_login_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    """Счётчик и блокировка живут в записи пользователя, а не в памяти процесса.
-
-    В памяти они обнулялись бы при каждом перезапуске и при работе второго процесса
-    (воркер, бот) не учитывались бы вовсе — то есть ограничение частоты попыток входа
-    существовало бы только на бумаге.
-    """

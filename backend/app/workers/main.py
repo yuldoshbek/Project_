@@ -17,36 +17,25 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import structlog
-from arq import cron
 from arq.connections import RedisSettings
-from arq.typing import WorkerCoroutine
 
 from app.observability import configure_logging, route_library_logs
 from app.repos.database import dispose_database, init_database
 from app.settings import Settings, get_settings
 from app.workers.context import MAX_TRIES
-from app.workers.jobs import build_preview_job, purge_stale_sessions_job
+from app.workers.jobs import build_preview_job
 
 logger = structlog.get_logger(__name__)
 
-FUNCTIONS = [purge_stale_sessions_job, build_preview_job]
+FUNCTIONS = [build_preview_job]
 
-CRON_JOBS = [
-    # Ночью и в минуту, отличную от нуля: в ноль минут просыпаются все задания всех
-    # систем сразу, и база получает всплеск на ровном месте.
-    cron(
-        # Приведение типа: у обёртки задания сигнатура `(ctx, *args, **kwargs)`, и ARQ
-        # описывает её точнее, чем позволяет обобщённая обёртка. Поведение верное,
-        # описание — нет.
-        cast("WorkerCoroutine", purge_stale_sessions_job),
-        hour=3,
-        minute=17,
-        run_at_startup=False,
-    ),
-]
+# Расписания нет. Единственное задание по часам — ночная чистка отзванных сессий —
+# ушло вместе со входом (ADR-0026): сессий больше не существует. Список оставлен
+# пустым, а не удалён: следующему заданию по расписанию будет куда встать.
+CRON_JOBS: list[Any] = []
 
 
 async def on_startup(ctx: dict[str, Any]) -> None:

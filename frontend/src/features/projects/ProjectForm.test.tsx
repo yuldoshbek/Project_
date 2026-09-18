@@ -24,8 +24,8 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ASSISTANT, LEADER, sessionOf } from '../../testing/profiles';
-import { WithSession } from '../../testing/WithSession';
+import type { Mode } from '../../shared/mode/ModeContext';
+import { WithMode } from '../../testing/WithMode';
 import { ProjectCardPage } from './ProjectCardPage';
 import { EditProjectPage, NewProjectPage } from './ProjectFormPage';
 
@@ -100,7 +100,7 @@ function answer(body: unknown, status = 200): Promise<Response> {
  * переход это и есть проверяемое поведение, и подменённый `useNavigate` подтвердил бы
  * только то, что его вызвали.
  */
-function renderAt(path: string, value = sessionOf(ASSISTANT, 'signed-in')) {
+function renderAt(path: string, value: Mode = 'assistant') {
   const router = createMemoryRouter(
     [
       { path: '/projects/new', element: <NewProjectPage /> },
@@ -111,9 +111,9 @@ function renderAt(path: string, value = sessionOf(ASSISTANT, 'signed-in')) {
     { initialEntries: [path] },
   );
   render(
-    <WithSession value={value}>
+    <WithMode mode={value}>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
   return router;
 }
@@ -324,7 +324,7 @@ describe('создание проекта', () => {
   });
 
   it('руководителя на форму не пускает: запись — дело помощника', async () => {
-    const router = renderAt('/projects/new', sessionOf(LEADER, 'signed-in'));
+    const router = renderAt('/projects/new', 'leader');
 
     // Ссылок сюда ему не показывают, но адрес можно набрать руками, и отказ сервера на
     // сохранении — худший способ об этом узнать: к тому моменту форма уже заполнена.
@@ -424,7 +424,7 @@ describe('карточка проекта', () => {
   });
 
   it('руководителю ссылки на правку нет: карточка ему только для чтения', async () => {
-    renderAt('/projects/p-1', sessionOf(LEADER, 'signed-in'));
+    renderAt('/projects/p-1', 'leader');
 
     await screen.findByText('Приёмная станция ДЗЗ');
     expect(screen.queryByRole('link', { name: 'Правка' })).not.toBeInTheDocument();

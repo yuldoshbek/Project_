@@ -7,10 +7,8 @@ import { ProjectsPage } from '../features/projects/ProjectsPage';
 import { TasksPage } from '../features/tasks/TasksPage';
 import { AppLayout } from '../layout/AppLayout';
 import { ForbiddenPage } from '../pages/ForbiddenPage';
-import { LoginPage } from '../pages/LoginPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
-import { RequireSession } from './RequireSession';
 import { NAV_ITEMS, ROUTES } from './routes';
 
 /** Готовые экраны по адресу. Заглушка остаётся там, где экрана ещё нет. */
@@ -27,11 +25,9 @@ const SCREENS: Record<string, React.ReactElement> = {
  * настоящим компонентом — построчно, по одному тикету.
  */
 export const routes: RouteObject[] = [
-  // Вход — вне оболочки: меню и хлебные крошки тому, кто ещё не вошёл, ничего не
-  // говорят и только мешают найти два поля.
-  { path: ROUTES.login, element: <LoginPage /> },
+  // Ворот больше нет: входа в системе не существует (ADR-0026), и приложение
+  // открывается сразу. Кого до него допускать, решает периметр, а не маршрутизатор.
   {
-    element: <RequireSession />,
     errorElement: <NotFoundPage />,
     children: [
       {

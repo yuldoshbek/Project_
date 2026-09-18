@@ -139,14 +139,15 @@ class TestOnlyWhatChanged:
     async def test_entities_without_the_mark_are_not_logged(self, session: AsyncSession) -> None:
         """Журналируется деловая запись, а не всё подряд.
 
-        Токены сессии и счётчик неудачных входов меняются на каждом шаге входа; попади
-        они в журнал, деловые изменения утонули бы в служебных.
+        `User` не помечен `Auditable`: язык интерфейса и часовой пояс — настройка
+        устройства, а не изменение данных агентства. Попади такое в журнал, деловые
+        изменения утонули бы в служебных.
         """
         user = await session.scalar(select(User).limit(1))
         assert user is not None
         before = await session.scalar(select(func.count()).select_from(AuditLog))
 
-        user.failed_login_count = 3
+        user.locale = "uz-Latn"
         await session.flush()
 
         assert await session.scalar(select(func.count()).select_from(AuditLog)) == before

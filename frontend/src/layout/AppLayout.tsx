@@ -1,12 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router-dom';
 
-import pageStyles from '../pages/pages.module.css';
-import { useSession } from '../shared/auth/useSession';
 import { BottomNav } from './BottomNav';
 import { Breadcrumbs } from './Breadcrumbs';
 import styles from './layout.module.css';
 import { LocaleSwitcher } from './LocaleSwitcher';
+import { ModeSwitcher } from './ModeSwitcher';
 import { Sidebar } from './Sidebar';
 import { ThemeSwitcher } from './ThemeSwitcher';
 
@@ -18,7 +17,6 @@ import { ThemeSwitcher } from './ThemeSwitcher';
  */
 export function AppLayout() {
   const { t } = useTranslation();
-  const { profile, signOut } = useSession();
 
   return (
     <div className={styles.shell}>
@@ -36,16 +34,7 @@ export function AppLayout() {
         <Breadcrumbs />
         <ThemeSwitcher />
         <LocaleSwitcher />
-        {profile !== null && <span className={pageStyles.who}>{profile.full_name}</span>}
-        <button
-          type="button"
-          className={pageStyles.signOut}
-          onClick={() => {
-            void signOut();
-          }}
-        >
-          {t('login.signOut')}
-        </button>
+        <ModeSwitcher />
       </header>
 
       <main id="main" className={styles.main}>

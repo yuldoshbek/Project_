@@ -27,8 +27,8 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { LEADER, sessionOf } from '../../testing/profiles';
-import { WithSession } from '../../testing/WithSession';
+import type { Mode } from '../../shared/mode/ModeContext';
+import { WithMode } from '../../testing/WithMode';
 import type { Project } from './api';
 import { ProjectsPage } from './ProjectsPage';
 
@@ -101,14 +101,14 @@ function patches(): { url: string; body: Record<string, unknown> }[] {
     }));
 }
 
-function renderAt(path: string, session = sessionOf(LEADER, 'signed-in')) {
+function renderAt(path: string, session: Mode = 'leader') {
   const router = createMemoryRouter([{ path: '/projects', element: <ProjectsPage /> }], {
     initialEntries: [path],
   });
   render(
-    <WithSession value={session}>
+    <WithMode mode={session}>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
   return router;
 }
@@ -119,9 +119,9 @@ function asAssistant(path: string) {
     initialEntries: [path],
   });
   render(
-    <WithSession>
+    <WithMode>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
   return router;
 }
@@ -307,7 +307,7 @@ describe('доска проектов', () => {
   });
 
   it('руководителю доска открывается только для чтения', async () => {
-    renderAt('/projects?view=board', sessionOf(LEADER, 'signed-in'));
+    renderAt('/projects?view=board', 'leader');
 
     await screen.findByText('Приёмная станция ДЗЗ');
     expect(screen.queryByLabelText('Перенести в колонку')).toBeNull();

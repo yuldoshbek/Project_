@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 
 import { projectPath, ROUTES } from '../../app/routes';
-import { useSession } from '../../shared/auth/useSession';
+import { useMayEdit } from '../../shared/mode/useMode';
 import { ErrorState } from '../../shared/ui/ErrorState';
 import { Skeleton } from '../../shared/ui/Skeleton';
 import type { Project, ProjectDraft } from './api';
@@ -38,7 +38,7 @@ function FormPage({ id }: { id?: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { profile } = useSession();
+  const mayEdit = useMayEdit();
 
   /**
    * Правка старой записи запрашивает и недействующие значения.
@@ -84,7 +84,7 @@ function FormPage({ id }: { id?: string }) {
   // но адрес можно набрать руками, и отказ сервера на сохранении — худший способ об
   // этом узнать: к тому моменту форма уже заполнена. Переход объявлен разметкой, а не
   // вызовом в отрисовке: побочное действие при отрисовке React выполняет дважды.
-  if (profile?.role !== 'assistant') {
+  if (!mayEdit) {
     return <Navigate to={ROUTES.forbidden} replace />;
   }
 

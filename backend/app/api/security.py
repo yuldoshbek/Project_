@@ -1,117 +1,67 @@
-"""Токен доступа и определение текущего пользователя.
+"""Действующее лицо запроса. Входа в систему нет.
 
-Токен доступа — подписанный JWT с коротким сроком жизни, он не хранится на сервере.
-Долгоживущий токен обновления, наоборот, хранится и отзывается
-(`app.repos.models.auth`): иначе «выход» не существует как действие.
+Вход снят решением заказчика 18.09.2026 (ADR-0026): пользователей двое, границы между
+ними нет (ADR-0011), и экран входа охранял не их друг от друга, а систему от внешнего
+мира — то есть делал работу периметра, стоя внутри приложения. Периметром теперь
+занимается обратный прокси на сервере агентства, а приложение занимается делом.
+
+Роль осталась, потому что у неё две задачи, не связанные с защитой:
+
+1. У записи в `audit_log` обязан быть автор (инвариант 4, ADR-0010). «Система» вместо
+   имени через месяц не отвечает на вопрос «кто это отметил».
+2. Решение руководителя обязано быть отличимо от заметки помощника — это единственное
+   действие, которое в системе есть у руководителя.
+
+**Сервер верит заголовку на слово, и это не недосмотр.** Заголовок не охраняет данные, он
+подписывает действие. Подпись, которую легко подделать, бесполезна против злоумышленника и
+достаточна против забывчивости — а здесь стоит денег именно забывчивость.
 """
 
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated
 
-import jwt
 from fastapi import Depends, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import SessionDep
 from app.domain.audit import ActorKind
-from app.domain.errors import NotAuthenticatedError, PermissionDeniedError
+from app.domain.errors import NotFoundError, PermissionDeniedError
 from app.domain.people import Role
 from app.repos.models import User
 from app.services.audit import Actor, set_actor
-from app.services.auth import ACCESS_TOKEN_LIFETIME
-from app.settings import Settings
 
-ALGORITHM = "HS256"
-TOKEN_TYPE = "access"  # noqa: S105  — это назначение токена, а не пароль
-
-# auto_error=False: без него FastAPI отдаёт свой ответ 401, минуя наш формат RFC 9457,
-# и клиент получает две разные формы ошибки от одного API.
-bearer_scheme = HTTPBearer(auto_error=False)
+ACTOR_HEADER = "X-Orbita-Actor"
 
 
-class PasswordChangeRequiredError(PermissionDeniedError):
-    """Пароль выдан администратором и ещё не заменён.
+def read_role(request: Request) -> Role:
+    """Роль из заголовка. Нет заголовка — помощник.
 
-    Проверяется на сервере, а не только перенаправлением в интерфейсе: иначе
-    обязательная смена пароля обходится обращением к API напрямую.
+    Помощник по умолчанию, а не руководитель: данные вносит он, и ошибка в его сторону
+    безопаснее. Приняв за руководителя того, кто им не представился, мы приписали бы ему
+    чужие правки в журнале.
+
+    Неизвестное значение — тоже помощник, без ошибки: заголовок не охраняет вход, и
+    ронять запрос из-за опечатки в нём значит воспроизвести вход под другим именем.
     """
-
-    code = "password-change-required"
-
-
-def create_access_token(user: User, settings: Settings) -> str:
-    """Токен доступа.
-
-    Утверждение `role` в теле токена — **справочное**. Сервер его не читает: роль
-    берётся из базы на каждом запросе (`require_assistant`), иначе смена роли и
-    отключение пользователя действовали бы только после истечения токена. Клали его
-    ради интерфейса — он рисует экран под роль, не дожидаясь ответа `/me`.
-
-    Подписанное утверждение, которому не верят, — ловушка для следующего читателя:
-    однажды его примут за проверенное. Проверка обратного — в `test_roles.py`,
-    `test_role_claim_in_the_token_does_not_grant_anything` (ORB-053).
-    """
-    now = datetime.now(UTC)
-    payload: dict[str, Any] = {
-        "sub": str(user.id),
-        "role": user.role,
-        "typ": TOKEN_TYPE,
-        "iat": now,
-        "exp": now + ACCESS_TOKEN_LIFETIME,
-    }
-    return jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)
-
-
-def decode_access_token(token: str, settings: Settings) -> dict[str, Any]:
+    raw = (request.headers.get(ACTOR_HEADER) or "").strip().lower()
     try:
-        claims: dict[str, Any] = jwt.decode(
-            token,
-            settings.secret_key.get_secret_value(),
-            algorithms=[ALGORITHM],
-        )
-    except jwt.ExpiredSignatureError as error:
-        raise NotAuthenticatedError(
-            "Срок действия сессии истёк, обновите её или войдите заново"
-        ) from error
-    except jwt.InvalidTokenError as error:
-        raise NotAuthenticatedError("Недействительный токен доступа") from error
-
-    if claims.get("typ") != TOKEN_TYPE:
-        # Токен обновления не должен работать как токен доступа: у него другой срок
-        # жизни и другое назначение.
-        raise NotAuthenticatedError("Недействительный токен доступа")
-
-    return claims
+        return Role(raw)
+    except ValueError:
+        return Role.ASSISTANT
 
 
-async def get_current_user(
-    request: Request,
-    session: SessionDep,
-    settings: SettingsDep,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-) -> User:
-    """Текущий пользователь.
+async def get_current_user(request: Request, session: SessionDep) -> User:
+    """Пользователь, от имени которого идёт запрос.
 
-    Запись читается из базы на каждом запросе, а не берётся из токена. Токен живёт
-    пятнадцать минут — этого достаточно, чтобы отключённый пользователь успел поработать,
-    если верить только подписи.
+    Запись читается из базы, а не собирается из заголовка: у автора записи в журнале
+    должен быть настоящий идентификатор, иначе `audit_log` ссылается в пустоту.
     """
-    if credentials is None:
-        raise NotAuthenticatedError("Требуется вход в систему")
-
-    claims = decode_access_token(credentials.credentials, settings)
-
-    try:
-        user_id = uuid.UUID(str(claims.get("sub")))
-    except ValueError as error:
-        raise NotAuthenticatedError("Недействительный токен доступа") from error
-
-    user = await session.get(User, user_id)
-    if user is None or not user.is_active:
-        raise NotAuthenticatedError("Требуется вход в систему")
+    role = read_role(request)
+    user = await session.scalar(select(User).where(User.role == role.value, User.is_active))
+    if user is None:
+        # Сиды не загружены: это поломка развёртывания, а не ошибка запроса.
+        raise NotFoundError(f"В системе нет пользователя с ролью «{role.value}»: загрузите сиды")
 
     request.state.user_id = str(user.id)
 
@@ -133,12 +83,12 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 async def get_active_user(user: CurrentUser) -> User:
-    """Пользователь, которому доступна работа с данными.
+    """Псевдоним `CurrentUser`.
 
-    Пока временный пароль не заменён, открыты только `GET /me` и смена пароля.
+    Имя сохранено намеренно: раньше здесь стоял запрет работать с временным паролем, и
+    на эту зависимость ссылаются восемь роутеров. Переименование тронуло бы их все и
+    ничего бы не изменило по существу.
     """
-    if user.must_change_password:
-        raise PasswordChangeRequiredError("Сначала смените временный пароль")
     return user
 
 
@@ -148,12 +98,16 @@ ActiveUser = Annotated[User, Depends(get_active_user)]
 async def require_assistant(user: ActiveUser) -> User:
     """Действия, изменяющие данные.
 
-    Руководителю доступно ровно одно исключение — решение по проекту на контроле
+    Это не защита — заголовок роли подделывается тривиально, и ADR-0026 говорит об этом
+    прямо. Это защита от промаха: руководитель, открывший систему в режиме просмотра, не
+    должен случайно изменить данные, которые он пришёл смотреть.
+
+    Единственное исключение — решение по проекту на контроле
     ([ADR-0011](../../../docs/adr/ADR-0011-two-user-scope.md)). Оно проверяется отдельно
     и явно, а не через послабление здесь: исключение должно быть видно в коде.
     """
     if Role(user.role) is not Role.ASSISTANT:
-        raise PermissionDeniedError("Изменение данных доступно только помощнику")
+        raise PermissionDeniedError("Изменение данных доступно в режиме помощника")
     return user
 
 

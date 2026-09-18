@@ -23,8 +23,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { LEADER, sessionOf } from '../../testing/profiles';
-import { WithSession } from '../../testing/WithSession';
+import { WithMode } from '../../testing/WithMode';
 import { Attachments } from './Attachments';
 import { humanSize } from './api';
 
@@ -101,13 +100,13 @@ function serve(documents: unknown[]): void {
 
 function show(
   node = <Attachments target="project" entityId="p-1" />,
-  value?: Parameters<typeof WithSession>[0]['value'],
+  value?: Parameters<typeof WithMode>[0]['mode'],
 ) {
   return render(
     value === undefined ? (
-      <WithSession>{node}</WithSession>
+      <WithMode>{node}</WithMode>
     ) : (
-      <WithSession value={value}>{node}</WithSession>
+      <WithMode mode={value}>{node}</WithMode>
     ),
   );
 }
@@ -266,7 +265,7 @@ describe('панель вложений', () => {
   });
 
   it('руководителю загрузка и удаление не предлагаются', async () => {
-    show(undefined, sessionOf(LEADER, 'signed-in'));
+    show(undefined, 'leader');
 
     await screen.findByText('Смета работ.xlsx');
     expect(screen.queryByLabelText('Перетащите файл сюда или выберите')).toBeNull();

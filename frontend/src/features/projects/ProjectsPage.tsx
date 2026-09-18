@@ -18,7 +18,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 
 import { projectPath, ROUTES } from '../../app/routes';
 import { HttpError } from '../../shared/api/client';
-import { useSession } from '../../shared/auth/useSession';
+import { useMayEdit } from '../../shared/mode/useMode';
 import { formatDate } from '../../shared/time';
 import { EmptyState } from '../../shared/ui/EmptyState';
 import { ErrorState } from '../../shared/ui/ErrorState';
@@ -56,8 +56,7 @@ export function ProjectsPage() {
   // одновременно — это два предпросмотра, борющихся за место.
   const [filesOf, setFilesOf] = useState<Project | null>(null);
 
-  const { profile } = useSession();
-  const mayEdit = profile?.role === 'assistant';
+  const mayEdit = useMayEdit();
   const view = params.get(VIEW_PARAM) === BOARD ? BOARD : 'list';
   const [moveError, setMoveError] = useState<string | null>(null);
 

@@ -27,18 +27,22 @@ class TestSeededUsers:
 
         assert roles == [Role.ASSISTANT, Role.LEADER]
 
-    async def test_accounts_have_no_password(self, session: AsyncSession) -> None:
-        """Пароля в сидах нет, и это не упущение.
+    async def test_accounts_carry_no_secrets(self) -> None:
+        """У учётной записи нет ни одного поля, похожего на секрет или на вход.
 
-        Репозиторий публичный: захардкоженный пароль в сидах — это пароль, который
-        останется в рабочей системе. Первичный пароль назначает администратор отдельно.
+        Проверяются **обрывки имён**, а не список колонок: список пришлось бы дополнять
+        руками, а обрывок ловит и то, что добавят завтра. Входа в системе нет (ADR-0026),
+        репозиторий публичный, и любой секрет в схеме однажды окажется в сидах.
         """
-        users = list(await session.scalars(select(User)))
+        suspicious = ("password", "secret", "token", "login", "locked")
+        offenders = [
+            column.name
+            for column in User.__table__.columns
+            for fragment in suspicious
+            if fragment in column.name.lower()
+        ]
 
-        assert users
-        for user in users:
-            assert user.password_hash is None
-            assert user.must_change_password is True
+        assert not offenders, f"в учётной записи остались поля входа: {offenders}"
 
     async def test_no_staff_records_are_invented(self, session: AsyncSession) -> None:
         """Сотрудники агентства сидами не заполняются: это реальные люди.
@@ -51,18 +55,18 @@ class TestSeededUsers:
         assert total == 0
 
     async def test_re_seeding_does_not_reset_accounts(self, session: AsyncSession) -> None:
-        """Повторный запуск сидов не сбрасывает ни пароль, ни роль."""
+        """Повторный запуск сидов не трогает существующие учётные записи."""
         user = await session.scalar(select(User).where(User.email == "assistant@orbita.local"))
         assert user is not None
-        user.password_hash = "уже-назначен"
-        user.must_change_password = False
+        user.locale = "uz-Cyrl"
+        user.is_active = False
         await session.flush()
 
         await seed_module.seed(session)
 
         await session.refresh(user)
-        assert user.password_hash == "уже-назначен"
-        assert user.must_change_password is False
+        assert user.locale == "uz-Cyrl"
+        assert user.is_active is False
 
 
 class TestUserRules:
@@ -139,8 +143,6 @@ class TestUserRules:
         assert user.locale == "ru"
         assert user.timezone == "Asia/Tashkent"
         assert user.is_active is True
-        assert user.failed_login_count == 0
-        assert user.locked_until is None
 
 
 class TestRoles:

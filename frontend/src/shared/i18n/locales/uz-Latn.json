@@ -28,6 +28,11 @@
     "light": "Yorugʻ",
     "dark": "Qorongʻi"
   },
+  "mode": {
+    "label": "Rejim",
+    "assistant": "Men yordamchiman",
+    "leader": "Men rahbarman"
+  },
   "state": {
     "loading": "Yuklanmoqda",
     "empty": "Hech narsa topilmadi",
@@ -46,15 +51,6 @@
   "placeholder": {
     "title": "Boʻlim ishlab chiqilmoqda",
     "text": "Ekran {{ticket}} tiketida amalga oshiriladi."
-  },
-  "login": {
-    "email": "Elektron pochta manzili",
-    "password": "Parol",
-    "submit": "Kirish",
-    "submitting": "Tekshirilmoqda…",
-    "failed": "Manzil yoki parol notoʻgʻri",
-    "locked": "Bir necha muvaffaqiyatsiz urinishdan soʻng kirish vaqtincha bloklandi. Bir necha daqiqadan soʻng qayta urinib koʻring.",
-    "signOut": "Chiqish"
   },
   "health": {
     "green": "Joyida",

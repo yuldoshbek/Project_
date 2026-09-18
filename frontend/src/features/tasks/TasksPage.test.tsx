@@ -21,7 +21,8 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WithSession } from '../../testing/WithSession';
+import { ACTOR_HEADER } from '../../shared/api/client';
+import { WithMode } from '../../testing/WithMode';
 import { TasksPage } from './TasksPage';
 
 const DICTIONARIES = {
@@ -91,9 +92,9 @@ function renderAt(path: string) {
     initialEntries: [path],
   });
   render(
-    <WithSession>
+    <WithMode>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
   return router;
 }
@@ -296,7 +297,7 @@ describe('база задач', () => {
     });
   });
 
-  it('запрос за файлом уходит с токеном: иначе сервер его не отдаст', async () => {
+  it('запрос за файлом уходит подписанным: иначе выгрузка окажется в журнале ничьей', async () => {
     const user = userEvent.setup();
     renderAt('/tasks');
 
@@ -309,7 +310,7 @@ describe('база задач', () => {
       );
       expect(call).toBeDefined();
       const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
-      expect(headers.Authorization).toMatch(/^Bearer /);
+      expect(headers[ACTOR_HEADER]).toBe('assistant');
     });
   });
 

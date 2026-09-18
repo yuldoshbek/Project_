@@ -3,19 +3,21 @@ import { RouterProvider } from 'react-router-dom';
 
 import { queryClient } from './app/queryClient';
 import { router } from './app/router';
-import { AuthProvider } from './shared/auth/AuthProvider';
+import { ModeProvider } from './shared/mode/ModeProvider';
 
 /**
- * Провайдер сессии стоит снаружи маршрутизатора: состояние входа переживает переходы
- * между экранами, а восстановление сессии при запуске происходит один раз, а не на
- * каждом экране.
+ * Провайдер режима стоит снаружи маршрутизатора: выбранный режим переживает переходы
+ * между экранами, а клиент API узнаёт о нём один раз, а не на каждом экране.
+ *
+ * Входа в системе нет (ADR-0026), поэтому провайдера сессии здесь тоже нет: приложение
+ * открывается сразу, а кого до него допускать, решает периметр.
  */
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+      <ModeProvider>
         <RouterProvider router={router} />
-      </AuthProvider>
+      </ModeProvider>
     </QueryClientProvider>
   );
 }

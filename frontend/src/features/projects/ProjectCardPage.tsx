@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 
 import { projectEditPath } from '../../app/routes';
-import { useSession } from '../../shared/auth/useSession';
+import { useMayEdit } from '../../shared/mode/useMode';
 import { formatDate } from '../../shared/time';
 import { ErrorState } from '../../shared/ui/ErrorState';
 import { Skeleton } from '../../shared/ui/Skeleton';
@@ -30,7 +30,7 @@ import listStyles from './projects.module.css';
 export function ProjectCardPage() {
   const { id = '' } = useParams<'id'>();
   const { t, i18n } = useTranslation();
-  const { profile } = useSession();
+  const mayEdit = useMayEdit();
 
   const project = useQuery({ queryKey: ['project', id], queryFn: () => fetchProject(id) });
   const dictionaries = useQuery({
@@ -67,7 +67,7 @@ export function ProjectCardPage() {
         <span className={`${listStyles.health} ${listStyles[data.health]}`}>
           {t(`health.${data.health}`)}
         </span>
-        {profile?.role === 'assistant' && (
+        {mayEdit && (
           <Link className={styles.secondary} to={projectEditPath(id)}>
             {t('projects.form.edit')}
           </Link>

@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
@@ -21,13 +21,13 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from arq.typing import WorkerCoroutine
 from arq.worker import Worker
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.contextvars import get_contextvars
 from structlog.testing import capture_logs
 
 from app.domain.audit import ActorKind
-from app.repos.models import AuditLog, Person, RefreshToken, User
+from app.repos.models import AuditLog, Person
 from app.services.audit import Actor, get_actor, set_actor
 from app.settings import Settings
 from app.workers.context import (
@@ -36,11 +36,6 @@ from app.workers.context import (
     job,
     job_context,
     retry_delay,
-)
-from app.workers.jobs import (
-    REVOKED_RETENTION,
-    purge_stale_sessions_job,
-    purge_stale_sessions_once,
 )
 from tests.conftest import redis_url
 
@@ -127,91 +122,6 @@ class TestJobScope:
         set_actor(Actor())
 
 
-async def a_token(
-    session: AsyncSession,
-    *,
-    expires_at: datetime,
-    revoked_at: datetime | None = None,
-) -> RefreshToken:
-    user = await session.scalar(select(User).limit(1))
-    assert user is not None
-    token = RefreshToken(
-        user_id=user.id,
-        token_hash=uuid.uuid4().hex,
-        expires_at=expires_at,
-        revoked_at=revoked_at,
-    )
-    session.add(token)
-    await session.flush()
-    return token
-
-
-async def token_count(session: AsyncSession) -> int:
-    return await session.scalar(select(func.count()).select_from(RefreshToken)) or 0
-
-
-class TestPurgeStaleSessions:
-    async def test_expired_tokens_are_removed_and_live_ones_stay(
-        self, session: AsyncSession
-    ) -> None:
-        alive = await a_token(session, expires_at=NOW + timedelta(days=10))
-        await a_token(session, expires_at=NOW - timedelta(minutes=1))
-
-        removed = await purge_stale_sessions_once(session, now=NOW)
-
-        assert removed == 1
-        left = list(await session.scalars(select(RefreshToken.id)))
-        assert left == [alive.id]
-
-    async def test_a_recently_revoked_token_is_kept(self, session: AsyncSession) -> None:
-        """По отозванным разбирают, откуда взялась чужая сессия. Месяц — тот срок."""
-        await a_token(
-            session,
-            expires_at=NOW + timedelta(days=10),
-            revoked_at=NOW - timedelta(days=1),
-        )
-
-        removed = await purge_stale_sessions_once(session, now=NOW)
-
-        assert removed == 0
-        assert await token_count(session) == 1
-
-    async def test_a_long_revoked_token_is_removed(self, session: AsyncSession) -> None:
-        await a_token(
-            session,
-            expires_at=NOW + timedelta(days=10),
-            revoked_at=NOW - REVOKED_RETENTION - timedelta(days=1),
-        )
-
-        removed = await purge_stale_sessions_once(session, now=NOW)
-
-        assert removed == 1
-        assert await token_count(session) == 0
-
-    async def test_running_it_twice_changes_nothing_the_second_time(
-        self, session: AsyncSession
-    ) -> None:
-        """Критерий приёмки: повторный запуск на тех же данных без побочных эффектов.
-
-        Воркер перезапускается при выкладке, и задание может выполниться дважды. Без
-        этого свойства второй прогон делает второе действие — а для напоминаний это
-        второе сообщение (ADR-0008).
-        """
-        await a_token(session, expires_at=NOW - timedelta(days=1))
-        await a_token(session, expires_at=NOW + timedelta(days=10))
-
-        first = await purge_stale_sessions_once(session, now=NOW)
-        after_first = await token_count(session)
-        second = await purge_stale_sessions_once(session, now=NOW)
-
-        assert first == 1
-        assert second == 0, "второй прогон обязан не найти работы"
-        assert await token_count(session) == after_first
-
-    async def test_nothing_to_do_is_not_an_error(self, session: AsyncSession) -> None:
-        assert await purge_stale_sessions_once(session, now=NOW) == 0
-
-
 # Задания воркера объявляются на уровне модуля: ARQ регистрирует их по полному имени
 # (`__qualname__`), и у вложенной в тест функции оно выглядит как
 # `TestClass.test_method.<locals>.explodes` — поставить такое в очередь по короткому
@@ -295,24 +205,32 @@ class TestTheWholeThingStartsAndStops:
     когда воркер запускают впервые на новой машине.
     """
 
-    async def test_the_worker_starts_runs_the_real_job_and_stops(
+    async def test_the_worker_starts_with_the_real_hooks_and_stops(
         self,
         monkeypatch: pytest.MonkeyPatch,
         settings: Settings,
         migrated_database: str,
     ) -> None:
+        """Раньше здесь ставилось в очередь настоящее задание уборки сессий.
+
+        Уборка ушла вместе со входом (ADR-0026), а из настоящих заданий остался один
+        предпросмотр — и ему нужна существующая версия вложения, хранилище и
+        преобразователь. Тащить их сюда значило бы проверять предпросмотр, а не запуск.
+
+        Поэтому очередь пуста намеренно: проверяется ровно то, ради чего тест заводился, —
+        что **настоящие** `on_startup` и `on_shutdown` отрабатывают. Именно там создаётся
+        подключение к базе, и именно оно ломается при первом запуске на новой машине.
+        """
         from app.workers import main as entry
 
-        # Настройки теста, а не окружения: иначе воркер поднялся бы против базы
-        # разработки и чистил бы её сессии.
+        # Настройки теста, а не окружения: иначе воркер поднялся бы против базы разработки.
         monkeypatch.setattr(entry, "get_settings", lambda: settings)
 
         queue = f"orbita:test:{uuid.uuid4().hex}"
         pool = await create_pool(RedisSettings.from_dsn(redis_url()), default_queue_name=queue)
         try:
-            await pool.enqueue_job("purge_stale_sessions")
             worker = Worker(
-                functions=[cast("WorkerCoroutine", purge_stale_sessions_job)],
+                functions=[cast("WorkerCoroutine", handler) for handler in entry.FUNCTIONS],
                 queue_name=queue,
                 redis_settings=RedisSettings.from_dsn(redis_url()),
                 burst=True,
@@ -333,27 +251,25 @@ class TestTheWholeThingStartsAndStops:
         finally:
             await pool.aclose()
 
-        assert worker.jobs_complete == 1
         assert worker.jobs_failed == 0
 
 
 class TestSchedule:
-    def test_the_cleanup_runs_by_schedule_and_not_at_startup(self) -> None:
-        """Задание при старте — это задание при каждой выкладке, а не раз в сутки."""
+    def test_registered_jobs_match_the_names_used_to_enqueue_them(self) -> None:
+        """Задание, поставленное по имени, но не зарегистрированное, не выполнится молча."""
         from app.services.documents import PREVIEW_JOB
         from app.workers.main import CRON_JOBS, FUNCTIONS, WorkerSettings
 
         registered = [handler.__name__ for handler in FUNCTIONS]
-        assert "purge_stale_sessions" in registered
         assert PREVIEW_JOB in registered, (
             "задание предпросмотра ставится из обработчика запроса по имени "
             f"{PREVIEW_JOB!r}; не зарегистрированное здесь — это задание, которое "
             "никогда не выполнится, и никто об этом не узнает"
         )
 
-        # По расписанию ходит только уборка: предпросмотр ставится по событию.
-        assert len(CRON_JOBS) == 1
-        assert CRON_JOBS[0].run_at_startup is False
+        # Расписание пусто: ночная уборка сессий ушла вместе со входом (ADR-0026).
+        # Проверка оставлена, чтобы следующее задание по часам завели осознанно.
+        assert CRON_JOBS == []
         assert WorkerSettings.max_tries == MAX_TRIES, (
             "число попыток у ARQ и у обвязки обязано совпадать: разойдутся — "
             "задание получит лишнюю попытку или пропадёт раньше времени"

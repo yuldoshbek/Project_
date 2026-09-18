@@ -313,14 +313,12 @@ USERS: list[dict[str, Any]] = [
         "full_name": "Личный помощник заместителя директора",
         "role": Role.ASSISTANT,
         "locale": "ru",
-        "must_change_password": True,
     },
     {
         "email": "leader@orbita.local",
         "full_name": "Заместитель директора",
         "role": Role.LEADER,
         "locale": "ru",
-        "must_change_password": True,
     },
 ]
 

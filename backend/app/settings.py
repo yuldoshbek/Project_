@@ -54,10 +54,18 @@ class Settings(BaseSettings):
     db_password: SecretStr = SecretStr("orbita")
     db_schema: str = "orbita"
 
-    # --- Вход (ADR-0001) ---
-    # local — адрес и пароль. Провайдер seta включится, когда у неё появится API;
-    # менять придётся только это значение.
-    identity_provider: str = "local"
+    # --- Кто может звать API из браузера (ADR-0026) ---
+    # Входа в системе нет, и единственное, что отделяет её от чужого браузера, — этот
+    # список и периметр. Значения через запятую: адрес фронтенда на сервере агентства,
+    # адрес сборки на Netlify, адрес разработки.
+    #
+    # Параметр, а не константа: домен выкладки меняется без правки кода. Пустая строка
+    # означает «чужим источникам нельзя» — так и должно быть, пока домен неизвестен.
+    cors_origins: str = "http://localhost:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     # --- Redis ---
     redis_url: str = "redis://127.0.0.1:56379/0"

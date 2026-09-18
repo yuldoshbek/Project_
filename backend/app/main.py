@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
 from app.api.router import api_router
@@ -59,6 +60,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # кешированного чтения окружения. Иначе create_app(settings) даёт приложение,
     # часть которого работает с переданными настройками, а часть — с чужими.
     app.state.settings = settings
+
+    # Фронтенд может стоять на другом домене — на сервере агентства рядом с API или на
+    # Netlify. Без этого списка браузер не даст ему сделать ни одного запроса, и это
+    # первое, что ломается при выкладке (ADR-0026).
+    #
+    # `allow_credentials` намеренно выключен: ни куки, ни заголовка `Authorization` в
+    # системе нет — запрос подписывается заголовком режима, который не является
+    # удостоверением. Включить его значило бы пообещать защиту, которой нет.
+    if settings.cors_origin_list:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origin_list,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["Content-Disposition", "X-Request-ID"],
+        )
 
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)

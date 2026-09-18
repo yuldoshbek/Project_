@@ -9,7 +9,6 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.routes import (
-    auth,
     checklists,
     comments,
     dictionaries,
@@ -26,7 +25,6 @@ API_PREFIX = "/api/v1"
 # Класс маршрута задаётся на каждом роутере отдельно, а не наследуется отсюда:
 # `include_router` берёт класс у включаемого роутера, а не у включающего.
 api_router = APIRouter(prefix=API_PREFIX)
-api_router.include_router(auth.router)
 api_router.include_router(dictionaries.router)
 api_router.include_router(people.router)
 api_router.include_router(projects.router)

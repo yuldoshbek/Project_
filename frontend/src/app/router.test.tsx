@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import { WithSession } from '../testing/WithSession';
+import { WithMode } from '../testing/WithMode';
 import { routes } from './router';
 
 /**
@@ -24,9 +24,9 @@ function sidebar() {
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   return render(
-    <WithSession>
+    <WithMode>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
 }
 

@@ -57,36 +57,36 @@ export class HttpError extends Error {
   }
 }
 
-/** Возвращает токен доступа или `null`, если вход ещё не выполнен. */
-export type TokenSource = () => string | null;
+/** Заголовок, которым запрос подписывает действующее лицо (ADR-0026). */
+export const ACTOR_HEADER = 'X-Orbita-Actor';
 
-/** Вызывается, когда сервер сообщил, что сессия недействительна. */
-export type UnauthorizedHandler = () => void;
+/** Возвращает текущий режим работы: помощник или руководитель. */
+export type ActorSource = () => string;
 
-let readToken: TokenSource = () => null;
-let onUnauthorized: UnauthorizedHandler = () => {};
+/**
+ * Входа в системе нет, и токена тоже. Запрос сообщает лишь, в каком режиме работает
+ * человек, — сервер верит этому на слово и подписывает его именем изменения в журнале.
+ * Охрана живёт на периметре, а не в этом файле (ADR-0026).
+ */
+let readActor: ActorSource = () => 'assistant';
 
-export function configureApi(source: TokenSource, handler: UnauthorizedHandler): void {
-  readToken = source;
-  onUnauthorized = handler;
+export function configureApi(source: ActorSource): void {
+  readActor = source;
 }
 
 export interface RequestOptions {
   method?: string;
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
-  /** Запрос самого входа: по нему не имеет смысла уводить на вход повторно. */
-  anonymous?: boolean;
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, anonymous = false } = options;
+  const { method = 'GET', body, query } = options;
 
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const token = anonymous ? null : readToken();
-  if (token !== null) headers.Authorization = `Bearer ${token}`;
+  headers[ACTOR_HEADER] = readActor();
 
   // Ключ `body` не появляется вовсе, когда тела нет: при строгих необязательных
   // свойствах `undefined` и «нет свойства» — разные вещи, и `fetch` принимает второе.
@@ -99,7 +99,6 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   if (!response.ok) {
     const problem = await safeProblem(response);
-    if (response.status === 401 && !anonymous) onUnauthorized();
     throw new HttpError(response.status, problem);
   }
 
@@ -119,14 +118,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
  */
 export async function requestUpload<T>(path: string, form: FormData): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  const token = readToken();
-  if (token !== null) headers.Authorization = `Bearer ${token}`;
+  headers[ACTOR_HEADER] = readActor();
 
   const response = await fetch(`${API_PREFIX}${path}`, { method: 'POST', headers, body: form });
 
   if (!response.ok) {
     const problem = await safeProblem(response);
-    if (response.status === 401) onUnauthorized();
     throw new HttpError(response.status, problem);
   }
 
@@ -142,12 +139,12 @@ export interface DownloadedFile {
 /**
  * Файл, собранный сервером.
  *
- * Отдельная функция, а не ссылка `<a href>` в разметке: браузер не приложит к переходу
- * по ссылке заголовок `Authorization`, а токен живёт в памяти вкладки, и класть его в
- * адрес нельзя — адрес попадает в журналы, историю и в пересланную ссылку. Поэтому файл
- * забирается обычным запросом, с тем же токеном, что и всё остальное.
+ * Отдельная функция, а не ссылка `<a href>` в разметке: по переходу браузер не приложит
+ * ни одного нашего заголовка, и действие уйдёт неподписанным — в журнале выгрузка
+ * окажется анонимной. Поэтому файл забирается обычным запросом, с тем же заголовком
+ * режима, что и всё остальное.
  *
- * Собирает файл по-прежнему сервер: выгрузка — одна из пяти точек выхода наружу, и
+ * Собирает файл по-прежнему сервер: выгрузка — одна из трёх точек выхода наружу, и
  * проверка `share_externally` стоит там, внутри функции выдачи (ADR-0024). Здесь только
  * сохранение того, что пришло.
  */
@@ -156,14 +153,12 @@ export async function requestFile(
   query?: RequestOptions['query'],
 ): Promise<DownloadedFile> {
   const headers: Record<string, string> = {};
-  const token = readToken();
-  if (token !== null) headers.Authorization = `Bearer ${token}`;
+  headers[ACTOR_HEADER] = readActor();
 
   const response = await fetch(`${API_PREFIX}${path}${buildQuery(query)}`, { headers });
 
   if (!response.ok) {
     const problem = await safeProblem(response);
-    if (response.status === 401) onUnauthorized();
     throw new HttpError(response.status, problem);
   }
 

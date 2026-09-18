@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest';
 
 import { routes } from '../app/router';
 import { NAV_ITEMS } from '../app/routes';
-import { WithSession } from '../testing/WithSession';
+import { WithMode } from '../testing/WithMode';
 
 function css(relative: string): string {
   return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
@@ -41,9 +41,9 @@ const PAGES = css('../pages/pages.module.css');
 function renderApp(path = '/projects') {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   render(
-    <WithSession>
+    <WithMode>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
 }
 

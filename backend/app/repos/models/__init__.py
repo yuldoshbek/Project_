@@ -6,7 +6,6 @@
 """
 
 from app.repos.models.audit import Auditable, AuditLog
-from app.repos.models.auth import RefreshToken
 from app.repos.models.checklists import Tag, TaskChecklistItem, TaskTag
 from app.repos.models.comments import Comment
 from app.repos.models.dictionaries import (
@@ -40,7 +39,6 @@ __all__ = [
     "Project",
     "ProjectPartner",
     "ProjectStatusRef",
-    "RefreshToken",
     "Setting",
     "Tag",
     "Task",

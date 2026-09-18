@@ -870,15 +870,21 @@ class TestWhoMayDoWhat:
         response = await leader_api.get(f"{API}/documents/{created.json()['document']['id']}/link")
         assert response.status_code == 200
 
-    async def test_without_a_session_nothing_is_shown(
+    async def test_without_a_role_header_the_list_still_works(
         self, api: AsyncClient, session: AsyncSession
     ) -> None:
+        """Входа в системе нет (ADR-0026): не назвавшийся считается помощником.
+
+        Раньше здесь ожидался 401. Теперь отсутствие заголовка роли — не отказ, а
+        умолчание, и проверка сторожит именно это: список обязан открыться, а не
+        промолчать.
+        """
         project = await a_project(session)
         response = await api.get(
             f"{API}/documents",
             params={"entity_type": DocumentTarget.PROJECT.value, "entity_id": str(project.id)},
         )
-        assert response.status_code == 401
+        assert response.status_code == 200
 
 
 # --------------------------------------------------------------------------

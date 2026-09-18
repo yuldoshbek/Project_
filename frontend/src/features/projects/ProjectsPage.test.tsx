@@ -14,7 +14,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WithSession } from '../../testing/WithSession';
+import { WithMode } from '../../testing/WithMode';
 import { ProjectsPage } from './ProjectsPage';
 
 const DICTIONARIES = {
@@ -64,9 +64,9 @@ function renderAt(path: string) {
     initialEntries: [path],
   });
   render(
-    <WithSession>
+    <WithMode>
       <RouterProvider router={router} />
-    </WithSession>,
+    </WithMode>,
   );
   return router;
 }

@@ -13,7 +13,6 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.antivirus import VirusScanner, create_virus_scanner
-from app.adapters.identity import IdentityProvider, create_identity_provider
 from app.adapters.queue import JobQueue, create_job_queue
 from app.adapters.storage import FileStorage, create_file_storage
 from app.api.transaction import SESSION_STATE_ATTRIBUTE
@@ -56,15 +55,6 @@ def get_app_settings(request: Request) -> Settings:
     return settings
 
 
-def get_identity_provider(request: Request) -> IdentityProvider:
-    """Провайдер установления личности из настроек приложения.
-
-    Зависимость, а не прямой вызов в роутере: так реализацию подменяют и в тестах, и
-    при переходе на SETA — не трогая ни один роутер (критерий ORB-006, ADR-0001).
-    """
-    return create_identity_provider(get_app_settings(request).identity_provider)
-
-
 def get_storage(request: Request) -> FileStorage:
     """Хранилище вложений (ADR-0009)."""
     return create_file_storage(get_app_settings(request))
@@ -82,7 +72,6 @@ def get_job_queue(request: Request) -> JobQueue:
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
-IdentityProviderDep = Annotated[IdentityProvider, Depends(get_identity_provider)]
 StorageDep = Annotated[FileStorage, Depends(get_storage)]
 ScannerDep = Annotated[VirusScanner, Depends(get_virus_scanner)]
 QueueDep = Annotated[JobQueue, Depends(get_job_queue)]
