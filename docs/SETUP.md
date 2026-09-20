@@ -88,9 +88,14 @@
 
 В проекте Vercel (Settings → Environment Variables, окружение Production) задайте то же,
 что лежит в секретах: `ORBITA_ENV=production`, `ORBITA_DATABASE_URL`,
-`ORBITA_SESSION_SECRET`, `ORBITA_JOBS_SECRET`, `ORBITA_BASE_URL`, `ORBITA_FILE_STORAGE=blob`,
-`ORBITA_BLOB_TOKEN`, `ORBITA_TIMEZONE=Asia/Tashkent`. Полный список с пояснениями —
-[.env.example](../.env.example).
+`ORBITA_SESSION_SECRET`, `ORBITA_JOBS_SECRET`, `ORBITA_TIMEZONE=Asia/Tashkent` и
+`ORBITA_BASE_URL` — адрес, по которому открывается интерфейс. Последний особенно важен:
+из него собираются личные ссылки доступа, и при неверном значении ссылка ведёт в никуда.
+Полный список с пояснениями — [.env.example](../.env.example).
+
+Переменных хранилища файлов здесь пока нет намеренно: порт `FileStorage` появляется
+в блоке 2 вместе с вложениями. Заведённый заранее токен хранилища приложение просто
+не прочитает.
 
 **Проверка шага:** вкладка Actions → «Копия базы» → Run workflow. Прогон должен создать
 снимок и написать в сводке, сколько таблиц в схеме. Если написал «Копия не делается» —

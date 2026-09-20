@@ -31,6 +31,7 @@ function Invoke-In {
 switch ($Target) {
     'help' {
         Write-Output @'
+  doctor     Проверить машину перед работой: контейнер, порты, .env, миграции
   install    Установить зависимости backend и frontend
   up         Поднять PostgreSQL для разработки
   down       Остановить окружение (данные сохраняются)
@@ -39,7 +40,7 @@ switch ($Target) {
   migrate    Применить миграции
   revision   Создать миграцию: .\make.ps1 revision "описание"
   heads      Проверить, что голова миграций одна
-  seed       Загрузить справочники (переменная DEMO=1 — и вымышленные данные)
+  seed       Загрузить справочники
   job        Выполнить задачу: .\make.ps1 job morning-summary
   dev-back   Запустить backend на :8000
   dev-front  Запустить frontend на :5173
@@ -52,6 +53,7 @@ switch ($Target) {
   clean      Удалить кеши и артефакты сборки
 '@
     }
+    'doctor' { Invoke-In $root 'python' @('scripts/doctor.py') }
     'install' {
         Invoke-In $backend 'uv' @('sync', '--all-groups')
         Invoke-In $frontend 'npm.cmd' @('ci')
@@ -67,11 +69,7 @@ switch ($Target) {
         Write-Output 'проверьте сгенерированное: автогенерация не видит переименований и данных'
     }
     'heads' { Invoke-In $backend 'uv' @('run', 'alembic', 'heads') }
-    'seed' {
-        $seedArgs = @('run', 'python', '-m', 'app.seed')
-        if ($env:DEMO) { $seedArgs += '--demo' }
-        Invoke-In $backend 'uv' $seedArgs
-    }
+    'seed' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.seed') }
     'job' {
         if (-not $Name) { throw 'укажите задачу: .\make.ps1 job morning-summary' }
         Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.jobs.run', $Name)

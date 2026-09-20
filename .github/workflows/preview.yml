@@ -102,7 +102,23 @@ jobs:
         run: |
           uv sync --all-groups --frozen
           uv run alembic upgrade head
-          uv run python -m app.seed --demo
+          # Только справочники. Вымышленных данных пока нет: наполнять нечем —
+          # проекты, задачи и поручения заводятся в блоке 1 (docs/audit/PLAN-10X.md).
+          uv run python -m app.seed
+
+      # Адрес интерфейса нужен API раньше, чем интерфейс выложен: из ORBITA_BASE_URL
+      # собираются личные ссылки доступа. Без него они указывают на localhost — то
+      # есть заказчик не может войти именно в превью, ради которого всё и делается.
+      # Алиас предсказуем по имени сайта, поэтому вычисляется здесь, а не берётся из
+      # результата выкладки, которая случится позже.
+      - name: Адрес интерфейса этого превью
+        id: alias
+        run: |
+          data='{"site_id":"'"$NETLIFY_SITE_ID"'"}'
+          name="$(npx --yes netlify-cli@latest api getSite --data "$data" | jq -r .name)"
+          test -n "$name" && test "$name" != "null"
+          pr="${{ github.event.pull_request.number }}"
+          echo "url=https://pr-$pr--$name.netlify.app" >> "$GITHUB_OUTPUT"
 
       - name: API на Vercel
         id: api
@@ -111,6 +127,7 @@ jobs:
           ORBITA_DATABASE_URL: ${{ steps.db.outputs.uri }}
           ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
           ORBITA_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
+          ORBITA_BASE_URL: ${{ steps.alias.outputs.url }}
         run: |
           npx --yes vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
           npx --yes vercel@latest build --token="$VERCEL_TOKEN"
@@ -118,7 +135,8 @@ jobs:
             --env ORBITA_ENV=preview \
             --env ORBITA_DATABASE_URL="$ORBITA_DATABASE_URL" \
             --env ORBITA_SESSION_SECRET="$ORBITA_SESSION_SECRET" \
-            --env ORBITA_JOBS_SECRET="$ORBITA_JOBS_SECRET")"
+            --env ORBITA_JOBS_SECRET="$ORBITA_JOBS_SECRET" \
+            --env ORBITA_BASE_URL="$ORBITA_BASE_URL")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v5
@@ -146,12 +164,16 @@ jobs:
         run: |
           curl --fail --silent --show-error --location "${{ steps.api.outputs.url }}/api/health" | grep -q '"status"'
           curl --fail --silent --show-error --location --output /dev/null "${{ steps.web.outputs.url }}"
+          # Заказчик пойдёт по алиасу, а не по адресу конкретной выкладки — его и
+          # проверяем: именно он попадёт в комментарий PR и в личную ссылку.
+          curl --fail --silent --show-error --location --output /dev/null "${{ steps.alias.outputs.url }}"
 
       - name: Ссылка в PR
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           WEB_URL: ${{ steps.web.outputs.url }}
+          ALIAS_URL: ${{ steps.alias.outputs.url }}
           API_URL: ${{ steps.api.outputs.url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |

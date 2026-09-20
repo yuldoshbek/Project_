@@ -4,7 +4,7 @@
 # Канонический список — здесь; при изменении правьте и make.ps1, иначе команды разойдутся.
 
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs migrate revision heads seed dev dev-back dev-front \
+.PHONY: help doctor install up down reset logs migrate revision heads seed dev dev-back dev-front \
         test test-back test-front e2e check docs fmt reqs job clean
 
 BACKEND  := backend
@@ -12,6 +12,9 @@ FRONTEND := frontend
 
 help: ## Показать список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
+
+doctor: ## Проверить машину перед работой: контейнер, порты, .env, головы миграций
+	python scripts/doctor.py
 
 install: ## Установить зависимости backend и frontend
 	cd $(BACKEND) && uv sync --all-groups
@@ -41,8 +44,8 @@ revision: ## Создать миграцию по изменившимся мо�
 heads: ## Проверить, что голова миграций одна
 	cd $(BACKEND) && uv run alembic heads
 
-seed: ## Загрузить справочники; с DEMO=1 — ещё и вымышленные данные
-	cd $(BACKEND) && uv run python -m app.seed $(if $(DEMO),--demo,)
+seed: ## Загрузить справочники
+	cd $(BACKEND) && uv run python -m app.seed
 
 dev: ## Запустить backend и frontend
 	@echo "Backend: http://localhost:8000   Frontend: http://localhost:5173"
