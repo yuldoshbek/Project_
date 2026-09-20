@@ -41,7 +41,8 @@
 | Качество | ruff, mypy (strict на `app/domain`), import-linter, eslint, prettier, tsc |
 
 Стек зафиксирован [ADR-0030](docs/adr/ADR-0030-frontend-stack.md). Размещение и
-переносимость — [ADR-0028](docs/adr/ADR-0028-hosting.md).
+переносимость — [ADR-0028](docs/adr/ADR-0028-hosting.md). Настройка площадок —
+[SETUP](docs/SETUP.md), эксплуатация — [RUNBOOK](docs/RUNBOOK.md).
 
 ## Архитектура
 
@@ -106,7 +107,10 @@ make seed          # справочники и демо-данные
 make dev           # backend :8000 и frontend :5173
 make test          # pytest + vitest
 make e2e           # playwright на локальной сборке
-make check         # ruff + mypy + import-linter + eslint + prettier + tsc
+make check         # линтеры, типы и проверка документов
+make docs          # только проверка документов
+make job n=<имя>   # выполнить задачу по расписанию вручную
+make reqs          # пересобрать backend/requirements.txt из uv.lock
 ```
 
 На Windows те же цели — `./make.ps1 <цель>`.
@@ -128,7 +132,10 @@ PR. Состав и критерии приёмки блоков — в [PLAN](d
 
 - Ветки: `block-1-core`, `block-2-control`, `block-3-ideas`.
 - Коммиты: `B1: краткое описание в повелительном наклонении`.
-- `main` защищён: только через PR с зелёными проверками.
+- `main` защищён правилами из [.github/rulesets](.github/rulesets/README.md): только
+  через PR с зелёными проверками.
+- Конвейер: проверки на каждый push, превью на каждый PR, выкладка в рабочий контур по
+  кнопке, ночная копия базы. Ключи вводит заказчик — разработка их не видит.
 - **Объём блока не меняется посреди блока.** Новое требование записывается и обсуждается
   на приёмке, с разбором влияния на план.
 - Готово — это пройденные критерии приёмки и зелёный CI, а не «написал код».

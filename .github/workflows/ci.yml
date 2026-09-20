@@ -1,4 +1,13 @@
-name: CI
+# Проверки, без которых ничего не сливается в main.
+#
+# Четыре независимые работы: документы, backend, миграции, frontend. Разделены нарочно —
+# красный frontend не должен скрывать, что backend тоже красный: на приёмке блока нужно
+# видеть весь список поломок сразу, а не по одной за прогон.
+#
+# Тесты идут против настоящей PostgreSQL 16. Подменять базу заглушкой — значит проверять
+# заглушку: половина наших правил живёт в ограничениях схемы и в NULLS NOT DISTINCT.
+
+name: Проверки
 
 on:
   push:
@@ -9,94 +18,81 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: '3.12'
   NODE_VERSION: '22'
 
 jobs:
-  backend:
-    name: Backend — линт, типы, тесты
+  docs:
+    name: Документы
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Ключевые документы на месте, ссылки целы
+        run: python scripts/check_docs.py
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
 
-    # Тесты окружения (маркер infra) идут против настоящих PostgreSQL и Redis:
-    # подменять их заглушками — значит проверять заглушки, а не систему.
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: orbita
           POSTGRES_PASSWORD: orbita
-          POSTGRES_DB: orbita_test
+          POSTGRES_DB: orbita
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U orbita"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 12
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 12
-      # Хранилище вложений (ORB-017). Подписанная ссылка проверяется на настоящем
-      # сервере: подпись собирается из области, метода, срока и заголовков, и ошибка в
-      # любом из них даёт ссылку, которая выглядит настоящей и отвечает отказом.
-      # Подделка приняла бы любую.
-      #
-      # Антивирус и преобразователь документов сюда не ставятся: гигабайт сигнатур и два
-      # гигабайта офисного пакета на каждый прогон — это не проверка нашего кода, а
-      # проверка сети. Разговор с ними проверяется поддельным собеседником, говорящим на
-      # том же протоколе (tests/test_attachment_adapters.py).
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: orbita
-          MINIO_ROOT_PASSWORD: orbita-secret
-          MINIO_DEFAULT_BUCKETS: orbita
-        ports: ['9000:9000']
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 24
 
     env:
-      # Обязательная настройка: без неё приложение падает на старте — так и задумано.
-      # В CI это значение-заглушка, настоящий ключ живёт в секретах развёртывания.
-      ORBITA_SECRET_KEY: ci-secret-not-for-production-long-enough-for-hmac-sha256
       ORBITA_ENV: test
-      ORBITA_DB_HOST: localhost
-      ORBITA_DB_PORT: '5432'
-      ORBITA_DB_USER: orbita
-      ORBITA_DB_PASSWORD: orbita
-      ORBITA_DB_NAME: orbita
-      ORBITA_TEST_DB: orbita_test
-      ORBITA_REDIS_URL: redis://localhost:6379/0
-      ORBITA_S3_ENDPOINT: http://localhost:9000
-      ORBITA_S3_BUCKET: orbita
-      ORBITA_S3_ACCESS_KEY: orbita
-      ORBITA_S3_SECRET_KEY: orbita-secret
+      # Значение-заглушка: настоящие ключи живут в секретах развёртывания и в окружении
+      # Vercel. В репозитории ключей нет — он публичный.
+      ORBITA_SESSION_SECRET: ci-session-secret-not-for-production-32-chars-min
+      ORBITA_JOBS_SECRET: ci-jobs-secret-not-for-production
+      ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
+      ORBITA_TEST_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita_test
+      ORBITA_BASE_URL: http://localhost:5173
+      ORBITA_FILE_STORAGE: memory
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Установить uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Установить Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Зависимости
-        run: uv sync --all-groups
+        run: uv sync --all-groups --frozen
+
+      # requirements.txt — это то, что поставит Vercel в функцию. Единственный источник
+      # правды — uv.lock; расхождение означает, что в облаке окажется не то, что проверено
+      # здесь. Пересобрать: make reqs.
+      - name: Список зависимостей для Vercel не отстал
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes -o /tmp/requirements.txt
+          diff -u <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/requirements.txt)
 
       - name: ruff — линт
         run: uv run ruff check --output-format=github .
@@ -113,18 +109,79 @@ jobs:
       - name: Тесты
         run: uv run pytest
 
-  frontend:
-    name: Frontend — линт, типы, тесты
+  migrations:
+    name: Миграции
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orbita
+          POSTGRES_PASSWORD: orbita
+          POSTGRES_DB: orbita
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U orbita"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    env:
+      ORBITA_ENV: test
+      ORBITA_SESSION_SECRET: ci-session-secret-not-for-production-32-chars-min
+      ORBITA_JOBS_SECRET: ci-jobs-secret-not-for-production
+      ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
+      ORBITA_FILE_STORAGE: memory
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-groups --frozen
+
+      # Две головы означают, что две ветки независимо добавили миграции и порядок применения
+      # неопределён: на рабочей базе это ловится уже после выкладки.
+      - name: Голова одна
+        run: |
+          heads=$(uv run alembic heads | grep -c . || true)
+          echo "голов: $heads"
+          test "$heads" -eq 1
+
+      - name: Применить на чистую базу
+        run: uv run alembic upgrade head
+
+      # Схема в базе должна совпадать с моделями: расхождение значит, что кто-то правил
+      # модель и забыл миграцию, и первое падение случится на настоящих данных.
+      - name: Схема совпадает с моделями
+        run: uv run alembic check
+
+      - name: Откат и повторное применение
+        run: |
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -136,7 +193,7 @@ jobs:
       - name: eslint
         run: npm run lint
 
-      - name: stylelint — запрет цветовых литералов вне tokens.css
+      - name: Цветовые литералы только в токенах
         run: npm run lint:css
 
       - name: Типы
@@ -148,16 +205,7 @@ jobs:
       - name: Тесты
         run: npm run test
 
-  docs:
-    name: Документы — ссылки и нумерация тикетов
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Проверить документы
-        run: python scripts/check_docs.py
+      # Сборка — тоже проверка: половина ошибок конфигурации Vite и Tailwind видна
+      # только здесь, а не в dev-режиме.
+      - name: Сборка
+        run: npm run build

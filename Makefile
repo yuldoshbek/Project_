@@ -1,13 +1,11 @@
 # ORBITA — единые команды разработки.
-# На Windows без установленного make используйте .\make.ps1 <цель> — цели те же.
+# На Windows без установленного make: .\make.ps1 <цель> — цели те же.
 #
-# Часть целей опирается на артефакты соседних тикетов и заработает вместе с ними:
-#   up, down, logs   — ORB-002 (docker-compose)
-#   migrate, seed    — ORB-004 (Alembic) и ORB-007 (сиды)
-#   dev              — ORB-003 (приложение FastAPI) и ORB-005 (оболочка frontend)
+# Канонический список — здесь; при изменении правьте и make.ps1, иначе команды разойдутся.
 
 .DEFAULT_GOAL := help
-.PHONY: help install up down reset logs migrate revision heads seed dev dev-back dev-front test test-back test-front check fmt clean
+.PHONY: help install up down reset logs migrate revision heads seed dev dev-back dev-front \
+        test test-back test-front e2e check docs fmt reqs job clean
 
 BACKEND  := backend
 FRONTEND := frontend
@@ -19,11 +17,9 @@ install: ## Установить зависимости backend и frontend
 	cd $(BACKEND) && uv sync --all-groups
 	cd $(FRONTEND) && npm ci
 
-up: ## Поднять окружение и дождаться готовности всех сервисов
+up: ## Поднять PostgreSQL для разработки
 	docker compose up -d --wait
-	docker compose run --rm minio-init
-	@echo "PostgreSQL :$${ORBITA_DB_PORT:-55432}   Redis :$${ORBITA_REDIS_PORT:-56379}"
-	@echo "MinIO http://localhost:$${ORBITA_S3_CONSOLE_PORT:-59001}   Почта http://localhost:$${ORBITA_MAIL_UI_PORT:-58025}"
+	@echo "PostgreSQL :$${ORBITA_DB_PORT:-55432}"
 
 down: ## Остановить окружение (данные сохраняются)
 	docker compose down
@@ -45,14 +41,8 @@ revision: ## Создать миграцию по изменившимся мо�
 heads: ## Проверить, что голова миграций одна
 	cd $(BACKEND) && uv run alembic heads
 
-seed: ## Загрузить справочники и демо-данные
-	cd $(BACKEND) && uv run python -m app.seed
-
-worker: ## Запустить воркер фоновых задач
-	cd $(BACKEND) && uv run arq app.workers.main.WorkerSettings
-
-worker-health: ## Проверить, что воркер жив
-	cd $(BACKEND) && uv run arq --check app.workers.main.WorkerSettings
+seed: ## Загрузить справочники; с DEMO=1 — ещё и вымышленные данные
+	cd $(BACKEND) && uv run python -m app.seed $(if $(DEMO),--demo,)
 
 dev: ## Запустить backend и frontend
 	@echo "Backend: http://localhost:8000   Frontend: http://localhost:5173"
@@ -64,6 +54,10 @@ dev-back:
 dev-front:
 	cd $(FRONTEND) && npm run dev
 
+job: ## Выполнить задачу по расписанию вручную: make job n=morning-summary
+	@test -n "$(n)" || (echo 'укажите задачу: make job n=morning-summary'; exit 1)
+	cd $(BACKEND) && uv run python -m app.jobs.run $(n)
+
 test: test-back test-front ## Прогнать все тесты
 
 test-back:
@@ -71,6 +65,9 @@ test-back:
 
 test-front:
 	cd $(FRONTEND) && npm run test
+
+e2e: ## Playwright на локальной сборке: сценарии и снимки экранов
+	cd $(FRONTEND) && npx playwright test
 
 check: ## Линтеры и типы: ruff, mypy, import-linter, eslint, stylelint, tsc, prettier
 	cd $(BACKEND) && uv run ruff check .
@@ -81,12 +78,22 @@ check: ## Линтеры и типы: ruff, mypy, import-linter, eslint, styleli
 	cd $(FRONTEND) && npm run lint:css
 	cd $(FRONTEND) && npm run typecheck
 	cd $(FRONTEND) && npm run fmt:check
+	$(MAKE) docs
+
+docs: ## Проверить документы: ключевые файлы на месте, ссылки целы
+	python scripts/check_docs.py
 
 fmt: ## Отформатировать код
 	cd $(BACKEND) && uv run ruff format .
 	cd $(BACKEND) && uv run ruff check --fix .
 	cd $(FRONTEND) && npm run fmt
 
+# Список зависимостей для функций Vercel: платформа ставит их из requirements.txt, а
+# единственный источник правды — uv.lock. Забыли пересобрать — в облаке окажется не то,
+# что проверено в CI, поэтому CI сверяет файл с блокировкой.
+reqs: ## Пересобрать backend/requirements.txt из uv.lock
+	cd $(BACKEND) && uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements.txt
+
 clean: ## Удалить кеши и артефакты сборки
 	cd $(BACKEND) && rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
-	cd $(FRONTEND) && rm -rf dist coverage
+	cd $(FRONTEND) && rm -rf dist coverage playwright-report test-results

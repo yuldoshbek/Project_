@@ -43,6 +43,13 @@ repos:
         pass_filenames: false
         files: ^frontend/
 
+      - id: check-docs
+        name: Документы — ключевые файлы и ссылки
+        entry: python scripts/check_docs.py
+        language: system
+        pass_filenames: false
+        files: \.md$
+
       - id: no-env-commit
         name: .env не коммитится
         entry: bash -c 'git diff --cached --name-only | grep -E "(^|/)\.env$" && echo "Файл .env коммитить нельзя" && exit 1 || exit 0'

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Вопрос к заказчику
+  - name: Вопрос по требованиям
     url: https://github.com/yuldoshbek/Project_/blob/main/docs/OPEN-QUESTIONS.md
-    about: Неясность в требованиях — не задача разработки. Добавьте вопрос в OPEN-QUESTIONS.md вместе с допущением, по которому работаем до ответа.
-  - name: Предложение изменить ТЗ
-    url: https://github.com/yuldoshbek/Project_/blob/main/docs/council/COUNCIL-0001.md
-    about: Расхождение с техническим заданием оформляется предложением, а не молчаливой правкой кода.
+    about: Неясность в требованиях — не дефект. Вопрос записывается в OPEN-QUESTIONS.md вместе с допущением, по которому работаем до ответа.
+  - name: Новое требование
+    url: https://github.com/yuldoshbek/Project_/blob/main/docs/PLAN.md
+    about: Объём блока посреди блока не меняется. Новое требование обсуждается на приёмке, с разбором влияния на план.

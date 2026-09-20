@@ -1,0 +1,42 @@
+name: Замечание с приёмки
+description: Заказчик посмотрел превью блока и просит доработать
+labels: ['приёмка']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Замечания с приёмки собираются пакетом и разбираются вместе: правка по одному
+        замечанию за раз — то, из-за чего объём прежней разработки пересобирался пять раз.
+
+  - type: input
+    id: block
+    attributes:
+      label: Блок
+      placeholder: 'Блок 1. Ядро управления'
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Что не так
+      description: Что видно на превью и чем это мешает работе
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Это
+      options:
+        - Расхождение с ТЗ — надо исправить в этом блоке
+        - Новое требование — надо обсудить влияние на план
+        - Неудобно, но работает — можно в следующий блок
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Как должно быть
+      description: Одним предложением, глазами того, кто этим пользуется

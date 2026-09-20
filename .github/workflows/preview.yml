@@ -1,0 +1,184 @@
+# Превью на каждый PR: своя копия демо-базы, свой API, свой адрес интерфейса.
+#
+# Ради этого заказчик и просил GitHub как центр: он смотрит изменение по ссылке из PR, а
+# не на словах. Ветка базы создаётся от демо — реальные данные в превью не попадают и
+# попасть не могут (CLAUDE.md, инвариант 11).
+#
+# Пока ключи площадок не заведены (docs/SETUP.md), работа не падает, а честно пишет в
+# сводку прогона, чего не хватает: красный конвейер на пустом месте приучает не смотреть
+# на проверки.
+#
+# Имена работ и шагов на русском, идентификаторы — латиницей: имя переменной оболочки из
+# кириллицы оболочка не примет.
+
+name: Превью
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '22'
+  PREVIEW_BRANCH: preview/pr-${{ github.event.pull_request.number }}
+  DEMO_BRANCH: demo
+
+jobs:
+  keys:
+    name: Ключи площадок
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          missing=""
+          [ -n "$NEON_API_KEY" ]       || missing="$missing NEON_API_KEY"
+          [ -n "$VERCEL_TOKEN" ]       || missing="$missing VERCEL_TOKEN"
+          [ -n "$NETLIFY_AUTH_TOKEN" ] || missing="$missing NETLIFY_AUTH_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Превью выключено"
+              echo "Не заведены секреты:$missing."
+              echo "Порядок настройки — docs/SETUP.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  preview:
+    name: Развернуть превью
+    needs: keys
+    if: needs.keys.outputs.ready == 'true' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ветка демо-базы для этого PR
+        id: db
+        run: |
+          scripts/neon.sh branch-create "$PREVIEW_BRANCH" "$DEMO_BRANCH" > /dev/null
+          uri="$(scripts/neon.sh branch-uri "$PREVIEW_BRANCH")"
+          # Строку подключения нельзя печатать в журнал: она даёт полный доступ к базе.
+          echo "::add-mask::$uri"
+          echo "uri=$uri" >> "$GITHUB_OUTPUT"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Схема и вымышленные данные
+        working-directory: backend
+        env:
+          ORBITA_ENV: preview
+          ORBITA_DATABASE_URL: ${{ steps.db.outputs.uri }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
+          ORBITA_FILE_STORAGE: memory
+        run: |
+          uv sync --all-groups --frozen
+          uv run alembic upgrade head
+          uv run python -m app.seed --demo
+
+      - name: API на Vercel
+        id: api
+        working-directory: backend
+        env:
+          ORBITA_DATABASE_URL: ${{ steps.db.outputs.uri }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
+        run: |
+          npx --yes vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest build --token="$VERCEL_TOKEN"
+          url="$(npx --yes vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" \
+            --env ORBITA_ENV=preview \
+            --env ORBITA_DATABASE_URL="$ORBITA_DATABASE_URL" \
+            --env ORBITA_SESSION_SECRET="$ORBITA_SESSION_SECRET" \
+            --env ORBITA_JOBS_SECRET="$ORBITA_JOBS_SECRET" \
+            --env ORBITA_FILE_STORAGE=memory)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Интерфейс на Netlify
+        id: web
+        working-directory: frontend
+        env:
+          # Прокси /api указывает на API этого же превью, иначе превью смотрело бы в
+          # рабочую базу — именно то, что запрещено.
+          ORBITA_API_ORIGIN: ${{ steps.api.outputs.url }}
+          ORBITA_REQUIRE_API_ORIGIN: '1'
+        run: |
+          npm ci
+          npm run build
+          url="$(npx --yes netlify-cli@latest deploy --dir=dist --site="$NETLIFY_SITE_ID" \
+            --alias="pr-${{ github.event.pull_request.number }}" --json | jq -r '.deploy_url')"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Превью отвечает
+        run: |
+          curl --fail --silent --show-error --location "${{ steps.api.outputs.url }}/api/health" | grep -q '"status"'
+          curl --fail --silent --show-error --location --output /dev/null "${{ steps.web.outputs.url }}"
+
+      - name: Ссылка в PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          WEB_URL: ${{ steps.web.outputs.url }}
+          API_URL: ${{ steps.api.outputs.url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          envsubst < .github/preview-comment.md > comment.md
+          marker='<!-- превью-orbita -->'
+          query="[.[] | select(.body | startswith(\"$marker\"))] | last | .id // empty"
+          id="$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" --jq "$query")"
+          if [ -n "$id" ]; then
+            # Обновляем один и тот же комментарий: на десятом push лента PR должна
+            # оставаться читаемой.
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$id" -F body=@comment.md > /dev/null
+          else
+            gh api --method POST "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -F body=@comment.md > /dev/null
+          fi
+
+  cleanup:
+    name: Снять превью
+    needs: keys
+    if: needs.keys.outputs.ready == 'true' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Удалить ветку базы
+        run: scripts/neon.sh branch-delete "$PREVIEW_BRANCH"

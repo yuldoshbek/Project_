@@ -1,13 +1,19 @@
 name: Дефект
-description: Система ведёт себя не так, как описано в ТЗ или в спецификации
+description: Система ведёт себя не так, как написано в ТЗ
 labels: ['дефект']
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Расхождение с [ТЗ v2.0](https://github.com/yuldoshbek/Project_/blob/main/tz/TZ-ORBITA-v2.0.md) —
+        это дефект. Неясность в требованиях — не дефект, она идёт в открытые вопросы.
+
   - type: textarea
     id: expected
     attributes:
       label: Что должно происходить
-      description: Со ссылкой на раздел ТЗ, SPEC.md или ADR
-      placeholder: 'По ТЗ 6.5 напоминание приходит за 3 дня до срока…'
+      description: Со ссылкой на пункт ТЗ, инвариант из CLAUDE.md или решение ADR
+      placeholder: 'По ТЗ 4 «просрочено» — вычисляемое состояние, а не статус…'
     validations:
       required: true
 
@@ -30,41 +36,32 @@ body:
       required: true
 
   - type: dropdown
-    id: role
+    id: where
     attributes:
-      label: Под какой ролью
+      label: Где видно
       options:
-        - Руководитель
-        - Помощник / координатор
-        - Куратор проекта
-        - Исполнитель
-        - Наблюдатель
-        - Администратор системы
+        - iPhone
+        - Ноутбук
+        - Большой монитор
+        - Во всех
     validations:
       required: true
 
   - type: dropdown
-    id: severity
+    id: contour
     attributes:
-      label: Насколько критично
+      label: Контур
       options:
-        - 'Критично: утечка данных между проектами или потеря данных'
-        - 'Высокое: блокирует работу, обхода нет'
-        - 'Среднее: работает неверно, есть обходной путь'
-        - 'Низкое: неудобство, оформление'
+        - Рабочая система
+        - Превью PR
+        - Разработка на машине
     validations:
       required: true
 
-  - type: input
-    id: locale
-    attributes:
-      label: Локаль интерфейса
-      placeholder: 'ru | uz-Cyrl | uz-Latn'
-
   - type: textarea
-    id: extra
+    id: data
     attributes:
-      label: Логи, снимки экрана, request_id
+      label: Данные
       description: |
-        request_id есть в заголовке ответа и в теле ошибки — с ним запись быстро находится в логах.
-        Не прикладывайте реальные данные проектов с ограниченным доступом.
+        Реальные поручения, фамилии и содержание писем сюда не вставляются — репозиторий
+        публичный. Достаточно номера и вида записи: «поручение 24/1-1234, срок 25.12».

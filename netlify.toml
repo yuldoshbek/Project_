@@ -1,0 +1,49 @@
+# Netlify отдаёт интерфейс и проксирует /api на Vercel.
+#
+# Прокси — не удобство, а основа доступа: браузер видит один источник, cookie сессии
+# получается первого лица, CORS не нужен вовсе, а API не принимает запросы, пришедшие не
+# через прокси (ADR-0028, ADR-0029).
+#
+# Правила перенаправления здесь не задаются: адрес API у рабочей системы и у каждого
+# превью свой, а netlify.toml один. Файл dist/_redirects пишется при сборке скриптом
+# frontend/scripts/write-redirects.mjs из переменной ORBITA_API_ORIGIN.
+
+[build]
+base = "frontend"
+command = "npm ci && npm run build"
+publish = "dist"
+
+[build.environment]
+NODE_VERSION = "22"
+NPM_FLAGS = "--version" # зависимости ставит команда сборки, второй раз не нужно
+
+# Сборка на стороне Netlify оставлена как запасной путь: обычно интерфейс выкладывает
+# конвейер (deploy.yml, preview.yml), потому что ему нужно передать адрес API этого
+# развёртывания.
+
+[[headers]]
+for = "/*"
+[headers.values]
+X-Frame-Options = "DENY"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "same-origin"
+Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+# Файлы сборки содержат отпечаток в имени и не меняются, поэтому кешируются надолго:
+# на 4G это разница между открытием за секунду и за три.
+[[headers]]
+for = "/assets/*"
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
+
+# Оболочка приложения и рабочий файл PWA меняются с каждой выкладкой: их кешировать нельзя,
+# иначе руководитель останется на прежней версии до следующей очистки браузера.
+[[headers]]
+for = "/index.html"
+[headers.values]
+Cache-Control = "no-cache"
+
+[[headers]]
+for = "/sw.js"
+[headers.values]
+Cache-Control = "no-cache"

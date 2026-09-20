@@ -1,12 +1,12 @@
-﻿# Windows-обёртка над Makefile: цели те же, синтаксис .\make.ps1 <цель>.
-# Нужна потому, что make в Windows по умолчанию нет, а команда работает на обеих системах.
+# Windows-обёртка над Makefile: цели те же, синтаксис .\make.ps1 <цель>.
+# Нужна потому, что make в Windows по умолчанию нет, а работать надо на обеих системах.
 # Канонический список целей — в Makefile; при изменении правьте оба файла.
 
 param(
     [Parameter(Position = 0)]
     [string]$Target = 'help',
 
-    # Описание для цели revision.
+    # Описание для revision, имя задачи для job.
     [Parameter(Position = 1)]
     [string]$Name
 )
@@ -30,20 +30,23 @@ switch ($Target) {
     'help' {
         Write-Output @'
   install    Установить зависимости backend и frontend
-  up         Поднять postgres, redis, minio, mailhog
+  up         Поднять PostgreSQL для разработки
   down       Остановить окружение (данные сохраняются)
   reset      Остановить окружение и удалить данные
   logs       Логи окружения
   migrate    Применить миграции
   revision   Создать миграцию: .\make.ps1 revision "описание"
   heads      Проверить, что голова миграций одна
-  seed       Загрузить справочники и демо-данные
-  worker     Запустить воркер фоновых задач
+  seed       Загрузить справочники (переменная DEMO=1 — и вымышленные данные)
+  job        Выполнить задачу: .\make.ps1 job morning-summary
   dev-back   Запустить backend на :8000
   dev-front  Запустить frontend на :5173
   test       Прогнать все тесты
-  check      Линтеры и типы
+  e2e        Playwright на локальной сборке
+  check      Линтеры, типы и проверка документов
+  docs       Проверить документы
   fmt        Отформатировать код
+  reqs       Пересобрать backend/requirements.txt из uv.lock
   clean      Удалить кеши и артефакты сборки
 '@
     }
@@ -51,12 +54,9 @@ switch ($Target) {
         Invoke-In $backend 'uv' @('sync', '--all-groups')
         Invoke-In $frontend 'npm' @('ci')
     }
-    'up' {
-        Invoke-In $root 'docker' @('compose', 'up', '-d', '--wait')
-        Invoke-In $root 'docker' @('compose', 'run', '--rm', 'minio-init')
-    }
-    'reset' { Invoke-In $root 'docker' @('compose', 'down', '-v') }
+    'up' { Invoke-In $root 'docker' @('compose', 'up', '-d', '--wait') }
     'down' { Invoke-In $root 'docker' @('compose', 'down') }
+    'reset' { Invoke-In $root 'docker' @('compose', 'down', '-v') }
     'logs' { Invoke-In $root 'docker' @('compose', 'logs', '-f') }
     'migrate' { Invoke-In $backend 'uv' @('run', 'alembic', 'upgrade', 'head') }
     'revision' {
@@ -65,15 +65,22 @@ switch ($Target) {
         Write-Output 'проверьте сгенерированное: автогенерация не видит переименований и данных'
     }
     'heads' { Invoke-In $backend 'uv' @('run', 'alembic', 'heads') }
-    'seed' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.seed') }
-    'worker' { Invoke-In $backend 'uv' @('run', 'arq', 'app.workers.main.WorkerSettings') }
-    'worker-health' { Invoke-In $backend 'uv' @('run', 'arq', '--check', 'app.workers.main.WorkerSettings') }
+    'seed' {
+        $seedArgs = @('run', 'python', '-m', 'app.seed')
+        if ($env:DEMO) { $seedArgs += '--demo' }
+        Invoke-In $backend 'uv' $seedArgs
+    }
+    'job' {
+        if (-not $Name) { throw 'укажите задачу: .\make.ps1 job morning-summary' }
+        Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.jobs.run', $Name)
+    }
     'dev-back' { Invoke-In $backend 'uv' @('run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000') }
     'dev-front' { Invoke-In $frontend 'npm' @('run', 'dev') }
     'test' {
         Invoke-In $backend 'uv' @('run', 'pytest')
         Invoke-In $frontend 'npm' @('run', 'test')
     }
+    'e2e' { Invoke-In $frontend 'npx' @('playwright', 'test') }
     'check' {
         Invoke-In $backend 'uv' @('run', 'ruff', 'check', '.')
         Invoke-In $backend 'uv' @('run', 'ruff', 'format', '--check', '.')
@@ -83,18 +90,23 @@ switch ($Target) {
         Invoke-In $frontend 'npm' @('run', 'lint:css')
         Invoke-In $frontend 'npm' @('run', 'typecheck')
         Invoke-In $frontend 'npm' @('run', 'fmt:check')
+        Invoke-In $root 'python' @('scripts/check_docs.py')
     }
+    'docs' { Invoke-In $root 'python' @('scripts/check_docs.py') }
     'fmt' {
         Invoke-In $backend 'uv' @('run', 'ruff', 'format', '.')
         Invoke-In $backend 'uv' @('run', 'ruff', 'check', '--fix', '.')
         Invoke-In $frontend 'npm' @('run', 'fmt')
+    }
+    'reqs' {
+        Invoke-In $backend 'uv' @('export', '--frozen', '--no-dev', '--no-emit-project', '--no-hashes', '-o', 'requirements.txt')
     }
     'clean' {
         foreach ($p in '.pytest_cache', '.mypy_cache', '.ruff_cache', 'htmlcov', '.coverage') {
             $full = Join-Path $backend $p
             if (Test-Path $full) { Remove-Item -Recurse -Force $full }
         }
-        foreach ($p in 'dist', 'coverage') {
+        foreach ($p in 'dist', 'coverage', 'playwright-report', 'test-results') {
             $full = Join-Path $frontend $p
             if (Test-Path $full) { Remove-Item -Recurse -Force $full }
         }

@@ -41,6 +41,8 @@ def check_key_documents(errors: list[str]) -> None:
         "docs/PLAN.md",
         "docs/CONTEXT.md",
         "docs/ARCHITECTURE.md",
+        "docs/SETUP.md",
+        "docs/RUNBOOK.md",
         "docs/OPEN-QUESTIONS.md",
     ]
     missing = [name for name in required if not (ROOT / name).exists()]
