@@ -19,12 +19,12 @@ from typing import Annotated, Any
 from fastapi import Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.deps import SessionDep, SettingsDep, StorageDep
+from app.api.deps import SessionDep, SettingsDep
 from app.api.security import Assistant, get_active_user
 from app.api.transaction import transactional_router
 from app.domain.clock import now_utc, today_in
 from app.domain.dictionaries import Health
-from app.domain.projects import SHARE_EXTERNALLY_DEFAULT, ProgressMode, ProjectKind
+from app.domain.projects import ProgressMode, ProjectKind
 from app.services import projects as service
 
 router = transactional_router(tags=["проекты"], dependencies=[Depends(get_active_user)])
@@ -56,7 +56,6 @@ class ProjectResponse(BaseModel):
     title: str
     description: str | None
     kind: ProjectKind
-    share_externally: bool
     direction_id: uuid.UUID
     curator_person_id: uuid.UUID | None
     status_code: str
@@ -97,7 +96,6 @@ class ProjectCreate(BaseModel):
     started_on: date
     due_on: date
     kind: ProjectKind = ProjectKind.PROJECT
-    share_externally: bool = SHARE_EXTERNALLY_DEFAULT
     description: str | None = None
     curator_person_id: uuid.UUID | None = None
     status_reason: str | None = None
@@ -118,7 +116,6 @@ class ProjectUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
     description: str | None = None
     kind: ProjectKind | None = None
-    share_externally: bool | None = None
     direction_id: uuid.UUID | None = None
     curator_person_id: uuid.UUID | None = None
     status_code: str | None = None
@@ -143,10 +140,6 @@ async def list_projects(
     status_code: Annotated[str | None, Query()] = None,
     priority_code: Annotated[str | None, Query()] = None,
     kind: Annotated[ProjectKind | None, Query()] = None,
-    share_externally: Annotated[
-        bool | None,
-        Query(description="Только те, что можно показывать наружу, или только те, что нельзя"),
-    ] = None,
     curator_person_id: Annotated[uuid.UUID | None, Query()] = None,
     search: Annotated[str | None, Query(description="Совпадение по части названия")] = None,
     health: Annotated[Health | None, Query(description="Цвет светофора")] = None,
@@ -170,7 +163,6 @@ async def list_projects(
             status_code=status_code,
             priority_code=priority_code,
             kind=kind,
-            share_externally=share_externally,
             curator_person_id=curator_person_id,
             search=search,
             health=health,
@@ -246,12 +238,10 @@ async def set_impediment(
 
 
 @router.delete("/projects/{project_id}", status_code=204, summary="Удаление проекта")
-async def delete_project(
-    project_id: uuid.UUID, session: SessionDep, storage: StorageDep, user: Assistant
-) -> None:
+async def delete_project(project_id: uuid.UUID, session: SessionDep, user: Assistant) -> None:
     """Полное удаление.
 
     Обычный способ убрать проект с глаз — архив (ORB-025), а не удаление: завершённая
     работа остаётся историей агентства. Удаление нужно для заведённого по ошибке.
     """
-    await service.delete(session, storage, project_id)
+    await service.delete(session, project_id)

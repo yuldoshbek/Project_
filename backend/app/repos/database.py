@@ -24,17 +24,14 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 def create_engine(settings: Settings) -> AsyncEngine:
     return create_async_engine(
-        settings.database_url,
+        settings.sqlalchemy_url,
         echo=False,
+        # Соединение из пула могло быть закрыто площадкой, пока функция спала. Без этой
+        # проверки первый запрос после простоя отвечает ошибкой, а не данными.
         pool_pre_ping=True,
-        connect_args={
-            # Все таблицы живут в схеме orbita (ADR-0001): так база делится с SETA без
-            # пересечения имён. Схему создаёт миграция Alembic, не приложение.
-            "server_settings": {
-                "search_path": f"{settings.db_schema},public",
-                "application_name": "orbita",
-            }
-        },
+        # Схема поиска, TLS и отключение кеша подготовленных запросов за пулом —
+        # всё это собирает settings.connect_args, чтобы правило жило в одном месте.
+        connect_args=settings.connect_args,
     )
 
 

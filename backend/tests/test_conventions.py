@@ -36,16 +36,25 @@ def test_no_naive_utcnow() -> None:
     )
 
 
+# Два пути скрыты из схемы осознанно, и оба — не маршруты данных:
+#   access.py  — переход по личной ссылке: токен не должен попасть ни в схему, ни в
+#                клиент интерфейса, ни в журнал запросов;
+#   internal.py — служебный вход расписания: он закрыт секретом в заголовке, а не
+#                сессией, и в клиенте интерфейса ему делать нечего.
+ALLOWED_TO_HIDE = {"app/api/routes/access.py", "app/api/routes/internal.py"}
+
+
 def test_no_route_hides_from_the_schema() -> None:
-    """Маршрут не исключают из описания API (`include_in_schema=False`).
+    """Маршрут данных не исключают из описания API (`include_in_schema=False`).
 
     Схема — не украшение: по ней собирается клиент интерфейса, и по ней же обходит все
-    маршруты проверка «ни один не отвечает без сессии» (`test_roles`). Спрятанный из
+    маршруты проверка «ни один не отвечает без сессии» (`test_access`). Спрятанный из
     схемы эндпоинт выпадает из обоих — и незаметнее всего из второго.
     """
     offenders = [
-        path.relative_to(BACKEND_ROOT)
+        path.relative_to(BACKEND_ROOT).as_posix()
         for path in python_sources()
         if "include_in_schema" in path.read_text(encoding="utf-8")
+        and path.relative_to(BACKEND_ROOT).as_posix() not in ALLOWED_TO_HIDE
     ]
     assert not offenders, f"маршрут, скрытый из схемы, не попадёт под проверку доступа: {offenders}"

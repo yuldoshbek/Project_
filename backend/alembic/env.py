@@ -51,7 +51,7 @@ def database_url() -> str:
     override = config.attributes.get("db_url")
     if isinstance(override, str):
         return override
-    return get_settings().database_url
+    return get_settings().sqlalchemy_url
 
 
 def configure(connection: Connection | None = None, url: str | None = None) -> None:
@@ -105,7 +105,12 @@ async def run_migrations_online() -> None:
         # public обязателен вторым: расширения (citext, pg_trgm) установлены там, и
         # без него типы из них не находятся. Первым идёт orbita — именно она
         # становится схемой по умолчанию для создания таблиц и для отражения.
-        connect_args={"server_settings": {"search_path": f"{SCHEMA},public"}},
+        # Аргументы подключения собирает один код на всё приложение: там же TLS для
+        # облачной базы и отключение кеша подготовленных запросов за пулом соединений.
+        connect_args={
+            **get_settings().connect_args,
+            "server_settings": {"search_path": f"{SCHEMA},public"},
+        },
     )
     try:
         async with engine.connect() as connection:

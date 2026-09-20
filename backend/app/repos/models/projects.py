@@ -12,7 +12,6 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -21,7 +20,6 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
-    true,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,7 +27,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.domain.projects import (
     MAX_PROGRESS,
     MIN_PROGRESS,
-    SHARE_EXTERNALLY_DEFAULT,
     ProgressMode,
 )
 from app.repos.base import Base, Timestamps, UUIDPrimaryKey
@@ -49,14 +46,6 @@ class Project(Auditable, UUIDPrimaryKey, Timestamps, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
-
-    # Не гриф, а предпочтение выдачи: «можно ли показывать это наружу»
-    # ([ADR-0024](../../../docs/adr/ADR-0024-share-externally.md)). Точек выхода пять —
-    # Google-календарь, SETA, Telegram через её бота, экспорт, внешняя модель, — и каждая
-    # обязана спросить это поле внутри своей функции выдачи, а не в вызывающем коде.
-    share_externally: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=SHARE_EXTERNALLY_DEFAULT, server_default=true()
-    )
 
     direction_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("directions.id"), nullable=False

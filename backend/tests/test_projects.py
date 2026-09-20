@@ -293,7 +293,6 @@ class TestCode:
                 code="PRJ-2030-999",
                 title="Девятьсот девяносто девятый",
                 kind=ProjectKind.PROJECT.value,
-                share_externally=True,
                 direction_id=direction.id,
                 status_code=ProjectStatus.IN_PROGRESS.value,
                 priority_code=Priority.NORMAL.value,
@@ -329,10 +328,10 @@ class TestEveryChangeIsInTheJournal:
         assert list(entries[1].changes) == ["title"], "в записи оказалось лишнее поле"
         assert entries[1].changes["title"]["to"] == "Уточнённое название"
 
-    async def test_a_private_project_is_logged_with_its_content(
+    async def test_a_project_is_logged_with_its_content(
         self, assistant_api: AsyncClient, session: AsyncSession
     ) -> None:
-        """Проект своих изменений от журнала больше не прячет (ADR-0024).
+        """Проект своих изменений от журнала не прячет (ADR-0024).
 
         До снятия грифа закрытый проект писался в журнал со значениями `***`: разбор
         «кто поменял срок» упирался в звёздочки, а защищало это от читателя, которого в
@@ -344,8 +343,7 @@ class TestEveryChangeIsInTheJournal:
             "/api/v1/projects",
             json=await payload(
                 session,
-                title="Название непубличного проекта",
-                share_externally=False,
+                title="Название проекта",
             ),
         )
         project_id = uuid.UUID(created.json()["id"])
@@ -353,7 +351,7 @@ class TestEveryChangeIsInTheJournal:
         entry = await session.scalar(select(AuditLog).where(AuditLog.entity_id == project_id))
         assert entry is not None
         assert "title" in entry.changes, "факт изменения обязан остаться"
-        assert entry.changes["title"]["to"] == "Название непубличного проекта"
+        assert entry.changes["title"]["to"] == "Название проекта"
         assert "Название закрытого проекта" not in str(entry.changes)
 
 
@@ -416,7 +414,6 @@ class TestListing:
                 title="Второе направление",
                 direction_id=str(directions[1].id),
                 status_code=ProjectStatus.AWAITING_DECISION.value,
-                share_externally=False,
             ),
         )
 
@@ -428,7 +425,6 @@ class TestListing:
         assert await titles(status_code=ProjectStatus.AWAITING_DECISION.value) == [
             "Второе направление"
         ]
-        assert await titles(share_externally=False) == ["Второе направление"]
         assert await titles(curator_person_id=str(curator.id)) == ["Первое направление"]
 
     async def test_sorting_is_applied_and_reversible(

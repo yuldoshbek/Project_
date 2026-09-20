@@ -99,7 +99,6 @@ jobs:
           ORBITA_DATABASE_URL: ${{ steps.db.outputs.uri }}
           ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
           ORBITA_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
-          ORBITA_FILE_STORAGE: memory
         run: |
           uv sync --all-groups --frozen
           uv run alembic upgrade head
@@ -119,8 +118,7 @@ jobs:
             --env ORBITA_ENV=preview \
             --env ORBITA_DATABASE_URL="$ORBITA_DATABASE_URL" \
             --env ORBITA_SESSION_SECRET="$ORBITA_SESSION_SECRET" \
-            --env ORBITA_JOBS_SECRET="$ORBITA_JOBS_SECRET" \
-            --env ORBITA_FILE_STORAGE=memory)"
+            --env ORBITA_JOBS_SECRET="$ORBITA_JOBS_SECRET")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v5

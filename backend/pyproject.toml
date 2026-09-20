@@ -4,8 +4,9 @@ version = "0.1.0"
 description = "ORBITA — система управления проектами и задачами Агентства «Ўзбеккосмос»"
 requires-python = ">=3.12"
 
-# Зависимости добавляет тот тикет, которому они нужны, а не «на будущее».
-# Здесь — только то, без чего не собирается каркас (ORB-003, ORB-004).
+# Зависимость добавляет тот блок, которому она нужна, а не «на будущее». Каждая едет в
+# функцию Vercel и платится временем холодного старта — то есть секундами ожидания
+# руководителя, открывшего систему с телефона.
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -15,26 +16,16 @@ dependencies = [
     "asyncpg>=0.30",
     "alembic>=1.14",
     "structlog>=24.4",
-    "redis>=5.2",
-    "arq>=0.26",
-    "argon2-cffi>=25.1.0",
-    "pyjwt>=2.13.0",
     # База часовых поясов в самом пакете, а не в системе. Все сроки наступают по
     # Asia/Tashkent (CLAUDE.md, инвариант о времени), а системной базы нет ни в Windows,
     # ни в облегчённых образах Linux — приложение падало бы при первом расчёте
     # светофора, на машине, где его никто не проверял.
     "tzdata>=2025.2",
-    # --- ORB-017, вложения ---
-    # Разбор multipart/form-data. FastAPI без него отказывается объявить `UploadFile`
-    # и падает на старте, а не на первой загрузке файла — и это правильно.
-    "python-multipart>=0.0.20",
-    # Клиент S3. Асинхронный намеренно: загрузка идёт в том же цикле, что и запрос,
-    # и синхронный boto3 останавливал бы обработку всех остальных запросов на время
-    # передачи пятидесяти мегабайт.
-    "aioboto3>=14.1",
-    # Обращения к преобразователю документов (ORB-017) и, дальше, к Google и Telegram.
-    "httpx>=0.28",
 ]
+
+# Сняты вместе с прежним стеком: redis и arq (постоянного воркера нет — ADR-0032),
+# argon2 и pyjwt (пароля и токенов нет — ADR-0029), aioboto3 и python-multipart
+# (файлы приходят в блоке 2, и уже подписанной ссылкой в хранилище, а не через API).
 
 [dependency-groups]
 dev = [
@@ -42,6 +33,8 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "python-dotenv>=1.0",
+    # Клиент для тестов API и для будущих обращений наружу.
+    "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
     "import-linter>=2.1",
@@ -116,7 +109,7 @@ disallow_untyped_calls = false
 
 # Библиотеки без маркера py.typed: аннотации внутри есть, но mypy их не видит.
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "aioboto3.*", "botocore.*"]
+module = ["asyncpg.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------
@@ -160,7 +153,7 @@ name = "Слои приложения"
 type = "layers"
 layers = [
     "app.api",
-    "app.workers",
+    "app.jobs",
     "app.services",
     "app.adapters",
     "app.repos",
@@ -171,4 +164,4 @@ layers = [
 name = "Домен не знает про фреймворки и БД"
 type = "forbidden"
 source_modules = ["app.domain"]
-forbidden_modules = ["fastapi", "sqlalchemy", "starlette", "asyncpg", "redis", "arq"]
+forbidden_modules = ["fastapi", "sqlalchemy", "starlette", "asyncpg"]

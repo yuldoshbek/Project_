@@ -50,20 +50,20 @@ def app_with_failing_routes(app: FastAPI) -> FastAPI:
 
 
 async def test_health_is_not_a_problem(client: AsyncClient) -> None:
-    response = await client.get("/health")
+    response = await client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
 
 
 class TestRequestId:
     async def test_returned_in_header(self, client: AsyncClient) -> None:
-        response = await client.get("/health")
+        response = await client.get("/api/health")
 
         assert response.headers[REQUEST_ID_HEADER]
 
     async def test_client_value_is_preserved(self, client: AsyncClient) -> None:
-        response = await client.get("/health", headers={REQUEST_ID_HEADER: "abc-123"})
+        response = await client.get("/api/health", headers={REQUEST_ID_HEADER: "abc-123"})
 
         assert response.headers[REQUEST_ID_HEADER] == "abc-123"
 

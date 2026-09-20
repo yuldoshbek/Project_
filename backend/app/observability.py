@@ -35,7 +35,6 @@ LIBRARY_LOGGERS = (
     "uvicorn.error",
     "uvicorn.access",
     "sqlalchemy.engine",
-    "arq",
 )
 
 

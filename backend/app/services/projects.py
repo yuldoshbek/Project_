@@ -19,14 +19,11 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.storage import FileStorage
 from app.domain.comments import CommentTarget
 from app.domain.dictionaries import Health, ProjectStatus, SettingKey
-from app.domain.documents import DocumentTarget
 from app.domain.errors import NotFoundError
 from app.domain.projects import (
     DEFAULT_IMPEDIMENT_STALE_DAYS,
-    SHARE_EXTERNALLY_DEFAULT,
     ProgressMode,
     ProjectKind,
     has_active_impediment,
@@ -37,7 +34,7 @@ from app.domain.projects import (
 )
 from app.domain.projects import health as compute_health
 from app.repos.models import Organization, PriorityRef, Project, ProjectPartner, Task
-from app.services import codes, comments, documents
+from app.services import codes, comments
 from app.services.dictionaries import get_setting
 
 DEFAULT_WARN_DAYS = 3
@@ -125,7 +122,6 @@ class ProjectDraft:
     started_on: date
     due_on: date
     kind: ProjectKind = ProjectKind.PROJECT
-    share_externally: bool = SHARE_EXTERNALLY_DEFAULT
     description: str | None = None
     curator_person_id: uuid.UUID | None = None
     status_reason: str | None = None
@@ -142,7 +138,6 @@ class ProjectPatch:
     title: Any = _UNSET
     description: Any = _UNSET
     kind: Any = _UNSET
-    share_externally: Any = _UNSET
     direction_id: Any = _UNSET
     curator_person_id: Any = _UNSET
     status_code: Any = _UNSET
@@ -185,7 +180,6 @@ async def create(
         title=draft.title.strip(),
         description=draft.description,
         kind=draft.kind.value,
-        share_externally=draft.share_externally,
         direction_id=draft.direction_id,
         curator_person_id=draft.curator_person_id,
         status_code=draft.status_code,
@@ -251,22 +245,19 @@ async def set_impediment(
     return project
 
 
-async def delete(session: AsyncSession, storage: FileStorage, project_id: uuid.UUID) -> None:
+async def delete(session: AsyncSession, project_id: uuid.UUID) -> None:
     """Удаляет проект вместе со всем, что к нему относилось.
 
-    Задачи уносит сама база (`ON DELETE CASCADE`), а их обсуждения и вложения — нет: и
-    комментарий, и документ ссылаются на владельца полем `entity_id`, которое указывает
-    то на одну таблицу, то на другую, и внешним ключом такое не выразить. Поэтому они
-    убираются здесь, до удаления проекта, — иначе реплики осели бы в базе навсегда, не
-    появляясь ни в одной ленте, а файлы остались бы в хранилище без единой ссылки на них.
+    Задачи уносит сама база (`ON DELETE CASCADE`), а их обсуждения — нет: комментарий
+    ссылается на владельца полем `entity_id`, которое указывает то на одну таблицу, то на
+    другую, и внешним ключом такое не выразить. Поэтому реплики убираются здесь, до
+    удаления проекта, — иначе они осели бы в базе навсегда, не появляясь ни в одной ленте.
     """
     project = await get(session, project_id)
 
     for task_id in await session.scalars(select(Task.id).where(Task.project_id == project_id)):
         await comments.delete_for(session, CommentTarget.TASK, task_id)
-        await documents.delete_for(session, storage, DocumentTarget.TASK, task_id)
     await comments.delete_for(session, CommentTarget.PROJECT, project_id)
-    await documents.delete_for(session, storage, DocumentTarget.PROJECT, project_id)
 
     await session.delete(project)
     await session.flush()
@@ -280,7 +271,6 @@ class ProjectFilter:
     status_code: str | None = None
     priority_code: str | None = None
     kind: ProjectKind | None = None
-    share_externally: bool | None = None
     curator_person_id: uuid.UUID | None = None
     search: str | None = None
     health: Health | None = None
@@ -307,8 +297,6 @@ def _apply(statement: Select[Any], filters: ProjectFilter) -> Select[Any]:
         statement = statement.where(Project.priority_code == filters.priority_code)
     if filters.kind is not None:
         statement = statement.where(Project.kind == filters.kind.value)
-    if filters.share_externally is not None:
-        statement = statement.where(Project.share_externally.is_(filters.share_externally))
     if filters.curator_person_id is not None:
         statement = statement.where(Project.curator_person_id == filters.curator_person_id)
     if filters.organization_id is not None:

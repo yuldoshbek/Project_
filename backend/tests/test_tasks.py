@@ -104,7 +104,6 @@ async def a_project(session: AsyncSession, **overrides: Any) -> Project:
         "code": f"PRJ-2026-{uuid.uuid4().int % 900 + 99:03d}",
         "title": "Проект для задач",
         "kind": "project",
-        "share_externally": True,
         "direction_id": direction.id,
         "curator_person_id": curator.id,
         "status_code": ProjectStatus.IN_PROGRESS.value,
@@ -632,35 +631,12 @@ class TestNumbersDoNotCollide:
 
 
 class TestExportIsAWayOut:
-    """Выгрузка — одна из пяти точек выхода (ADR-0024), и она отличается от списка.
+    """Выгрузка в файл: свои колонки, своя кодировка, те же отборы, что на экране.
 
-    Внутри системы оба пользователя видят всё: граница проходит по периметру, а не между
-    людьми (ADR-0011). Наружу не уходят задачи проектов с `share_externally = false`.
-    Разница между экраном и файлом здесь — не ошибка, а то самое правило, и проверять её
-    надо именно так.
+    Прежнее правило «не выгружать проекты, закрытые для показа наружу» снято вместе с
+    признаком выдачи (ADR-0024): внешних точек выдачи не осталось, а файл открывает тот же
+    человек, который и так видит эти задачи.
     """
-
-    async def test_a_task_of_a_private_project_is_visible_but_not_exported(
-        self, assistant_api: AsyncClient, session: AsyncSession
-    ) -> None:
-        open_project = await a_project(session)
-        closed = await a_project(session, share_externally=False, title="Непубличный проект")
-
-        await assistant_api.post(
-            "/api/v1/tasks", json=body(title="Обычная", project_id=str(open_project.id))
-        )
-        await assistant_api.post(
-            "/api/v1/tasks", json=body(title="Непубличная", project_id=str(closed.id))
-        )
-
-        on_screen = await assistant_api.get("/api/v1/tasks")
-        assert sorted(item["title"] for item in on_screen.json()) == ["Непубличная", "Обычная"]
-
-        exported = await assistant_api.get("/api/v1/tasks/export.csv")
-        assert exported.status_code == 200
-        text = exported.content.decode("utf-8-sig")
-        assert "Обычная" in text
-        assert "Непубличная" not in text, "задача непубличного проекта ушла наружу файлом"
 
     async def test_a_task_without_a_project_is_exported(self, assistant_api: AsyncClient) -> None:
         """Задачу вне проекта спрашивать не у кого — и выпадать из выгрузки она не должна.

@@ -67,9 +67,8 @@ jobs:
       ORBITA_SESSION_SECRET: ci-session-secret-not-for-production-32-chars-min
       ORBITA_JOBS_SECRET: ci-jobs-secret-not-for-production
       ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
-      ORBITA_TEST_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita_test
+      ORBITA_TEST_DB: orbita_test
       ORBITA_BASE_URL: http://localhost:5173
-      ORBITA_FILE_STORAGE: memory
 
     steps:
       - uses: actions/checkout@v5
@@ -136,7 +135,6 @@ jobs:
       ORBITA_SESSION_SECRET: ci-session-secret-not-for-production-32-chars-min
       ORBITA_JOBS_SECRET: ci-jobs-secret-not-for-production
       ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
-      ORBITA_FILE_STORAGE: memory
 
     steps:
       - uses: actions/checkout@v5

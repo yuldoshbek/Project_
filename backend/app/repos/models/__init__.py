@@ -5,6 +5,7 @@
 которая молча удаляет таблицу.
 """
 
+from app.repos.models.access import AccessLink, Session
 from app.repos.models.audit import Auditable, AuditLog
 from app.repos.models.checklists import Tag, TaskChecklistItem, TaskTag
 from app.repos.models.comments import Comment
@@ -16,7 +17,6 @@ from app.repos.models.dictionaries import (
     Setting,
     TaskStatusRef,
 )
-from app.repos.models.documents import Document, DocumentVersion
 from app.repos.models.ijro import (
     IjroAssignment,
     IjroDocument,
@@ -24,6 +24,7 @@ from app.repos.models.ijro import (
     IjroOrgAlias,
     IjroPersonAlias,
 )
+from app.repos.models.jobs import JobRun
 from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.partners import ProjectPartner
@@ -32,17 +33,17 @@ from app.repos.models.projects import Project
 from app.repos.models.tasks import Task
 
 __all__ = [
+    "AccessLink",
     "AuditLog",
     "Auditable",
     "Comment",
     "Direction",
-    "Document",
-    "DocumentVersion",
     "IjroAssignment",
     "IjroDocument",
     "IjroImport",
     "IjroOrgAlias",
     "IjroPersonAlias",
+    "JobRun",
     "Milestone",
     "Notification",
     "Organization",
@@ -51,6 +52,7 @@ __all__ = [
     "Project",
     "ProjectPartner",
     "ProjectStatusRef",
+    "Session",
     "Setting",
     "Tag",
     "Task",

@@ -11,11 +11,10 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
 from app.api.router import api_router
-from app.api.routes import health
+from app.api.routes import access, health, internal
 from app.observability import (
     RequestContextMiddleware,
     configure_logging,
@@ -61,29 +60,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # часть которого работает с переданными настройками, а часть — с чужими.
     app.state.settings = settings
 
-    # Фронтенд может стоять на другом домене — на сервере агентства рядом с API или на
-    # Netlify. Без этого списка браузер не даст ему сделать ни одного запроса, и это
-    # первое, что ломается при выкладке (ADR-0026).
-    #
-    # `allow_credentials` намеренно выключен: ни куки, ни заголовка `Authorization` в
-    # системе нет — запрос подписывается заголовком режима, который не является
-    # удостоверением. Включить его значило бы пообещать защиту, которой нет.
-    if settings.cors_origin_list:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.cors_origin_list,
-            allow_credentials=False,
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=["Content-Disposition", "X-Request-ID"],
-        )
-
+    # CORS не настраивается, и это не упущение. Браузер видит один источник: интерфейс
+    # на Netlify проксирует `/api` на этот API (ADR-0028), поэтому запрос для браузера —
+    # свой, cookie сессии получается первого лица, а чужому источнику здесь делать нечего.
+    # Появится CORS — появится и возможность звать API с чужой страницы вместе с cookie.
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
 
-    # Проверки состояния версией не закрываются: их опрашивает инфраструктура,
-    # а не интерфейс, и путь не должен меняться вместе с версией API.
+    # Проверки состояния версией не закрываются: их опрашивает конвейер, а не интерфейс,
+    # и путь не должен меняться вместе с версией API.
     app.include_router(health.router)
+    # Вход по личной ссылке — единственная часть API без сессии: по ссылке приходит
+    # человек, у которого её ещё нет (ADR-0029).
+    app.include_router(access.router)
+    # Служебный вход расписания. Закрыт секретом в заголовке и мимо прокси недоступен.
+    app.include_router(internal.router)
     app.include_router(api_router)
 
     return app

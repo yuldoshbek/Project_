@@ -60,7 +60,6 @@ async def a_project(session: AsyncSession, **overrides: Any) -> Project:
         "code": f"PRJ-2026-{uuid.uuid4().int % 900 + 99:03d}",
         "title": "Проект",
         "kind": "project",
-        "share_externally": True,
         "direction_id": direction.id,
         "status_code": ProjectStatus.IN_PROGRESS.value,
         "priority_code": Priority.NORMAL.value,
@@ -444,33 +443,6 @@ class TestChecklistInTheFile:
             if "Без чек-листа" in row
         )
         assert "0 из 0" not in line
-
-    async def test_a_checklist_of_a_private_project_does_not_leave_either(
-        self, assistant_api: AsyncClient, session: AsyncSession
-    ) -> None:
-        """`share_externally = false` закрывает задачу целиком, вместе с чек-листом.
-
-        Проверка стоит в функции выдачи (ADR-0024), и колонка чек-листа ничего в ней не
-        меняет — но убедиться в этом надо: она собирается отдельным запросом, и он мог бы
-        обойти проверку своим путём.
-        """
-        closed = await a_project(session, share_externally=False, title="Непубличный")
-        created = await assistant_api.post(
-            f"{API}/tasks",
-            json={
-                "title": "Непубличная задача",
-                "project_id": str(closed.id),
-                "priority_code": Priority.NORMAL.value,
-            },
-        )
-        task = str(created.json()["id"])
-        await an_item(assistant_api, task, "Пункт непубличной задачи")
-
-        exported = await assistant_api.get(f"{API}/tasks/export.csv")
-
-        text = exported.content.decode("utf-8-sig")
-        assert "Непубличная задача" not in text
-        assert "Пункт непубличной задачи" not in text
 
 
 class TestEveryChangeIsInTheJournal:

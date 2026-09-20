@@ -17,11 +17,9 @@ from typing import Any
 from sqlalchemy import Integer, Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.storage import FileStorage
 from app.domain.clock import now_utc
 from app.domain.comments import CommentTarget
 from app.domain.dictionaries import TaskStatus
-from app.domain.documents import DocumentTarget
 from app.domain.errors import NotFoundError
 from app.domain.projects import ProgressMode, auto_progress
 from app.domain.tasks import days_overdue, is_overdue, validate_transition
@@ -33,7 +31,7 @@ from app.repos.models import (
     TaskChecklistItem,
     TaskStatusRef,
 )
-from app.services import codes, comments, documents
+from app.services import codes, comments
 
 CODE_PREFIX = "TSK"
 CODE_DIGITS = 5
@@ -242,15 +240,13 @@ async def update(
     return task
 
 
-async def delete(session: AsyncSession, storage: FileStorage, task_id: uuid.UUID) -> None:
+async def delete(session: AsyncSession, task_id: uuid.UUID) -> None:
     task = await get(session, task_id)
     project_id = task.project_id
 
-    # Обсуждение и вложения уходят вместе с задачей. Внешним ключом это не выражается:
-    # `entity_id` у них указывает то на задачи, то на проекты, и база такую связь не
-    # поймёт.
+    # Обсуждение уходит вместе с задачей. Внешним ключом это не выражается: `entity_id`
+    # у комментария указывает то на задачи, то на проекты, и база такую связь не поймёт.
     await comments.delete_for(session, CommentTarget.TASK, task_id)
-    await documents.delete_for(session, storage, DocumentTarget.TASK, task_id)
 
     await session.delete(task)
     await session.flush()
@@ -359,21 +355,17 @@ async def list_for_export(
     sort_by: str = "due_at",
     descending: bool = False,
 ) -> list[ExportRow]:
-    """Задачи для выгрузки наружу.
+    """Задачи для выгрузки в файл.
 
-    **Отдельная функция, а не флаг у списка.** Выгрузка — одна из пяти точек выхода из
-    системы, и задачи проектов с `share_externally = false` через неё не проходят
-    ([ADR-0024](../../../docs/adr/ADR-0024-share-externally.md)). Проверка стоит здесь,
-    внутри функции выдачи, а не у вызывающего кода: вызывающих будет много — файл, отчёт,
-    письмо, — и каждый однажды забудет. Причина теперь не защита от обхода, а защита от
-    забывчивости: гриф снят, а точек выхода стало пять, и шестую добавят через полгода.
+    Отдельная функция, а не флаг у списка: у выгрузки свои колонки — названия вместо
+    идентификаторов, местное время, пометка просрочки, — и подмешивать их в список для
+    экрана значило бы носить их в каждом ответе API.
 
-    Внутри системы те же задачи видны обоим пользователям: граница проходит по периметру,
-    а не между людьми (ADR-0011). Поэтому список на экране и выгрузка различаются, и это
-    не ошибка, а то самое правило.
-
-    Задача без проекта проходит всегда: спросить `share_externally` не у кого, а прятать
-    её значило бы терять из отчёта работу, которую никто не закрывал.
+    Отбор здесь тот же, что на экране. Прежнее правило «не выгружать проекты, закрытые
+    для показа наружу» снято вместе с признаком выдачи
+    ([ADR-0024](../../../docs/adr/ADR-0024-share-externally.md)): внешних точек выдачи не
+    осталось, файл открывает тот же человек, который и так видит эти задачи, и различие
+    между экраном и файлом только путало.
     """
     filters = filters or TaskFilter()
     moment = now or now_utc()
@@ -392,11 +384,6 @@ async def list_for_export(
         .outerjoin(Person, Person.id == Task.assignee_person_id)
         .outerjoin(Project, Project.id == Task.project_id)
     )
-    statement = statement.where(
-        Task.project_id.is_(None)
-        | Task.project_id.in_(select(Project.id).where(Project.share_externally.is_(True)))
-    )
-
     order = column.desc() if descending else column.asc()
     if column is Task.due_at:
         order = order.nullslast()
