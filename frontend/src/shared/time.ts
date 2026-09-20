@@ -1,53 +1,65 @@
 /**
- * Показ времени.
+ * Время на экране — всегда в Ташкенте.
  *
- * Хранение в UTC, показ в ташкентском времени — инвариант 5 (CLAUDE.md). Разница в пять
- * часов кажется мелочью ровно до первого срока: задача со сроком в 21:00 по Ташкенту
- * хранится как 16:00 UTC, а срок в 02:00 ночи — как 21:00 UTC **предыдущего дня**. Срежь
- * из такой метки первые десять символов — и на экране окажется вчерашнее число.
- *
- * Часовой пояс задан явно, а не берётся из браузера: оба пользователя в Ташкенте, но
- * ноутбук в командировке переводить дату не должен — срок назначен по времени агентства.
+ * В базе и в ответах API время в UTC (CLAUDE.md, инвариант о времени). Показывать его как
+ * есть нельзя: руководитель в поездке увидел бы сдвинутые сроки и принял бы решение по
+ * чужому дню. Перевод делается здесь, в одном месте, а не в каждом компоненте.
  */
 
-import { DISPLAY_TIME_ZONE } from './config';
+export const AGENCY_TIMEZONE = 'Asia/Tashkent';
 
-const DATE = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: DISPLAY_TIME_ZONE,
+const dateFormat = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: AGENCY_TIMEZONE,
   day: '2-digit',
   month: '2-digit',
   year: 'numeric',
 });
 
-const DATE_TIME = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: DISPLAY_TIME_ZONE,
+const dateTimeFormat = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: AGENCY_TIMEZONE,
   day: '2-digit',
   month: '2-digit',
-  year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
 });
 
-/** Дата метки времени по времени агентства: «30.08.2026». Пусто, если срока нет. */
-export function formatDate(value: string | null | undefined): string {
-  const moment = parse(value);
-  return moment === null ? '' : DATE.format(moment);
+const timeFormat = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: AGENCY_TIMEZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+export function formatDate(value: string | Date): string {
+  return dateFormat.format(new Date(value));
 }
 
-/** Дата и время по времени агентства: «30.08.2026, 21:00». Пусто, если метки нет. */
-export function formatDateTime(value: string | null | undefined): string {
-  const moment = parse(value);
-  return moment === null ? '' : DATE_TIME.format(moment);
+export function formatDateTime(value: string | Date): string {
+  return dateTimeFormat.format(new Date(value));
+}
+
+export function formatTime(value: string | Date): string {
+  return timeFormat.format(new Date(value));
 }
 
 /**
- * Разбор метки времени.
+ * «Только что», «12 минут назад», «вчера в 18:40».
  *
- * Непонятная строка показывается пустотой, а не «Invalid Date»: пустая ячейка читается
- * как «срока нет», а английская ругань посреди русского экрана — как поломка системы.
+ * Относительное время — не украшение: на вопрос «свежие ли это данные» точная дата
+ * отвечает хуже, чем «сорок минут назад». Дальше двух суток относительность теряет смысл,
+ * и возвращается дата.
  */
-function parse(value: string | null | undefined): Date | null {
-  if (value === null || value === undefined || value === '') return null;
+export function formatSince(value: string | Date | null | undefined, never: string): string {
+  if (!value) return never;
+
   const moment = new Date(value);
-  return Number.isNaN(moment.getTime()) ? null : moment;
+  const minutes = Math.round((Date.now() - moment.getTime()) / 60_000);
+
+  if (minutes < 1) return 'только что';
+  if (minutes < 60) return `${minutes} мин назад`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ч назад`;
+  if (hours < 48) return `вчера в ${formatTime(moment)}`;
+
+  return formatDate(moment);
 }

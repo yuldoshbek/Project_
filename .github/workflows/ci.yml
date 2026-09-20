@@ -207,3 +207,96 @@ jobs:
       # только здесь, а не в dev-режиме.
       - name: Сборка
         run: npm run build
+
+  e2e:
+    name: Сценарии и снимки
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Сценарии идут по собранной сборке и настоящему API на настоящей PostgreSQL. Иначе
+    # проверялось бы то, чего в облаке нет: режим разработки, заглушка вместо базы и вход,
+    # подменённый ради удобства теста.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orbita
+          POSTGRES_PASSWORD: orbita
+          POSTGRES_DB: orbita
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U orbita"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    env:
+      ORBITA_ENV: test
+      ORBITA_SESSION_SECRET: ci-session-secret-not-for-production-32-chars-min
+      ORBITA_JOBS_SECRET: ci-jobs-secret-not-for-production
+      ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
+      ORBITA_BASE_URL: http://localhost:4173
+      ORBITA_E2E_URL: http://localhost:4173
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Схема и справочники
+        working-directory: backend
+        run: |
+          uv sync --all-groups --frozen
+          uv run alembic upgrade head
+          uv run python -m app.seed
+
+      - name: Поднять API
+        working-directory: backend
+        run: |
+          uv run uvicorn app.main:app --port 8000 --log-level warning &
+          # Ждём готовности, а не спим наугад: «sleep 5» либо тратит время, либо не
+          # хватает — и тогда падают сценарии, а не запуск.
+          for i in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:8000/api/health > /dev/null && break
+            sleep 1
+          done
+          curl --silent --fail http://127.0.0.1:8000/api/health
+
+      - name: Собрать и поднять интерфейс
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          npx vite preview --port 4173 &
+          for i in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:4173 > /dev/null && break
+            sleep 1
+          done
+
+      - name: Playwright
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      # Снимки трёх устройств в двух темах — часть отчёта блока. При падении к ним
+      # добавляется трасса: по ней видно, что происходило, без повторения прогона руками.
+      - name: Снимки и трассы
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: |
+            docs/reports/block-0/*.png
+            frontend/test-results/**
+          retention-days: 14

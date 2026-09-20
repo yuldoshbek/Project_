@@ -1,169 +1,105 @@
+/**
+ * Контраст считается, а не осматривается.
+ *
+ * Глаз на светлом фоне ошибается уверенно: бледно-жёлтая подпись «ждёт» кажется читаемой
+ * ровно до того момента, когда экран выносят на солнце. Поэтому пары «текст на поверхности»
+ * проверяются счётом по WCAG 2.1: 4.5:1 для текста, 3:1 для знака, несущего смысл.
+ *
+ * Значения берутся из tokens.css разбором файла, а не переписываются сюда: копия разошлась
+ * бы с источником на первой правке, и проверка подтверждала бы саму себя.
+ */
+
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-/**
- * Контраст — критерий приёмки, а не осмотр макета (ORB-088, ADR-0021).
- *
- * Тест читает сам `tokens.css`, а не копию значений: копия разойдётся с источником на первой
- * правке палитры, и тогда зелёный тест будет означать, что кто-то когда-то проверил
- * другие цвета. Порог здесь — единственное место, где записано, что «читаемо» это
- * число, а не мнение.
- *
- * Пороги WCAG 2.1: 4.5:1 для текста, 3:1 для знака, несущего смысл без подписи.
- */
+const here = dirname(fileURLToPath(import.meta.url));
+const css = readFileSync(resolve(here, 'tokens.css'), 'utf8');
 
-/**
- * Файл читается с диска, а не через импорт CSS: в vitest обработка стилей отключена, и
- * `import './tokens.css?raw'` вернул бы заглушку — тест был бы зелёным, ничего не
- * проверив. Путь берётся от корня пакета, потому что тесты запускаются из `frontend`.
- */
-const TOKENS = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
-
-/** Значения из блока `:root` — тёмная тема, основная. */
-const DARK = parseBlock(/:root\s*\{([\s\S]*?)\n\}/);
-/** Значения из блока `[data-theme='light']` — светлая тема. */
-const LIGHT = { ...DARK, ...parseBlock(/:root\[data-theme='light'\]\s*\{([\s\S]*?)\n\}/) };
-
-/**
- * Достаёт токен по имени и падает, если его нет. Индексный доступ в строгом режиме даёт
- * `string | undefined`, и молчаливое `undefined` здесь опаснее падения: контраст
- * посчитался бы от `NaN`, а тест остался бы зелёным.
- */
-function token(palette: Record<string, string>, name: string): string {
-  const value = palette[name];
-  if (value === undefined) throw new Error(`Токен не найден: ${name}`);
-  return value;
-}
-
-function parseBlock(pattern: RegExp): Record<string, string> {
-  const body = TOKENS.match(pattern)?.[1];
-  if (body === undefined) throw new Error(`Блок токенов не найден: ${String(pattern)}`);
+function block(selector: string): Record<string, string> {
+  const start = css.indexOf(selector);
+  if (start < 0) throw new Error(`в tokens.css нет блока ${selector}`);
+  const open = css.indexOf('{', start);
+  const close = css.indexOf('}', open);
+  const body = css.slice(open + 1, close);
 
   const values: Record<string, string> = {};
-  for (const match of body.matchAll(/(--[a-z0-9-]+):\s*(#[0-9a-fA-F]{3,8})\s*;/g)) {
-    const [, name, value] = match;
-    if (name === undefined || value === undefined) continue;
-    values[name] = value;
+  for (const line of body.split('\n')) {
+    const match = /^\s*(--[\w-]+):\s*(#[0-9a-fA-F]{6});/.exec(line);
+    if (match?.[1] && match[2]) values[match[1]] = match[2];
   }
   return values;
 }
 
+const light = block(':root');
+const dim = block("[data-theme='dim']");
+
 function channel(value: number): number {
-  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  const c = value / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
 function luminance(hex: string): number {
-  const digits = hex.replace('#', '');
-  const full =
-    digits.length === 3
-      ? digits
-          .split('')
-          .map((d) => d + d)
-          .join('')
-      : digits;
-  const [r, g, b] = [0, 2, 4].map((i) => channel(Number.parseInt(full.slice(i, i + 2), 16) / 255));
-  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
 
-function contrast(foreground: string, background: string): number {
-  const a = luminance(foreground);
-  const b = luminance(background);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+function ratio(front: string, back: string): number {
+  const a = luminance(front);
+  const b = luminance(back);
+  const [bright, dark] = a > b ? [a, b] : [b, a];
+  return (bright + 0.05) / (dark + 0.05);
 }
 
-/** Токены, которыми набирают текст: подписи, ссылки, числа. Порог 4.5:1. */
-const AS_TEXT = ['--color-text', '--color-text-muted', '--color-accent', '--color-accent-hover'];
+const TEXT_MINIMUM = 4.5;
+const MARK_MINIMUM = 3;
 
-/**
- * Токены состояния. В тёмной теме все берут порог текста, в светлой шесть не берут и
- * годятся только как знак с подписью — принцип «цвет никогда не один» из дизайн-системы.
- * Это давний долг светлой палитры, названный в ADR-0021, а не следствие тёмной.
- */
-const AS_SIGN = [
-  '--color-health-green',
-  '--color-health-yellow',
-  '--color-health-red',
-  '--color-health-grey',
-  '--color-status-initiation',
-  '--color-status-in-progress',
-  '--color-status-on-hold',
-  '--color-status-awaiting-decision',
-  '--color-status-done',
-  '--color-status-cancelled',
-  '--color-priority-urgent',
-  '--color-priority-high',
-  '--color-priority-normal',
-  '--color-priority-low',
-];
-
-/**
- * Четыре различных значения под шестью именами: цвета статусов переиспользуют значения
- * светофора (`status-done` = `health-green` = `#1f8a4c`, `status-on-hold` =
- * `health-yellow` = `#b8770a`). Список закреплён множеством, а не счётчиком: новый
- * провалившийся токен обязан сломать тест, а не увеличить число на единицу незамеченным.
- */
-const SIGN_ONLY_IN_LIGHT = new Set([
-  '--color-health-green',
-  '--color-health-yellow',
-  '--color-status-done',
-  '--color-status-on-hold',
-  '--color-status-cancelled',
-  '--color-priority-high',
-]);
-
-const THEMES = [
-  { name: 'тёмная', palette: DARK },
-  { name: 'светлая', palette: LIGHT },
+// Текст на поверхностях. Третий уровень (`--ink-muted`) — это подписи вроде
+// «по таблице от 15.09»: их читают, значит порог у них тот же.
+const TEXT_PAIRS = [
+  ['--ink-strong', '--surface-app'],
+  ['--ink-strong', '--surface-card'],
+  ['--ink', '--surface-app'],
+  ['--ink', '--surface-card'],
+  ['--ink-muted', '--surface-app'],
+  ['--ink-muted', '--surface-card'],
+  ['--ink-muted', '--surface-sunken'],
+  ['--accent', '--surface-card'],
+  ['--accent-ink', '--accent-soft'],
+  ['--burn-ink', '--burn-soft'],
+  ['--wait-ink', '--wait-soft'],
+  ['--calm-ink', '--calm-soft'],
+  ['--call-ink', '--call-soft'],
 ] as const;
 
-describe('контраст палитры', () => {
-  it('оба блока токенов разобраны и содержат полный набор цветов', () => {
-    for (const { name, palette } of THEMES) {
-      expect(palette['--color-surface'], `${name}: нет поверхности`).toBeDefined();
-      expect(palette['--color-bg'], `${name}: нет фона`).toBeDefined();
-      for (const item of [...AS_TEXT, ...AS_SIGN]) {
-        expect(palette[item], `${name}: нет токена ${item}`).toBeDefined();
-      }
-    }
+// Знаки: точка сигнала и граница. Они несут смысл, но текстом не являются — порог 3:1.
+const MARK_PAIRS = [
+  ['--burn', '--surface-card'],
+  ['--wait', '--surface-card'],
+  ['--calm', '--surface-card'],
+  ['--call', '--surface-card'],
+  ['--line-strong', '--surface-card'],
+] as const;
+
+describe.each([
+  ['светлая тема', light],
+  ['приглушённая тема', dim],
+])('%s', (_name, theme) => {
+  it.each(TEXT_PAIRS)('текст %s на %s читается (4.5:1)', (front, back) => {
+    const frontColor = theme[front];
+    const backColor = theme[back];
+    expect(frontColor, `в теме нет ${front}`).toBeDefined();
+    expect(backColor, `в теме нет ${back}`).toBeDefined();
+    expect(ratio(frontColor as string, backColor as string)).toBeGreaterThanOrEqual(TEXT_MINIMUM);
   });
 
-  describe.each(THEMES)('$name тема', ({ palette }) => {
-    it.each(AS_TEXT)('%s набирается текстом: не ниже 4.5:1 на карточке и на фоне', (name) => {
-      for (const surface of ['--color-surface', '--color-bg'] as const) {
-        const ratio = contrast(token(palette, name), token(palette, surface));
-        expect(
-          Number(ratio.toFixed(2)),
-          `${name} на ${surface}: ${ratio.toFixed(2)}:1`,
-        ).toBeGreaterThanOrEqual(4.5);
-      }
-    });
-
-    it.each(AS_SIGN)('%s несёт смысл: не ниже 3:1 на карточке', (name) => {
-      const ratio = contrast(token(palette, name), token(palette, '--color-surface'));
-      expect(Number(ratio.toFixed(2)), `${name}: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(3);
-    });
-  });
-
-  it('в тёмной теме цвет состояния годится и как надпись: все берут 4.5:1', () => {
-    const failed = AS_SIGN.filter(
-      (name) => contrast(token(DARK, name), token(DARK, '--color-surface')) < 4.5,
-    );
-    expect(failed, 'тёмная палитра подобрана так, чтобы надпись состояния читалась').toEqual([]);
-  });
-
-  it('в светлой теме порог надписи не берут ровно известные шесть — новых не появилось', () => {
-    const failed = AS_SIGN.filter(
-      (name) => contrast(token(LIGHT, name), token(LIGHT, '--color-surface')) < 4.5,
-    );
-    expect(new Set(failed)).toEqual(SIGN_ONLY_IN_LIGHT);
-  });
-
-  it('светлая палитра не унаследована от тёмной: значения действительно переопределены', () => {
-    const shared = [...AS_TEXT, ...AS_SIGN, '--color-surface', '--color-bg'].filter(
-      (name) => token(DARK, name) === token(LIGHT, name),
-    );
-    expect(shared, 'токен с одним значением в двух темах ломает одну из них').toEqual([]);
+  it.each(MARK_PAIRS)('знак %s на %s различим (3:1)', (front, back) => {
+    const frontColor = theme[front];
+    const backColor = theme[back];
+    expect(ratio(frontColor as string, backColor as string)).toBeGreaterThanOrEqual(MARK_MINIMUM);
   });
 });

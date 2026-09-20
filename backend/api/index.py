@@ -10,4 +10,4 @@ Vercel ищет в этом файле объект ASGI с именем ``app``
 
 from app.main import app
 
-__all__ = ['app']
+__all__ = ["app"]

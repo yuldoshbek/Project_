@@ -1,4 +1,4 @@
-# Windows-обёртка над Makefile: цели те же, синтаксис .\make.ps1 <цель>.
+﻿# Windows-обёртка над Makefile: цели те же, синтаксис .\make.ps1 <цель>.
 # Нужна потому, что make в Windows по умолчанию нет, а работать надо на обеих системах.
 # Канонический список целей — в Makefile; при изменении правьте оба файла.
 
@@ -16,6 +16,8 @@ $root = $PSScriptRoot
 $backend = Join-Path $root 'backend'
 $frontend = Join-Path $root 'frontend'
 
+# Frontend вызывается через npm.cmd, а не npm: в Windows `npm` разрешается в npm.ps1,
+# а тот собирает команду строкой и ломается на кавычках в аргументах.
 function Invoke-In {
     param([string]$Dir, [string]$Exe, [string[]]$CmdArgs)
     Push-Location $Dir
@@ -52,7 +54,7 @@ switch ($Target) {
     }
     'install' {
         Invoke-In $backend 'uv' @('sync', '--all-groups')
-        Invoke-In $frontend 'npm' @('ci')
+        Invoke-In $frontend 'npm.cmd' @('ci')
     }
     'up' { Invoke-In $root 'docker' @('compose', 'up', '-d', '--wait') }
     'down' { Invoke-In $root 'docker' @('compose', 'down') }
@@ -75,28 +77,28 @@ switch ($Target) {
         Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.jobs.run', $Name)
     }
     'dev-back' { Invoke-In $backend 'uv' @('run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000') }
-    'dev-front' { Invoke-In $frontend 'npm' @('run', 'dev') }
+    'dev-front' { Invoke-In $frontend 'npm.cmd' @('run', 'dev') }
     'test' {
         Invoke-In $backend 'uv' @('run', 'pytest')
-        Invoke-In $frontend 'npm' @('run', 'test')
+        Invoke-In $frontend 'npm.cmd' @('run', 'test')
     }
-    'e2e' { Invoke-In $frontend 'npx' @('playwright', 'test') }
+    'e2e' { Invoke-In $frontend 'npx.cmd' @('playwright', 'test') }
     'check' {
         Invoke-In $backend 'uv' @('run', 'ruff', 'check', '.')
         Invoke-In $backend 'uv' @('run', 'ruff', 'format', '--check', '.')
         Invoke-In $backend 'uv' @('run', 'mypy', 'app', 'tests')
         Invoke-In $backend 'uv' @('run', 'lint-imports')
-        Invoke-In $frontend 'npm' @('run', 'lint')
-        Invoke-In $frontend 'npm' @('run', 'lint:css')
-        Invoke-In $frontend 'npm' @('run', 'typecheck')
-        Invoke-In $frontend 'npm' @('run', 'fmt:check')
+        Invoke-In $frontend 'npm.cmd' @('run', 'lint')
+        Invoke-In $frontend 'npm.cmd' @('run', 'lint:css')
+        Invoke-In $frontend 'npm.cmd' @('run', 'typecheck')
+        Invoke-In $frontend 'npm.cmd' @('run', 'fmt:check')
         Invoke-In $root 'python' @('scripts/check_docs.py')
     }
     'docs' { Invoke-In $root 'python' @('scripts/check_docs.py') }
     'fmt' {
         Invoke-In $backend 'uv' @('run', 'ruff', 'format', '.')
         Invoke-In $backend 'uv' @('run', 'ruff', 'check', '--fix', '.')
-        Invoke-In $frontend 'npm' @('run', 'fmt')
+        Invoke-In $frontend 'npm.cmd' @('run', 'fmt')
     }
     'reqs' {
         Invoke-In $backend 'uv' @('export', '--frozen', '--no-dev', '--no-emit-project', '--no-hashes', '-o', 'requirements.txt')

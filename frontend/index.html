@@ -2,34 +2,44 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover — под вырез и жест-полосу iPhone: без него нижняя панель
+         навигации оказывается под жест-полосой, и её кнопки не нажимаются. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- Обе темы, а не одна: по этому объявлению браузер красит полосы прокрутки и
          системные части полей ввода. Оставь здесь light — и они останутся светлыми даже
-         там, где токены уже переключились (ADR-0021). -->
-    <meta name="color-scheme" content="dark light" />
+         там, где токены уже переключились. -->
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="description" content="ORBITA — что требует внимания сейчас" />
+    <!-- Система не для поиска: ссылка на неё личная, и в индексе ей делать нечего. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>ORBITA</title>
     <!--
-      Тема ставится до первой отрисовки, иначе светлая вспышка на тёмном экране видна
-      глазом. Скрипт встроенный и выполняется синхронно намеренно: внешний файл
-      загрузился бы после разбора разметки, и вспышка вернулась бы.
+      Тема ставится до первой отрисовки, иначе на приглушённой теме видна светлая вспышка.
+      Скрипт встроенный и синхронный намеренно: внешний файл загрузился бы после разбора
+      разметки, и вспышка вернулась бы.
 
-      Состояние «система» не снимает атрибут, а подставляет вычисленное значение —
-      поэтому в CSS хватает одного блока на светлую тему вместо двух (медиа-запрос и
+      Состояние «как в системе» не снимает атрибут, а подставляет вычисленное значение —
+      поэтому в CSS хватает одного блока на приглушённую тему вместо двух (медиа-запрос и
       атрибут), которые разошлись бы на первой правке.
     -->
     <script>
       (function () {
+        var theme = 'light';
         try {
           var saved = localStorage.getItem('orbita.theme');
-          var mode = saved === 'light' || saved === 'dark' ? saved : 'system';
-          var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var theme = mode === 'system' ? (dark ? 'dark' : 'light') : mode;
-          document.documentElement.setAttribute('data-theme', theme);
+          if (saved === 'light' || saved === 'dim') {
+            theme = saved;
+          } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            theme = 'dim';
+          }
         } catch (error) {
-          // Хранилище недоступно — приватное окно, запрет на данные сайта. Тема остаётся
-          // тёмной по умолчанию из :root, и это рабочее состояние, а не отказ.
-          document.documentElement.setAttribute('data-theme', 'dark');
+          // Хранилище недоступно — приватное окно, запрет на данные сайта. Остаётся
+          // светлая тема: это рабочее состояние, а не отказ.
         }
+        document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
   </head>
