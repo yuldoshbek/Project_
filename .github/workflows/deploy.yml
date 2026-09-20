@@ -14,12 +14,14 @@ name: Выкладка
 on:
   workflow_dispatch:
     inputs:
-      что:
-        description: 'Что сделать'
+      # Имена входов — латиницей: GitHub принимает только [a-zA-Z0-9_-], кириллическое имя
+      # делает файл невалидным целиком. Русский — в описаниях, их и видит человек.
+      action:
+        description: 'Что сделать: deploy — выложить, rollback — откатить'
         type: choice
-        options: [выложить, откатить]
-        default: выложить
-      миграции:
+        options: [deploy, rollback]
+        default: deploy
+      migrate:
         description: 'Применять миграции базы'
         type: boolean
         default: true
@@ -66,7 +68,7 @@ jobs:
   deploy:
     name: Выложить
     needs: keys
-    if: inputs.что == 'выложить'
+    if: inputs.action == 'deploy'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # Окружение production хранит ключи рабочего контура и, если заказчик включит
@@ -107,7 +109,7 @@ jobs:
           echo "revision=$current" >> "$GITHUB_OUTPUT"
 
       - name: Миграции рабочей базы
-        if: inputs.миграции
+        if: inputs.migrate
         working-directory: backend
         env:
           ORBITA_ENV: production
@@ -169,7 +171,7 @@ jobs:
   rollback:
     name: Откатить
     needs: keys
-    if: inputs.что == 'откатить'
+    if: inputs.action == 'rollback'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
