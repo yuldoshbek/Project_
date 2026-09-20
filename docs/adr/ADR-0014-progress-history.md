@@ -2,7 +2,7 @@
 
 - Статус: принято · Дата: 08.09.2026
 - Контекст: требование заказчика от 08.09.2026 · [ADR-0005](ADR-0005-traffic-light.md),
-  [ADR-0010](ADR-0010-audit-log.md), [COUNCIL-0002](../council/COUNCIL-0002.md)
+  [ADR-0010](ADR-0010-audit-log.md), [COUNCIL-0002](../archive/council/COUNCIL-0002.md)
 
 ## Контекст
 

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Проверки документации, которые дешевле автоматизировать, чем ловить глазами.
 
-1. Нумерация тикетов: без дублей.
-2. Внутренние ссылки в markdown ведут в существующие файлы.
+1. Внутренние ссылки в markdown ведут в существующие файлы.
+2. Документы плана и требований на месте.
 
-Проверка разрывов в нумерации снята 18.09.2026. Она предполагала одну сплошную нумерацию
-ORB-001…098, а после сужения объёма счёт начат заново с ORB-100: разрыв между старым и
-новым диапазоном — не ошибка, а след переворота. Дубли проверять по-прежнему стоит: два
-тикета с одним номером — это два агента, которые однажды возьмут одну работу.
+Нумерация тикетов не проверяется: с 20.09.2026 работа идёт блоками (docs/PLAN.md),
+отдельных карточек нет.
 
 `docs/archive/` не проверяется: документы прежнего объёма заморожены, их относительные
 ссылки сломались при переезде на уровень ниже, и чинить их незачем — они не действуют.
@@ -35,27 +33,21 @@ def markdown_files() -> list[Path]:
     ]
 
 
-def check_ticket_numbering(errors: list[str]) -> None:
-    numbers: list[int] = []
-    for path in sorted((ROOT / "docs" / "tickets").glob("*.md")):
-        if path.name == "INDEX.md":
-            continue
-        numbers.extend(
-            int(n) for n in TICKET_RE.findall(path.read_text(encoding="utf-8"))
-        )
-
-    duplicates = {n for n in numbers if numbers.count(n) > 1}
-    if duplicates:
-        errors.append(f"дублирующиеся номера тикетов: {sorted(duplicates)}")
-
-    ordered = sorted(set(numbers))
-    if not ordered:
-        errors.append("не найдено ни одного тикета в docs/tickets")
-        return
-
-    print(
-        f"тикетов с карточками: {len(ordered)} (ORB-{ordered[0]:03d}…ORB-{ordered[-1]:03d})"
-    )
+def check_key_documents(errors: list[str]) -> None:
+    """Документы, на которые опирается весь процесс, должны существовать."""
+    required = [
+        "tz/TZ-ORBITA-v2.0.md",
+        "CLAUDE.md",
+        "docs/PLAN.md",
+        "docs/CONTEXT.md",
+        "docs/ARCHITECTURE.md",
+        "docs/OPEN-QUESTIONS.md",
+    ]
+    missing = [name for name in required if not (ROOT / name).exists()]
+    if missing:
+        errors.append(f"нет обязательных документов: {', '.join(missing)}")
+    else:
+        print(f"обязательных документов на месте: {len(required)}")
 
 
 def check_links(errors: list[str]) -> None:
@@ -73,7 +65,7 @@ def check_links(errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
-    check_ticket_numbering(errors)
+    check_key_documents(errors)
     check_links(errors)
 
     if errors:
