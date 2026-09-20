@@ -1,38 +1,28 @@
-"""Пользователи системы и сотрудники агентства.
-
-Две разные таблицы для двух разных понятий — обоснование в `app.domain.people`.
-"""
+"""Люди: сотрудники и пользователи — два разных понятия (`app.domain.people`)."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    ForeignKey,
-    Index,
-    String,
-    Text,
-)
-from sqlalchemy.dialects.postgresql import CITEXT
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
 
 
-class Person(Auditable, UUIDPrimaryKey, Timestamps, Base):
-    """Сотрудник агентства.
+class Person(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
+    """Сотрудник агентства или Центра. В систему не входит.
 
-    В систему не входит. Существует, чтобы было понятно, с кого спрашивать: куратор
-    проекта, исполнитель задачи, участник встречи.
-
-    Первая журналируемая сущность (ORB-009): смена куратора или должности — деловое
+    Существует, чтобы было понятно, с кого спрашивать: ответственный за проект, задачу,
+    поручение, запрос сведений. Журналируется: смена должности или подразделения — деловое
     изменение, и вопрос «кто это поменял» по ней возникает так же, как по проекту.
 
-    Почта необязательна и не уникальна как учётные данные: это способ связи, а не логин.
-    Уникален только адрес пользователя (`users.email`), потому что по нему входят.
+    Почта и телефон — способ связи, а не учётные данные: входа по ним нет и не будет
+    ([ADR-0029](../../../docs/adr/ADR-0029-access-by-link.md)), поэтому они необязательны
+    и не уникальны.
     """
 
     __tablename__ = "people"
@@ -40,67 +30,58 @@ class Person(Auditable, UUIDPrimaryKey, Timestamps, Base):
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
     position: Mapped[str | None] = mapped_column(String(200), nullable=True)
     department: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    email: Mapped[str | None] = mapped_column(CITEXT, nullable=True)
+
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+    )
+    """Агентство или Центр (ТЗ 3.8).
+
+    Пусто означает агентство: заводить запись «Ўзбеккосмос» ради того, чтобы проставить
+    её каждому из десятков сотрудников, — это ввод, который ничего не сообщает.
+    """
+
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    external_seta_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
-    """Тот же сотрудник в SETA. Нужен, чтобы узнавать гостя, участника встречи или
-    исполнителя поручения между прогонами обмена, а не заводить его заново каждый раз
-    ([договор с SETA](../../../../docs/integration/SETA-ORBITA.md), раздел 5)."""
-
-    __table_args__ = (
-        # Поиск по ФИО — основной способ выбрать куратора в форме создания (ТЗ 10.5:
-        # не более трёх шагов). Полноценный поиск на трёх письменностях — ORB-033.
-        Index("ix_people_full_name", "full_name"),
-    )
+    __table_args__ = (Index("ix_people_full_name", "full_name"),)
 
 
 class User(UUIDPrimaryKey, Timestamps, Base):
-    """Пользователь системы. Их двое (ADR-0011).
+    """Пользователь системы. Их ровно двое: помощник и руководитель (ТЗ 3.8).
 
-    `external_seta_id` заведён с первой миграции, хотя SETA ещё в разработке: добавить
-    столбец в заполненную таблицу дороже, чем оставить его пустым
-    ([ADR-0001](../../../docs/adr/ADR-0001-architecture-variant.md)).
+    Роль уникальна: третьего пользователя нет, и его появление — пересмотр решения о
+    доступе целиком, а не строка в таблице (вопрос V9 в открытых).
+
+    Ни адреса почты, ни пароля здесь нет: вход — это личная ссылка, и опознаёт человека
+    она. Часового пояса тоже нет: он один на всю систему, `Asia/Tashkent` (инвариант 8);
+    хранить его у пользователя значило бы разрешить двум людям видеть разные сроки у
+    одного поручения.
+
+    Версии у записи нет намеренно: её не правят двое — её вообще почти не правят.
     """
 
     __tablename__ = "users"
 
-    email: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
-
-    role: Mapped[str] = mapped_column(String(20), nullable=False)
-    """Роль из `app.domain.people.Role`.
-
-    Хранится строкой, а не типом-перечислением PostgreSQL: добавить значение в
-    перечисление базы можно только миграцией с блокировкой таблицы, а строка проверяется
-    на входе в приложении. При двух ролях выигрыш типа не окупает эту жёсткость.
-    """
+    role: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
 
     person_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("people.id", ondelete="SET NULL"),
-        nullable=True,
+        UUID(as_uuid=True), ForeignKey("people.id", ondelete="SET NULL"), nullable=True
     )
-    """Тот же человек в справочнике сотрудников.
-
-    Помощник и руководитель — тоже сотрудники агентства: на них записывают проекты.
-    Связь необязательная, чтобы завести пользователя можно было и без карточки сотрудника.
-    """
-
-    person: Mapped[Person | None] = relationship(lazy="joined")
-
-    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
-    """Получатель сообщений бота. Белый список — это буквально непустые значения
-    этого столбца ([ADR-0013](../../../docs/adr/ADR-0013-telegram-bot.md)).
-
-    Тип задан явно: `Mapped[int]` означает `Integer`, а Telegram выдаёт 64-битные
-    идентификаторы с 2021 года. Неявный тип означал, что база и код ошибались
-    одинаково, и расхождение со [SPEC.md](../../../docs/SPEC.md) не поймал ни один
-    тест (исправлено миграцией 0014)."""
-
-    external_seta_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    """Помощник и руководитель — тоже сотрудники агентства. Связь необязательная и
+    односторонняя: у сотрудника ссылки на пользователя нет."""
 
     locale: Mapped[str] = mapped_column(String(10), nullable=False, default="ru")
-    timezone: Mapped[str] = mapped_column(String(50), nullable=False, default="Asia/Tashkent")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    last_visit_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Когда пользователь смотрел систему в прошлый раз.
+
+    Отсюда берётся «С прошлого визита» (ТЗ 4) — строка, ради которой руководитель и
+    открывает Пульт после поездки. Отметка сдвигается при входе, а не при каждом запросе:
+    иначе «прошлый визит» всегда оказывался бы пятнадцатью секундами назад.
+    """

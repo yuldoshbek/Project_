@@ -41,7 +41,7 @@ from app.domain.ijro import (
     IjroState,
     ImportState,
 )
-from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
 
 
@@ -99,7 +99,7 @@ class IjroDocument(Auditable, UUIDPrimaryKey, Timestamps, Base):
     )
 
 
-class IjroAssignment(Auditable, UUIDPrimaryKey, Timestamps, Base):
+class IjroAssignment(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     """Поручение — строка контрольной таблицы.
 
     Ключ повтора — `(документ, банд, срок)`. Проверено на всех 165 строках: **164 группы**,

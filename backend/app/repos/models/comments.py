@@ -19,13 +19,13 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.comments import CommentTarget
-from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
 
 TARGETS = ", ".join(f"'{target.value}'" for target in CommentTarget)
 
 
-class Comment(Auditable, UUIDPrimaryKey, Timestamps, Base):
+class Comment(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     """Реплика в обсуждении проекта или задачи (ТЗ 6.1, 6.2)."""
 
     __tablename__ = "comments"

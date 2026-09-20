@@ -114,15 +114,20 @@ async def open_by_link(
 
 
 @router.get("/me", response_model=CurrentUserResponse, summary="Кто я")
-async def whoami(user: CurrentUser) -> CurrentUserResponse:
-    """Первый запрос интерфейса после загрузки: есть ли сессия и кто её открыл."""
+async def whoami(user: CurrentUser, settings: SettingsDep) -> CurrentUserResponse:
+    """Первый запрос интерфейса после загрузки: есть ли сессия и кто её открыл.
+
+    Часовой пояс приходит из настроек системы, а не из записи пользователя: он один на
+    всех (инвариант 8). Двое, видящих у одного поручения разные сроки, — это спор, в
+    котором оба правы.
+    """
     role = Role(user.role)
     return CurrentUserResponse(
         id=str(user.id),
         full_name=user.full_name,
         role=role,
         locale=user.locale,
-        timezone=user.timezone,
+        timezone=settings.timezone,
         can_write=role.can_write,
     )
 
