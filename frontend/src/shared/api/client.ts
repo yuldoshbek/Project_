@@ -37,6 +37,11 @@ export class ApiError extends Error {
   get readOnly(): boolean {
     return this.status === 403;
   }
+
+  /** Отказ, который повтор запроса не исправит: нет сессии или роль не позволяет. */
+  get refusal(): boolean {
+    return this.needsLink || this.readOnly;
+  }
 }
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -98,6 +103,3 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   return (await response.json()) as T;
 }
-
-/** Обновление данными: 15 секунд — компромисс из ADR-0034. */
-export const POLL_INTERVAL_MS = 15_000;

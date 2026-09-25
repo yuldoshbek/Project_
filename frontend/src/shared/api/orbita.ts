@@ -8,7 +8,7 @@
  * инструмент дороже задачи.
  */
 
-import { POLL_INTERVAL_MS, request } from './client';
+import { request } from './client';
 
 export type Role = 'assistant' | 'leader';
 
@@ -77,5 +77,3 @@ export const api = {
   /** Устройства, с которых открыт доступ. Чужой вход виден лишней строкой. */
   sessions: (role: Role) => request<DeviceSession[]>(`/api/access/sessions/${role}`),
 };
-
-export { POLL_INTERVAL_MS };
