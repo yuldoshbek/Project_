@@ -24,14 +24,16 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.access import (
+    MIN_GIVEN_TOKEN_LENGTH,
     SessionWindow,
     fingerprint,
+    is_acceptable_given_token,
     is_alive,
     link_for,
     needs_touch,
     new_token,
 )
-from app.domain.errors import NotAuthenticatedError, NotFoundError
+from app.domain.errors import NotAuthenticatedError, NotFoundError, RuleViolationError
 from app.repos.models import AccessLink, Session, User
 
 
@@ -59,13 +61,23 @@ async def issue_link(
     secret: str,
     base_url: str,
     now: datetime,
+    token: str | None = None,
 ) -> IssuedLink:
     """Выпускает пользователю новую ссылку и гасит все его сессии.
 
     Перевыпуск — это не «обновить адрес», а «закрыть доступ прежнему владельцу ссылки».
     Поэтому сессии гасятся здесь же, а не отдельной кнопкой, которую забудут нажать.
+
+    `token` задаётся только для первой ссылки в облаке (`app.access_cli --token-from-env`):
+    его знает заказчик, и печатать ссылку в журнал не нужно. Обычный перевыпуск всегда
+    берёт случайный.
     """
-    token = new_token()
+    if token is not None and not is_acceptable_given_token(token):
+        raise RuleViolationError(
+            f"Токен ссылки слишком простой: нужно не меньше {MIN_GIVEN_TOKEN_LENGTH} символов "
+            "из латиницы, цифр, «-» и «_»"
+        )
+    token = token or new_token()
     link = await session.scalar(select(AccessLink).where(AccessLink.user_id == user.id))
 
     if link is None:

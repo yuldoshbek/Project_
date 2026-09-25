@@ -59,18 +59,19 @@ jobs:
         if: steps.keys.outputs.ready == 'true'
         run: |
           name="snapshot-$(date --utc +%Y-%m-%d)"
-          uri="$(scripts/neon.sh branch-uri "$name")"
-          echo "::add-mask::$uri"
           # Проверяем не «база отвечает», а «в схеме orbita есть таблицы»: пустая копия
           # тоже отвечает, и именно так копия оказывается бесполезной в нужный день.
-          tables="$(psql "$uri" --tuples-only --no-align --command "select count(*) from information_schema.tables where table_schema = 'orbita'")"
+          # Вычислитель на время проверки поднимает и убирает сам скрипт.
+          tables="$(scripts/neon.sh snapshot-check "$name")"
           echo "таблиц в схеме orbita: $tables"
           test "$tables" -gt 0
           echo "Снимок \`$name\`: таблиц в схеме — $tables" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Убрать снимки старше недели
         if: steps.keys.outputs.ready == 'true'
-        run: scripts/neon.sh prune snapshot 7
+        # Сколько дней хранить — переменная репозитория: у бесплатного тарифа Neon лимит
+        # веток на проект, а снимки делят его с production, demo и превью (docs/SETUP.md).
+        run: scripts/neon.sh prune snapshot "${{ vars.BACKUP_KEEP_DAYS || '7' }}"
 
       # Молчаливо упавшая копия — худший вид отказа: о нём узнают в день, когда нужно
       # восстановиться. Поэтому падение открывает задачу в репозитории.

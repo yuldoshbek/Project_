@@ -48,6 +48,7 @@ jobs:
         env:
           API_ORIGIN: ${{ secrets.PRODUCTION_API_ORIGIN }}
           JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+          EVENT: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
           MANUAL_JOB: ${{ inputs.job }}
         run: |
@@ -60,12 +61,27 @@ jobs:
             exit 0
           fi
 
-          case "$SCHEDULE" in
-            '30 3 * * *') job=morning-summary ;;
-            '50 18 * * *') job=daily-snapshot ;;
-            '0 * * * *') job=deadline-check ;;
-            *) job="$MANUAL_JOB" ;;
-          esac
+          # Строки case обязаны совпадать со строками cron выше символ в символ: GitHub
+          # передаёт в github.event.schedule ровно строку расписания. Совпадение держит
+          # тест backend/tests/test_jobs.py — прежде ежечасная строка разошлась с case,
+          # и проверка сроков молча не запускалась ни разу.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            job="$MANUAL_JOB"
+          else
+            case "$SCHEDULE" in
+              '30 3 * * *') job=morning-summary ;;
+              '50 18 * * *') job=daily-snapshot ;;
+              '0 4-14 * * 1-6') job=deadline-check ;;
+              *)
+                echo "::error::Расписание «$SCHEDULE» не сопоставлено задаче — поправьте case рядом с cron"
+                exit 1
+                ;;
+            esac
+          fi
+          if [ -z "$job" ]; then
+            echo "::error::Имя задачи пусто"
+            exit 1
+          fi
           echo "задача: $job"
 
           # Три попытки: функция может подниматься из холодного состояния дольше, чем

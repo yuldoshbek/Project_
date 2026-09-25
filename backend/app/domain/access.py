@@ -45,6 +45,23 @@ def new_token() -> str:
     return secrets.token_urlsafe(TOKEN_BYTES)
 
 
+MIN_GIVEN_TOKEN_LENGTH = 43
+"""Длина `token_urlsafe(32)`: заданный извне токен не слабее того, что выпускает система."""
+
+_URL_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+
+
+def is_acceptable_given_token(token: str) -> bool:
+    """Годится ли токен, заданный человеком, а не системой.
+
+    Нужен первой ссылке в облаке: её токен заказчик кладёт в секрет GitHub, и ссылку
+    собирает сам — иначе её пришлось бы печатать в журнал прогона публичного репозитория.
+    Правило то же, что у выпускаемых: не короче и только символы, которые не меняются в
+    адресе.
+    """
+    return len(token) >= MIN_GIVEN_TOKEN_LENGTH and set(token) <= _URL_SAFE
+
+
 def fingerprint(token: str, secret: str) -> str:
     """Отпечаток токена. Только он попадает в базу."""
     return hmac.new(secret.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()

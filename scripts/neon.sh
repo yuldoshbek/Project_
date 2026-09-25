@@ -18,6 +18,7 @@
 #   scripts/neon.sh branch-uri    <имя>
 #   scripts/neon.sh branch-delete <имя>
 #   scripts/neon.sh snapshot      <префикс> <родитель>
+#   scripts/neon.sh snapshot-check <имя ветки>
 #   scripts/neon.sh prune         <префикс> <дней>
 
 set -euo pipefail
@@ -120,6 +121,25 @@ cmd_snapshot() {
   echo "снимок «$name» создан"
 }
 
+# Проверка снимка: в схеме orbita есть таблицы. Печатает их число, и только его.
+#
+# У снимка своего вычислителя нет (см. cmd_snapshot), а строку подключения Neon выдаёт
+# только ветке с вычислителем — прежде проверка просила её у голой ветки и падала каждую
+# ночь. Поэтому вычислитель поднимается на время проверки и удаляется при любом исходе.
+# Строка подключения из скрипта не выходит: в журнал прогона ей попадать незачем.
+cmd_snapshot_check() {
+  local name="$1" id endpoint uri
+  id="$(require_branch_id "$name")"
+  endpoint="$(api POST /endpoints --data "$(jq -n --arg b "$id" \
+    '{endpoint: {branch_id: $b, type: "read_write"}}')" | jq -r '.endpoint.id')"
+  # shellcheck disable=SC2064 # значение нужно сейчас, а не в момент выхода
+  trap "api DELETE '/endpoints/${endpoint}' >/dev/null 2>&1 || true" EXIT
+  wait_ready "$id"
+  uri="$(cmd_branch_uri "$name")"
+  psql "$uri" --tuples-only --no-align --command \
+    "select count(*) from information_schema.tables where table_schema = 'orbita'"
+}
+
 # Уборка старых снимков: ветки живут за счёт изменений относительно родителя, и
 # накопленные снимки со временем перестают быть бесплатными.
 cmd_prune() {
@@ -140,6 +160,7 @@ case "${1:-}" in
   branch-uri)    cmd_branch_uri "${2:?нужно имя ветки}" ;;
   branch-delete) cmd_branch_delete "${2:?нужно имя ветки}" ;;
   snapshot)      cmd_snapshot "${2:?нужен префикс}" "${3:?нужен родитель}" ;;
+  snapshot-check) cmd_snapshot_check "${2:?нужно имя ветки}" ;;
   prune)         cmd_prune "${2:?нужен префикс}" "${3:?нужно число дней}" ;;
   *)
     sed -n '1,25p' "$0" >&2

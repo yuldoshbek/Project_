@@ -42,19 +42,34 @@ jobs:
     name: Ключи площадок
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    # Окружение обязательно: секреты PRODUCTION_* заведены в окружении production
+    # (docs/SETUP.md), а работе без него видны только секреты репозитория. Без этой
+    # строки проверка не видела ключей, которые на месте, и выкладка не начиналась никогда.
+    environment: production
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
       - id: check
+        # Все ключи, которые читают работы ниже, а не часть: иначе проверка пропускает
+        # выкладку, которая упадёт через десять минут на середине.
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          PRODUCTION_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          PRODUCTION_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          PRODUCTION_API_ORIGIN: ${{ secrets.PRODUCTION_API_ORIGIN }}
         run: |
           missing=""
-          [ -n "$VERCEL_TOKEN" ]       || missing="$missing VERCEL_TOKEN"
-          [ -n "$NETLIFY_AUTH_TOKEN" ] || missing="$missing NETLIFY_AUTH_TOKEN"
-          [ -n "$DATABASE_URL" ]       || missing="$missing PRODUCTION_DATABASE_URL"
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID NETLIFY_AUTH_TOKEN \
+            NETLIFY_SITE_ID PRODUCTION_DATABASE_URL PRODUCTION_SESSION_SECRET \
+            PRODUCTION_JOBS_SECRET PRODUCTION_URL PRODUCTION_API_ORIGIN; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
           if [ -n "$missing" ]; then
             {
               echo "### Выкладка невозможна"
@@ -118,8 +133,42 @@ jobs:
           ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
         run: uv run alembic upgrade head
 
-      - name: API на Vercel
+      # Справочники — отдельная команда, а не часть миграции. Повтор ничего не задваивает и
+      # не затирает правки помощника (ON CONFLICT DO NOTHING), поэтому шаг идёт на каждой
+      # выкладке: новое значение справочника доезжает вместе с кодом, который его ждёт.
+      - name: Справочники
         working-directory: backend
+        env:
+          ORBITA_ENV: production
+          ORBITA_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+        run: uv run python -m app.seed
+
+      # Первая ссылка помощника — по токену из секрета, без печати ссылки: журнал прогона
+      # публичного репозитория читает кто угодно. Ссылка, которая уже есть, не
+      # перевыпускается, и открытые сессии не гаснут. Дальше ссылки выпускаются в
+      # «Управлении».
+      - name: Первая ссылка помощника
+        working-directory: backend
+        env:
+          ORBITA_ENV: production
+          ORBITA_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+          ORBITA_FIRST_ACCESS_TOKEN: ${{ secrets.PRODUCTION_FIRST_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$ORBITA_FIRST_ACCESS_TOKEN" ]; then
+            echo "Секрета PRODUCTION_FIRST_ACCESS_TOKEN нет — первая ссылка не выпускается (docs/SETUP.md, шаг 5)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          uv run python -m app.access_cli assistant \
+            --token-from-env ORBITA_FIRST_ACCESS_TOKEN --only-if-missing
+
+      # Из корня репозитория, а не из backend/: в проекте Vercel корневая папка задана
+      # `backend` (docs/SETUP.md), и CLI сам в неё переходит. Запуск из backend/ при такой
+      # настройке ищет backend/backend и падает.
+      - name: API на Vercel
         run: |
           npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
           npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"

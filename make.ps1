@@ -42,6 +42,7 @@ switch ($Target) {
   heads      Проверить, что голова миграций одна
   seed       Загрузить справочники
   job        Выполнить задачу: .\make.ps1 job morning-summary
+  dev        Запустить backend (отдельное окно) и frontend
   dev-back   Запустить backend на :8000
   dev-front  Запустить frontend на :5173
   test       Прогнать все тесты
@@ -53,7 +54,7 @@ switch ($Target) {
   clean      Удалить кеши и артефакты сборки
 '@
     }
-    'doctor' { Invoke-In $root 'python' @('scripts/doctor.py') }
+    'doctor' { Invoke-In $root 'uv' @('run', '--no-project', 'python', 'scripts/doctor.py') }
     'install' {
         Invoke-In $backend 'uv' @('sync', '--all-groups')
         Invoke-In $frontend 'npm.cmd' @('ci')
@@ -74,6 +75,14 @@ switch ($Target) {
         if (-not $Name) { throw 'укажите задачу: .\make.ps1 job morning-summary' }
         Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.jobs.run', $Name)
     }
+    'dev' {
+        # Backend — в отдельном окне: два долгоживущих процесса в одной консоли PowerShell
+        # 5.1 перемешивают вывод, и остановить один, не убив другой, нельзя. Путь в
+        # кавычках: в нём пробел и кириллица.
+        $self = Join-Path $root 'make.ps1'
+        Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$self`" dev-back"
+        Invoke-In $frontend 'npm.cmd' @('run', 'dev')
+    }
     'dev-back' { Invoke-In $backend 'uv' @('run', 'uvicorn', 'app.main:app', '--reload', '--port', '8000') }
     'dev-front' { Invoke-In $frontend 'npm.cmd' @('run', 'dev') }
     'test' {
@@ -90,9 +99,9 @@ switch ($Target) {
         Invoke-In $frontend 'npm.cmd' @('run', 'lint:css')
         Invoke-In $frontend 'npm.cmd' @('run', 'typecheck')
         Invoke-In $frontend 'npm.cmd' @('run', 'fmt:check')
-        Invoke-In $root 'python' @('scripts/check_docs.py')
+        Invoke-In $root 'uv' @('run', '--no-project', 'python', 'scripts/check_docs.py')
     }
-    'docs' { Invoke-In $root 'python' @('scripts/check_docs.py') }
+    'docs' { Invoke-In $root 'uv' @('run', '--no-project', 'python', 'scripts/check_docs.py') }
     'fmt' {
         Invoke-In $backend 'uv' @('run', 'ruff', 'format', '.')
         Invoke-In $backend 'uv' @('run', 'ruff', 'check', '--fix', '.')

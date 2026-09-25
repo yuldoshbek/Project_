@@ -39,16 +39,27 @@ jobs:
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
+      # Все ключи, которые читают работы ниже, а не часть: иначе проверка пропускает
+      # превью, которое упадёт на середине, и красный прогон приучает не смотреть.
       - id: check
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          PREVIEW_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
+          PREVIEW_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
+          PREVIEW_ACCESS_TOKEN: ${{ secrets.PREVIEW_ACCESS_TOKEN }}
         run: |
           missing=""
-          [ -n "$NEON_API_KEY" ]       || missing="$missing NEON_API_KEY"
-          [ -n "$VERCEL_TOKEN" ]       || missing="$missing VERCEL_TOKEN"
-          [ -n "$NETLIFY_AUTH_TOKEN" ] || missing="$missing NETLIFY_AUTH_TOKEN"
+          for name in NEON_API_KEY NEON_PROJECT_ID VERCEL_TOKEN VERCEL_ORG_ID \
+            VERCEL_PROJECT_ID NETLIFY_AUTH_TOKEN NETLIFY_SITE_ID PREVIEW_SESSION_SECRET \
+            PREVIEW_JOBS_SECRET PREVIEW_ACCESS_TOKEN; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
           if [ -n "$missing" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             {
@@ -106,6 +117,22 @@ jobs:
           # проекты, задачи и поручения заводятся в блоке 1 (docs/audit/PLAN-10X.md).
           uv run python -m app.seed
 
+      # Без ссылки в превью не войти: «Управление», где ссылки перевыпускаются, само
+      # закрыто входом. Ссылка выпускается по токену из секрета и не печатается —
+      # журнал и комментарии публичного репозитория читает кто угодно. Адрес заказчик
+      # собирает сам по подсказке в комментарии PR.
+      - name: Ссылка помощника для превью
+        working-directory: backend
+        env:
+          ORBITA_ENV: preview
+          ORBITA_DATABASE_URL: ${{ steps.db.outputs.uri }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
+          ORBITA_FIRST_ACCESS_TOKEN: ${{ secrets.PREVIEW_ACCESS_TOKEN }}
+        run: |
+          uv run python -m app.access_cli assistant \
+            --token-from-env ORBITA_FIRST_ACCESS_TOKEN --only-if-missing
+
       # Адрес интерфейса нужен API раньше, чем интерфейс выложен: из ORBITA_BASE_URL
       # собираются личные ссылки доступа. Без него они указывают на localhost — то
       # есть заказчик не может войти именно в превью, ради которого всё и делается.
@@ -120,9 +147,10 @@ jobs:
           pr="${{ github.event.pull_request.number }}"
           echo "url=https://pr-$pr--$name.netlify.app" >> "$GITHUB_OUTPUT"
 
+      # Из корня репозитория: корневая папка `backend` задана в проекте Vercel, и CLI сам
+      # в неё переходит (docs/SETUP.md). Запуск из backend/ искал бы backend/backend.
       - name: API на Vercel
         id: api
-        working-directory: backend
         env:
           ORBITA_DATABASE_URL: ${{ steps.db.outputs.uri }}
           ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}

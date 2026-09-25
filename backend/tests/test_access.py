@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.router import API_PREFIX
 from app.api.security import Assistant
 from app.domain.access import SESSION_COOKIE, fingerprint, needs_touch
+from app.domain.errors import RuleViolationError
 from app.domain.people import Role
 from app.repos.models import AccessLink, User
 from app.repos.models import Session as SessionRecord
@@ -114,6 +115,52 @@ class TestSessionIsRequired:
 
         assert response.status_code == 401
         assert "ссылк" in response.json()["detail"].lower()
+
+
+class TestGivenToken:
+    """Первая ссылка в облаке — по токену, который заказчик кладёт в секрет.
+
+    Иначе её пришлось бы печатать в журнал прогона, а журналы публичного репозитория
+    читает кто угодно.
+    """
+
+    async def test_given_token_opens_a_session(
+        self, api: AsyncClient, session: AsyncSession, settings: Settings
+    ) -> None:
+        assistant = await session.scalar(select(User).where(User.role == Role.ASSISTANT.value))
+        assert assistant is not None
+        chosen = "z" * 20 + "-" + "A1_" * 8
+
+        issued = await access.issue_link(
+            session,
+            user=assistant,
+            secret=settings.session_secret.get_secret_value(),
+            base_url="http://test",
+            now=datetime.now(UTC),
+            token=chosen,
+        )
+
+        assert issued.url.endswith(f"/api/access/{chosen}")
+        response = await api.get(f"/api/access/{chosen}", follow_redirects=False)
+        assert response.status_code == 303
+
+    @pytest.mark.parametrize("weak", ["short", "с кириллицей" * 5, "a" * 42, "a" * 50 + "/"])
+    async def test_weak_given_token_is_refused(
+        self, session: AsyncSession, settings: Settings, weak: str
+    ) -> None:
+        """Заданный токен не слабее выпускаемого: 43 символа из алфавита адреса."""
+        assistant = await session.scalar(select(User).where(User.role == Role.ASSISTANT.value))
+        assert assistant is not None
+
+        with pytest.raises(RuleViolationError):
+            await access.issue_link(
+                session,
+                user=assistant,
+                secret=settings.session_secret.get_secret_value(),
+                base_url="http://test",
+                now=datetime.now(UTC),
+                token=weak,
+            )
 
 
 class TestOpeningByLink:

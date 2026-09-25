@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -24,6 +26,7 @@ from app.settings import Settings
 pytestmark = pytest.mark.infra
 
 SECRET_HEADER = "X-Orbita-Jobs-Secret"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestRegistry:
@@ -34,6 +37,21 @@ class TestRegistry:
         причину искать неделю.
         """
         assert set(all_jobs()) == {"morning-summary", "daily-snapshot", "deadline-check"}
+
+    def test_every_schedule_line_is_mapped_to_a_registered_job(self) -> None:
+        """Каждая строка cron в jobs.yml сопоставлена задаче, и такая задача есть.
+
+        GitHub передаёт в `github.event.schedule` строку расписания символ в символ, а
+        `case` по ней выбирает задачу. Разошлись — и задача молча не запускается: так
+        ежечасная проверка сроков не выполнилась ни разу, пока её не нашёл аудит.
+        """
+        workflow = (REPO_ROOT / ".github" / "workflows" / "jobs.yml").read_text(encoding="utf-8")
+        crons = set(re.findall(r"-\s*cron:\s*'([^']+)'", workflow))
+        mapped = dict(re.findall(r"^\s*'([^']+)'\)\s*job=([a-z-]+)\s*;;", workflow, re.MULTILINE))
+
+        assert crons, "в jobs.yml не нашлось ни одной строки cron — разбор сломан"
+        assert crons == set(mapped), f"cron без задачи или лишний case: {crons ^ set(mapped)}"
+        assert set(mapped.values()) <= set(all_jobs())
 
     def test_every_job_has_a_period_and_a_title(self) -> None:
         for job in all_jobs().values():

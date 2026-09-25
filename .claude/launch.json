@@ -2,12 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
-      "port": 5173
-    },
-    {
       "name": "backend",
       "runtimeExecutable": "uv",
       "runtimeArgs": [
@@ -16,11 +10,18 @@
         "backend",
         "uvicorn",
         "app.main:app",
-        "--reload",
+        "--host",
+        "127.0.0.1",
         "--port",
         "8000"
       ],
       "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--port", "5173", "--strictPort"],
+      "port": 5173
     }
   ]
 }
