@@ -16,11 +16,11 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
-    Index,
     Integer,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -65,9 +65,10 @@ class Direction(DictionaryEntry, Base):
 
 
 class Region(DictionaryEntry, Base):
-    """Регион: четырнадцать областей и город Ташкент (ТЗ 3.1).
+    """Регион — одна из 14 административных единиц (ТЗ 3.1).
 
-    Необязательное поле проекта. Заведён справочником, а не списком в коде, потому что
+    Двенадцать областей, Республика Каракалпакстан и город Ташкент. Необязательное поле
+    проекта. Заведён справочником, а не списком в коде, потому что
     вопрос «нужен ли руководителю срез по регионам» ещё открыт (V7): если нужен — срез
     собирается по этой таблице, если нет — поле остаётся пустым и никому не мешает.
     """
@@ -97,6 +98,12 @@ class ProjectTypeMilestone(UUIDPrimaryKey, LocalizedName, Timestamps, Base):
     `offset_days` — через сколько дней от начала проекта наступает срок вехи. Дни, а не
     доли срока: «согласование через месяц» — это то, что помощник знает, а «согласование
     на 40 % срока» — то, что ему пришлось бы вычислять.
+
+    **Место в шаблоне уникально** — пара «тип + порядок». Две вехи на одном месте не
+    имеют порядка между собой, и новый проект получал бы их то так, то этак. Эта же пара —
+    ключ, по которому наполнение (`app.seed`) узнаёт уже заведённую веху. Цена названа
+    вслух: переставить две вехи местами одним `UPDATE` нельзя, перестановка идёт через
+    временное значение порядка в одной транзакции.
     """
 
     __tablename__ = "project_type_milestones"
@@ -109,11 +116,7 @@ class ProjectTypeMilestone(UUIDPrimaryKey, LocalizedName, Timestamps, Base):
 
     __table_args__ = (
         CheckConstraint("offset_days >= 0", name="offset_is_not_negative"),
-        Index(
-            "ix_project_type_milestones_project_type_id_sort_order",
-            "project_type_id",
-            "sort_order",
-        ),
+        UniqueConstraint("project_type_id", "sort_order"),
     )
 
 
@@ -156,11 +159,18 @@ class Organization(Auditable, UUIDPrimaryKey, Timestamps, Base):
 
     Журналируется: смена вида или названия — деловое изменение, и вопрос «кто это
     поменял» по ней возникает.
+
+    **Название уникально**, и это ключ, а не только поиск. Технического кода у
+    организации нет и не заводится: ТЗ 3.4 его не называет, а помощник знает организацию
+    по названию. Две строки с одним названием — это одна организация, заведённая дважды:
+    роли в проектах и написания из таблиц «Ижро» разошлись бы по двум записям, и срез «что
+    держит Центр» потерял бы половину. Тот же ключ узнаёт Центр при повторном наполнении
+    (`app.seed`).
     """
 
     __tablename__ = "organizations"
 
-    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
     short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     is_founded_by_agency: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -174,7 +184,6 @@ class Organization(Auditable, UUIDPrimaryKey, Timestamps, Base):
             "country_code IS NULL OR country_code = upper(country_code)",
             name="country_code_upper",
         ),
-        Index("ix_organizations_name", "name"),
     )
 
 

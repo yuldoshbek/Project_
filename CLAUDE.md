@@ -41,7 +41,7 @@
 | Слой | Технология |
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2.x (async), Pydantic v2 |
-| БД | PostgreSQL 16, схема `orbita`; расширения `pg_trgm`, `unaccent`, `citext`, `pgcrypto` |
+| БД | PostgreSQL 16, схема `orbita`; расширения `pg_trgm`, `unaccent`, `pgcrypto` |
 | Миграции | Alembic — единственный способ менять схему |
 | Фон | задачи по расписанию через защищённый эндпоинт; **постоянного воркера и Redis нет** |
 | Файлы | порт `FileStorage`: Vercel Blob в облаке, S3‑совместимое хранилище на своём сервере |

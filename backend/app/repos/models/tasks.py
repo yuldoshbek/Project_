@@ -67,9 +67,7 @@ class Task(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     )
 
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    original_due_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    original_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     """Первый срок. Ведётся системой: появляется вместе с первым назначенным сроком."""
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

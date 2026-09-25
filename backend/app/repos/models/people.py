@@ -5,12 +5,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.people import Role
 from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
+
+ROLES = ", ".join(f"'{role.value}'" for role in Role)
 
 
 class Person(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
@@ -32,12 +35,17 @@ class Person(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     department: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True
     )
     """Агентство или Центр (ТЗ 3.8).
 
     Пусто означает агентство: заводить запись «Ўзбеккосмос» ради того, чтобы проставить
     её каждому из десятков сотрудников, — это ввод, который ничего не сообщает.
+
+    Именно поэтому удаление организации **запрещено**, пока на неё ссылаются сотрудники
+    (`RESTRICT`, а не `SET NULL`): обнулённая ссылка читалась бы как «агентство», и
+    удаление Центра молча переводило бы его людей в штат агентства. Организацию, с
+    которой больше не работают, отключают признаком `is_active`.
     """
 
     email: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -52,7 +60,9 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     """Пользователь системы. Их ровно двое: помощник и руководитель (ТЗ 3.8).
 
     Роль уникальна: третьего пользователя нет, и его появление — пересмотр решения о
-    доступе целиком, а не строка в таблице (вопрос V9 в открытых).
+    доступе целиком, а не строка в таблице (вопрос V9 в открытых). Значений роли два, и
+    их держит сама база (`role_is_known`): доступ опирается на роль, и строка с ролью,
+    которой код не знает, — это пользователь, чьи права никто не определял.
 
     Ни адреса почты, ни пароля здесь нет: вход — это личная ссылка, и опознаёт человека
     она. Часового пояса тоже нет: он один на всю систему, `Asia/Tashkent` (инвариант 8);
@@ -76,12 +86,12 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     locale: Mapped[str] = mapped_column(String(10), nullable=False, default="ru")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    last_visit_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_visit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     """Когда пользователь смотрел систему в прошлый раз.
 
     Отсюда берётся «С прошлого визита» (ТЗ 4) — строка, ради которой руководитель и
     открывает Пульт после поездки. Отметка сдвигается при входе, а не при каждом запросе:
     иначе «прошлый визит» всегда оказывался бы пятнадцатью секундами назад.
     """
+
+    __table_args__ = (CheckConstraint(f"role IN ({ROLES})", name="role_is_known"),)

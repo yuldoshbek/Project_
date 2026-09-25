@@ -1,28 +1,37 @@
-"""Базовая схема ORBITA
+"""Базовая схема ORBITA под ТЗ v2.0
 
-Одна миграция вместо восемнадцати прежних. Так сделано не ради красоты истории: прежние
-восемнадцать несли на себе снятые решения — гриф и признак выдачи наружу, вход по паролю,
-вложения с антивирусом, обмен с SETA, — и накат чистой базы воспроизводил их, чтобы
-следующая миграция тут же убрала. Рабочей базы с реальными данными ещё нет, поэтому это
-последний момент, когда историю можно свести к одному честному началу
-([ADR-0027](../../../docs/adr/ADR-0027-rebuild-v3.md)).
+Одна миграция, и это не первая её редакция. 20.09 восемнадцать прежних миграций были
+сведены в одну: они несли на себе снятые решения — гриф, вход по паролю, вложения с
+антивирусом, обмен с SETA ([ADR-0027](../../../docs/adr/ADR-0027-rebuild-v3.md)). 25.09 та
+же ревизия пересобрана по моделям под раздел 3 ТЗ v2.0: типы проектов с шаблонами вех,
+подпроекты, роли организаций, решения руководителя, годовые циклы, поле версии у
+редактируемых записей. Вторая миграция поверх первой воспроизводила бы при каждом накате
+схему, которую тут же сносит, — а рабочей базы с данными ещё нет, и переписать начало
+пока стоит одного файла.
 
-Что здесь есть, кроме таблиц:
+Автогенерация видит не всё, поэтому руками здесь дописано:
 
-- **Расширения PostgreSQL.** Без `pg_trgm` и `unaccent` не собрать поиск, без `pgcrypto`
-  не выдать первичные ключи, без `citext` не работает регистронезависимый адрес почты.
-  Проверка стоит первой, чтобы отсутствие расширения обнаруживалось здесь, а не через
-  десять таблиц на создании индекса — с сообщением о чём угодно, кроме причины.
-- **Неизменяемость журнала.** Триггеры и отзыв прав: журнал, который может подчистить тот
-  же код, что в него пишет, ничего не доказывает
+- **Расширения PostgreSQL.** Без `pgcrypto` не выдать первичные ключи
+  (`gen_random_uuid`), без `pg_trgm` и `unaccent` не собрать поиск по трём письменностям
+  ([ADR-0006](../../../docs/adr/ADR-0006-multiscript-search.md)). Проверка стоит первой,
+  чтобы отсутствие расширения обнаруживалось здесь, а не через десять таблиц на создании
+  индекса — с сообщением о чём угодно, кроме причины. `citext` больше не нужен: столбцов
+  этого типа в схеме нет — адреса почты у пользователей сняты вместе со входом по паролю.
+- **Неизменяемость журнала.** Триггеры на `UPDATE`, `DELETE` и `TRUNCATE` плюс отзыв прав:
+  журнал, который может подчистить тот же код, что в него пишет, ничего не доказывает
   ([ADR-0010](../../../docs/adr/ADR-0010-audit-log.md)).
+
+Что автогенерация создаёт сама, но `alembic check` потом **не сравнивает** — ограничения
+`CHECK`, условия частичных индексов, `NULLS NOT DISTINCT`. Их совпадение с моделями
+сверено руками и стережётся тестами поведения (`test_ijro_schema`, `test_migrations`),
+а не сравнением схем.
 
 Схему `orbita` создаёт `env.py` до запуска миграций: Alembic должен где-то завести таблицу
 версий, а она уже живёт в этой схеме.
 
 Ревизия: 0001_foundation
 Предыдущая: нет
-Создана: 2026-09-20
+Создана: 2026-09-20, пересобрана 2026-09-25
 """
 
 from __future__ import annotations
@@ -39,10 +48,9 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 REQUIRED_EXTENSIONS: tuple[tuple[str, str], ...] = (
+    ("pgcrypto", "gen_random_uuid для первичных ключей"),
     ("pg_trgm", "поиск с опечатками и частичным вводом"),
     ("unaccent", "снятие диакритики при нормализации поискового текста"),
-    ("citext", "регистронезависимый адрес электронной почты"),
-    ("pgcrypto", "gen_random_uuid для первичных ключей"),
 )
 
 APPEND_ONLY_FUNCTION = """
@@ -68,8 +76,8 @@ def create_extensions() -> None:
 
         # В разработке расширения включает init-скрипт контейнера, в облаке они уже
         # установлены, на сервере агентства их поставит администратор базы: CREATE
-        # EXTENSION требует прав суперпользователя, которых у приложения быть не должно.
-        # Попытка всё же делается: там, где прав хватает, миграция проходит сама.
+        # EXTENSION требует прав, которых у приложения быть не должно. Попытка всё же
+        # делается: там, где прав хватает, миграция проходит сама.
         try:
             connection.exec_driver_sql(f'CREATE EXTENSION IF NOT EXISTS "{name}"')
         except sa.exc.DBAPIError as error:
@@ -101,6 +109,12 @@ def protect_audit_log() -> None:
 
 
 def unprotect_audit_log() -> None:
+    """Снимает защиту журнала — только ради отката, перед удалением самой таблицы.
+
+    Порядок важен: пока триггеры на месте, `DROP TABLE` проходит (удаление таблицы не
+    `DELETE` и не `TRUNCATE`), но функция, на которую они ссылаются, не удаляется раньше
+    них.
+    """
     op.execute("DROP TRIGGER IF EXISTS audit_log_no_truncate ON audit_log")
     op.execute("DROP TRIGGER IF EXISTS audit_log_no_delete ON audit_log")
     op.execute("DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log")
@@ -191,8 +205,9 @@ def upgrade() -> None:
         "organizations",
         sa.Column("name", sa.String(length=300), nullable=False),
         sa.Column("short_name", sa.String(length=100), nullable=True),
-        sa.Column("country_code", sa.String(length=2), nullable=True),
         sa.Column("kind", sa.String(length=30), nullable=False),
+        sa.Column("is_founded_by_agency", sa.Boolean(), nullable=False),
+        sa.Column("country_code", sa.String(length=2), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -204,53 +219,15 @@ def upgrade() -> None:
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
+            "kind IN ('ministry', 'agency', 'khokimiyat', 'international', 'company')",
+            name=op.f("ck_organizations_kind_is_known"),
+        ),
+        sa.CheckConstraint(
             "country_code IS NULL OR country_code = upper(country_code)",
             name=op.f("ck_organizations_country_code_upper"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_organizations")),
-    )
-    op.create_table(
-        "people",
-        sa.Column("full_name", sa.String(length=200), nullable=False),
-        sa.Column("position", sa.String(length=200), nullable=True),
-        sa.Column("department", sa.String(length=200), nullable=True),
-        sa.Column("email", postgresql.CITEXT(), nullable=True),
-        sa.Column("phone", sa.String(length=50), nullable=True),
-        sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("external_seta_id", sa.String(length=100), nullable=True),
-        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_people")),
-        sa.UniqueConstraint("external_seta_id", name=op.f("uq_people_external_seta_id")),
-    )
-    op.create_index("ix_people_full_name", "people", ["full_name"], unique=False)
-    op.create_table(
-        "priorities",
-        sa.Column("color", sa.String(length=20), nullable=False),
-        sa.Column("warn_days_override", sa.SmallInteger(), nullable=True),
-        sa.Column("code", sa.String(length=50), nullable=False),
-        sa.Column("sort_order", sa.SmallInteger(), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
-        sa.Column("name_ru", sa.String(length=200), nullable=False),
-        sa.Column("name_uz_cyrl", sa.String(length=200), nullable=False),
-        sa.Column("name_uz_latn", sa.String(length=200), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_priorities")),
-        sa.UniqueConstraint("code", name=op.f("uq_priorities_code")),
+        sa.UniqueConstraint("name", name=op.f("uq_organizations_name")),
     )
     op.create_table(
         "project_statuses",
@@ -275,11 +252,49 @@ def upgrade() -> None:
         sa.UniqueConstraint("code", name=op.f("uq_project_statuses_code")),
     )
     op.create_table(
+        "project_types",
+        sa.Column("code", sa.String(length=50), nullable=False),
+        sa.Column("sort_order", sa.SmallInteger(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("name_ru", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_cyrl", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_latn", sa.String(length=200), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_project_types")),
+        sa.UniqueConstraint("code", name=op.f("uq_project_types_code")),
+    )
+    op.create_table(
+        "regions",
+        sa.Column("code", sa.String(length=50), nullable=False),
+        sa.Column("sort_order", sa.SmallInteger(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("name_ru", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_cyrl", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_latn", sa.String(length=200), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_regions")),
+        sa.UniqueConstraint("code", name=op.f("uq_regions_code")),
+    )
+    op.create_table(
         "settings",
         sa.Column("key", sa.String(length=50), nullable=False),
         sa.Column("value", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("description_ru", sa.Text(), nullable=False),
         sa.Column("value_type", sa.String(length=20), nullable=False),
+        sa.Column("description_ru", sa.Text(), nullable=False),
         sa.Column("min_value", sa.Integer(), nullable=True),
         sa.Column("max_value", sa.Integer(), nullable=True),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -292,21 +307,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_settings")),
         sa.UniqueConstraint("key", name=op.f("uq_settings_key")),
-    )
-    op.create_table(
-        "tags",
-        sa.Column("name", postgresql.CITEXT(), nullable=False),
-        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
-        sa.CheckConstraint("char_length(name) BETWEEN 1 AND 50", name=op.f("ck_tags_name_length")),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_tags")),
-        sa.UniqueConstraint("name", name=op.f("uq_tags_name")),
     )
     op.create_table(
         "task_statuses",
@@ -328,6 +328,25 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_task_statuses")),
         sa.UniqueConstraint("code", name=op.f("uq_task_statuses_code")),
+    )
+    op.create_table(
+        "task_types",
+        sa.Column("code", sa.String(length=50), nullable=False),
+        sa.Column("sort_order", sa.SmallInteger(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("name_ru", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_cyrl", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_latn", sa.String(length=200), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_task_types")),
+        sa.UniqueConstraint("code", name=op.f("uq_task_types_code")),
     )
     op.create_table(
         "ijro_org_aliases",
@@ -353,6 +372,66 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_ijro_org_aliases")),
         sa.UniqueConstraint("alias_norm", name=op.f("uq_ijro_org_aliases_alias_norm")),
+    )
+    op.create_table(
+        "people",
+        sa.Column("full_name", sa.String(length=200), nullable=False),
+        sa.Column("position", sa.String(length=200), nullable=True),
+        sa.Column("department", sa.String(length=200), nullable=True),
+        sa.Column("organization_id", sa.UUID(), nullable=True),
+        sa.Column("email", sa.String(length=200), nullable=True),
+        sa.Column("phone", sa.String(length=50), nullable=True),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_people_organization_id_organizations"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_people")),
+    )
+    op.create_index("ix_people_full_name", "people", ["full_name"], unique=False)
+    op.create_table(
+        "project_type_milestones",
+        sa.Column("project_type_id", sa.UUID(), nullable=False),
+        sa.Column("offset_days", sa.Integer(), nullable=False),
+        sa.Column("sort_order", sa.SmallInteger(), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column("name_ru", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_cyrl", sa.String(length=200), nullable=False),
+        sa.Column("name_uz_latn", sa.String(length=200), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "offset_days >= 0", name=op.f("ck_project_type_milestones_offset_is_not_negative")
+        ),
+        sa.ForeignKeyConstraint(
+            ["project_type_id"],
+            ["project_types.id"],
+            name=op.f("fk_project_type_milestones_project_type_id_project_types"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_project_type_milestones")),
+        sa.UniqueConstraint(
+            "project_type_id",
+            "sort_order",
+            name=op.f("uq_project_type_milestones_project_type_id_sort_order"),
+        ),
     )
     op.create_table(
         "ijro_person_aliases",
@@ -381,15 +460,12 @@ def upgrade() -> None:
     )
     op.create_table(
         "users",
-        sa.Column("email", postgresql.CITEXT(), nullable=False),
         sa.Column("full_name", sa.String(length=200), nullable=False),
         sa.Column("role", sa.String(length=20), nullable=False),
         sa.Column("person_id", sa.UUID(), nullable=True),
-        sa.Column("telegram_id", sa.BigInteger(), nullable=True),
-        sa.Column("external_seta_id", sa.String(length=100), nullable=True),
         sa.Column("locale", sa.String(length=10), nullable=False),
-        sa.Column("timezone", sa.String(length=50), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("last_visit_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -398,6 +474,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint("role IN ('assistant', 'leader')", name=op.f("ck_users_role_is_known")),
         sa.ForeignKeyConstraint(
             ["person_id"],
             ["people.id"],
@@ -405,9 +482,7 @@ def upgrade() -> None:
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
-        sa.UniqueConstraint("email", name=op.f("uq_users_email")),
-        sa.UniqueConstraint("external_seta_id", name=op.f("uq_users_external_seta_id")),
-        sa.UniqueConstraint("telegram_id", name=op.f("uq_users_telegram_id")),
+        sa.UniqueConstraint("role", name=op.f("uq_users_role")),
     )
     op.create_table(
         "access_links",
@@ -475,6 +550,7 @@ def upgrade() -> None:
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column("edited_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -484,8 +560,7 @@ def upgrade() -> None:
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
-            "entity_type IN ('project', 'task', 'ijro_assignment')",
-            name=op.f("ck_comments_entity_type_is_known"),
+            "entity_type IN ('ijro_assignment')", name=op.f("ck_comments_entity_type_is_known")
         ),
         sa.ForeignKeyConstraint(
             ["author_id"],
@@ -553,6 +628,65 @@ def upgrade() -> None:
         postgresql_where="state = 'applied'",
     )
     op.create_table(
+        "leader_decisions",
+        sa.Column("target_type", sa.String(length=20), nullable=False),
+        sa.Column("target_id", sa.UUID(), nullable=False),
+        sa.Column("kind", sa.String(length=20), nullable=False),
+        sa.Column("text", sa.Text(), nullable=True),
+        sa.Column("assignee_person_id", sa.UUID(), nullable=True),
+        sa.Column("due_on", sa.Date(), nullable=True),
+        sa.Column("state", sa.String(length=20), nullable=False),
+        sa.Column("decided_by", sa.UUID(), nullable=True),
+        sa.Column("done_on", sa.Date(), nullable=True),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "(state = 'done' AND done_on IS NOT NULL) OR (state = 'open' AND done_on IS NULL)",
+            name=op.f("ck_leader_decisions_done_decision_has_a_date"),
+        ),
+        sa.CheckConstraint(
+            "kind IN ('approve', 'return', 'assign', 'hurry', 'escalate', 'ask_extension', "
+            "'reject')",
+            name=op.f("ck_leader_decisions_kind_is_known"),
+        ),
+        sa.CheckConstraint(
+            "state IN ('open', 'done')", name=op.f("ck_leader_decisions_state_is_known")
+        ),
+        sa.CheckConstraint(
+            "target_type IN ('project', 'task', 'milestone', 'ijro_assignment')",
+            name=op.f("ck_leader_decisions_target_type_is_known"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["assignee_person_id"],
+            ["people.id"],
+            name=op.f("fk_leader_decisions_assignee_person_id_people"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["decided_by"],
+            ["users.id"],
+            name=op.f("fk_leader_decisions_decided_by_users"),
+            ondelete="SET NULL",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_leader_decisions")),
+    )
+    op.create_index(
+        "ix_leader_decisions_state_due_on", "leader_decisions", ["state", "due_on"], unique=False
+    )
+    op.create_index(
+        "ix_leader_decisions_target_type_target_id",
+        "leader_decisions",
+        ["target_type", "target_id"],
+        unique=False,
+    )
+    op.create_table(
         "notifications",
         sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("kind", sa.String(length=50), nullable=False),
@@ -588,21 +722,21 @@ def upgrade() -> None:
         sa.Column("code", sa.String(length=20), nullable=False),
         sa.Column("title", sa.String(length=300), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("kind", sa.String(length=20), nullable=False),
-        sa.Column("direction_id", sa.UUID(), nullable=False),
-        sa.Column("curator_person_id", sa.UUID(), nullable=True),
-        sa.Column("status_code", sa.String(length=50), nullable=False),
-        sa.Column("status_reason", sa.Text(), nullable=True),
-        sa.Column("priority_code", sa.String(length=50), nullable=False),
+        sa.Column("project_type_id", sa.UUID(), nullable=False),
+        sa.Column("parent_project_id", sa.UUID(), nullable=True),
+        sa.Column("is_multiyear", sa.Boolean(), nullable=False),
         sa.Column("started_on", sa.Date(), nullable=False),
         sa.Column("due_on", sa.Date(), nullable=False),
-        sa.Column("finished_on", sa.Date(), nullable=True),
-        sa.Column("progress_pct", sa.SmallInteger(), nullable=False),
-        sa.Column("progress_mode", sa.String(length=10), nullable=False),
-        sa.Column("budget_note", sa.Text(), nullable=True),
+        sa.Column("original_due_on", sa.Date(), nullable=False),
+        sa.Column("status_code", sa.String(length=50), nullable=False),
+        sa.Column("status_reason", sa.Text(), nullable=True),
+        sa.Column("responsible_person_id", sa.UUID(), nullable=True),
+        sa.Column("direction_id", sa.UUID(), nullable=True),
+        sa.Column("region_id", sa.UUID(), nullable=True),
         sa.Column("impediment", sa.Text(), nullable=True),
         sa.Column("impediment_updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_by", sa.UUID(), nullable=True),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -612,14 +746,15 @@ def upgrade() -> None:
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
-            "status_code NOT IN ('on_hold', 'cancelled') OR (status_reason IS NOT NULL AND btrim(status_reason) <> '')",  # noqa: E501
+            "status_code NOT IN ('on_hold', 'cancelled') "
+            "OR (status_reason IS NOT NULL AND btrim(status_reason) <> '')",
             name=op.f("ck_projects_paused_and_cancelled_need_a_reason"),
         ),
         sa.CheckConstraint(
             "due_on >= started_on", name=op.f("ck_projects_due_on_is_not_before_started_on")
         ),
         sa.CheckConstraint(
-            "progress_pct BETWEEN 0 AND 100", name=op.f("ck_projects_progress_pct_is_a_percentage")
+            "parent_project_id <> id", name=op.f("ck_projects_project_is_not_its_own_parent")
         ),
         sa.ForeignKeyConstraint(
             ["created_by"],
@@ -628,18 +763,27 @@ def upgrade() -> None:
             ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
-            ["curator_person_id"],
-            ["people.id"],
-            name=op.f("fk_projects_curator_person_id_people"),
-            ondelete="SET NULL",
-        ),
-        sa.ForeignKeyConstraint(
             ["direction_id"], ["directions.id"], name=op.f("fk_projects_direction_id_directions")
         ),
         sa.ForeignKeyConstraint(
-            ["priority_code"],
-            ["priorities.code"],
-            name=op.f("fk_projects_priority_code_priorities"),
+            ["parent_project_id"],
+            ["projects.id"],
+            name=op.f("fk_projects_parent_project_id_projects"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["project_type_id"],
+            ["project_types.id"],
+            name=op.f("fk_projects_project_type_id_project_types"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["region_id"], ["regions.id"], name=op.f("fk_projects_region_id_regions")
+        ),
+        sa.ForeignKeyConstraint(
+            ["responsible_person_id"],
+            ["people.id"],
+            name=op.f("fk_projects_responsible_person_id_people"),
+            ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
             ["status_code"],
@@ -650,7 +794,20 @@ def upgrade() -> None:
         sa.UniqueConstraint("code", name=op.f("uq_projects_code")),
     )
     op.create_index(
-        "ix_projects_direction_id_due_on", "projects", ["direction_id", "due_on"], unique=False
+        "ix_projects_multiyear_due_on",
+        "projects",
+        ["due_on"],
+        unique=False,
+        postgresql_where="is_multiyear",
+    )
+    op.create_index(
+        "ix_projects_parent_project_id", "projects", ["parent_project_id"], unique=False
+    )
+    op.create_index(
+        "ix_projects_responsible_person_id_due_on",
+        "projects",
+        ["responsible_person_id", "due_on"],
+        unique=False,
     )
     op.create_index(
         "ix_projects_status_code_due_on", "projects", ["status_code", "due_on"], unique=False
@@ -707,6 +864,7 @@ def upgrade() -> None:
         sa.Column("import_batch_id", sa.UUID(), nullable=True),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_seen_in_import_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -724,7 +882,8 @@ def upgrade() -> None:
             name=op.f("ck_ijro_assignments_due_year_source_is_known"),
         ),
         sa.CheckConstraint(
-            "state IN ('not_started', 'in_progress', 'blocked_by_lead', 'submitted', 'done', 'removed_from_control')",  # noqa: E501
+            "state IN ('not_started', 'in_progress', 'blocked_by_lead', 'submitted', 'done', "
+            "'removed_from_control')",
             name=op.f("ck_ijro_assignments_state_is_known"),
         ),
         sa.CheckConstraint(
@@ -762,6 +921,7 @@ def upgrade() -> None:
             "band",
             "due_on",
             name=op.f("uq_ijro_assignments_document_id_band_due_on"),
+            postgresql_nulls_not_distinct=True,
         ),
     )
     op.create_index(
@@ -779,8 +939,11 @@ def upgrade() -> None:
         sa.Column("title", sa.String(length=300), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("due_on", sa.Date(), nullable=False),
-        sa.Column("state", sa.String(length=20), nullable=False),
+        sa.Column("original_due_on", sa.Date(), nullable=False),
+        sa.Column("is_passed", sa.Boolean(), nullable=False),
+        sa.Column("passed_on", sa.Date(), nullable=True),
         sa.Column("sort_order", sa.Integer(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -790,7 +953,8 @@ def upgrade() -> None:
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
-            "state IN ('planned', 'done')", name=op.f("ck_milestones_state_is_planned_or_done")
+            "(is_passed AND passed_on IS NOT NULL) OR (NOT is_passed AND passed_on IS NULL)",
+            name=op.f("ck_milestones_passed_milestone_has_a_date"),
         ),
         sa.ForeignKeyConstraint(
             ["project_id"],
@@ -800,7 +964,13 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_milestones")),
     )
-    op.create_index("ix_milestones_due_on", "milestones", ["due_on"], unique=False)
+    op.create_index(
+        "ix_milestones_due_on",
+        "milestones",
+        ["due_on"],
+        unique=False,
+        postgresql_where="NOT is_passed",
+    )
     op.create_index(
         "ix_milestones_project_id_sort_order",
         "milestones",
@@ -808,10 +978,11 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
-        "project_partners",
+        "project_organizations",
         sa.Column("project_id", sa.UUID(), nullable=False),
         sa.Column("organization_id", sa.UUID(), nullable=False),
-        sa.Column("role", sa.String(length=100), nullable=True),
+        sa.Column("role", sa.String(length=20), nullable=False),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -820,43 +991,97 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "role IN ('customer', 'executor', 'co_executor', 'lead_agency')",
+            name=op.f("ck_project_organizations_role_is_known"),
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],
-            name=op.f("fk_project_partners_organization_id_organizations"),
+            name=op.f("fk_project_organizations_organization_id_organizations"),
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["project_id"],
             ["projects.id"],
-            name=op.f("fk_project_partners_project_id_projects"),
+            name=op.f("fk_project_organizations_project_id_projects"),
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_project_partners")),
-        sa.UniqueConstraint(
-            "project_id",
-            "organization_id",
-            name=op.f("uq_project_partners_project_id_organization_id"),
-        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_project_organizations")),
     )
     op.create_index(
-        "ix_project_partners_organization_id", "project_partners", ["organization_id"], unique=False
+        "ix_project_organizations_organization_id_role",
+        "project_organizations",
+        ["organization_id", "role"],
+        unique=False,
     )
+    op.create_index(
+        "uq_project_organizations_project_id_organization_id",
+        "project_organizations",
+        ["project_id", "organization_id"],
+        unique=True,
+    )
+    op.create_table(
+        "yearly_cycles",
+        sa.Column("title", sa.String(length=300), nullable=False),
+        sa.Column("rule", sa.String(length=20), nullable=False),
+        sa.Column("month", sa.SmallInteger(), nullable=False),
+        sa.Column("day", sa.SmallInteger(), nullable=False),
+        sa.Column("every_years", sa.SmallInteger(), nullable=False),
+        sa.Column("anchor_year", sa.Integer(), nullable=False),
+        sa.Column("project_id", sa.UUID(), nullable=True),
+        sa.Column("responsible_person_id", sa.UUID(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "rule IN ('annual', 'quarterly', 'every_n_years')",
+            name=op.f("ck_yearly_cycles_rule_is_known"),
+        ),
+        sa.CheckConstraint("day BETWEEN 1 AND 31", name=op.f("ck_yearly_cycles_day_is_a_day")),
+        sa.CheckConstraint(
+            "every_years BETWEEN 1 AND 10", name=op.f("ck_yearly_cycles_every_years_is_sane")
+        ),
+        sa.CheckConstraint(
+            "month BETWEEN 1 AND 12", name=op.f("ck_yearly_cycles_month_is_a_month")
+        ),
+        sa.ForeignKeyConstraint(
+            ["project_id"],
+            ["projects.id"],
+            name=op.f("fk_yearly_cycles_project_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["responsible_person_id"],
+            ["people.id"],
+            name=op.f("fk_yearly_cycles_responsible_person_id_people"),
+            ondelete="SET NULL",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_yearly_cycles")),
+    )
+    op.create_index("ix_yearly_cycles_project_id", "yearly_cycles", ["project_id"], unique=False)
     op.create_table(
         "tasks",
         sa.Column("code", sa.String(length=20), nullable=False),
-        sa.Column("project_id", sa.UUID(), nullable=True),
         sa.Column("title", sa.String(length=300), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("task_type_id", sa.UUID(), nullable=True),
+        sa.Column("project_id", sa.UUID(), nullable=True),
+        sa.Column("ijro_assignment_id", sa.UUID(), nullable=True),
         sa.Column("assignee_person_id", sa.UUID(), nullable=True),
-        sa.Column("author_id", sa.UUID(), nullable=True),
         sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("priority_code", sa.String(length=50), nullable=False),
         sa.Column("due_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("planned_due_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("original_due_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("is_control", sa.Boolean(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -872,10 +1097,10 @@ def upgrade() -> None:
             ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
-            ["author_id"], ["users.id"], name=op.f("fk_tasks_author_id_users"), ondelete="SET NULL"
-        ),
-        sa.ForeignKeyConstraint(
-            ["priority_code"], ["priorities.code"], name=op.f("fk_tasks_priority_code_priorities")
+            ["ijro_assignment_id"],
+            ["ijro_assignments.id"],
+            name=op.f("fk_tasks_ijro_assignment_id_ijro_assignments"),
+            ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
             ["project_id"],
@@ -886,6 +1111,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["status"], ["task_statuses.code"], name=op.f("fk_tasks_status_task_statuses")
         ),
+        sa.ForeignKeyConstraint(
+            ["task_type_id"], ["task_types.id"], name=op.f("fk_tasks_task_type_id_task_types")
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_tasks")),
         sa.UniqueConstraint("code", name=op.f("uq_tasks_code")),
     )
@@ -895,12 +1123,8 @@ def upgrade() -> None:
         ["assignee_person_id", "status"],
         unique=False,
     )
-    op.create_index(
-        "ix_tasks_project_id_status_due_at",
-        "tasks",
-        ["project_id", "status", "due_at"],
-        unique=False,
-    )
+    op.create_index("ix_tasks_ijro_assignment_id", "tasks", ["ijro_assignment_id"], unique=False)
+    op.create_index("ix_tasks_project_id_status", "tasks", ["project_id", "status"], unique=False)
     op.create_index("ix_tasks_status_due_at", "tasks", ["status", "due_at"], unique=False)
     op.create_table(
         "task_checklist_items",
@@ -908,6 +1132,7 @@ def upgrade() -> None:
         sa.Column("text", sa.Text(), nullable=False),
         sa.Column("is_done", sa.Boolean(), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
@@ -930,28 +1155,7 @@ def upgrade() -> None:
         ["task_id", "sort_order"],
         unique=False,
     )
-    op.create_table(
-        "task_tags",
-        sa.Column("task_id", sa.UUID(), nullable=False),
-        sa.Column("tag_id", sa.UUID(), nullable=False),
-        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["tag_id"], ["tags.id"], name=op.f("fk_task_tags_tag_id_tags"), ondelete="RESTRICT"
-        ),
-        sa.ForeignKeyConstraint(
-            ["task_id"], ["tasks.id"], name=op.f("fk_task_tags_task_id_tasks"), ondelete="CASCADE"
-        ),
-        sa.PrimaryKeyConstraint("id", name=op.f("pk_task_tags")),
-        sa.UniqueConstraint("task_id", "tag_id", name=op.f("uq_task_tags_task_id_tag_id")),
-    )
-    op.create_index("ix_task_tags_tag_id", "task_tags", ["tag_id"], unique=False)
+
     protect_audit_log()
 
 
@@ -961,18 +1165,24 @@ def downgrade() -> None:
     # принадлежат базе, а не нашей схеме, и ими может пользоваться сосед.
     unprotect_audit_log()
 
-    op.drop_index("ix_task_tags_tag_id", table_name="task_tags")
-    op.drop_table("task_tags")
     op.drop_index("ix_task_checklist_items_task_id_sort_order", table_name="task_checklist_items")
     op.drop_table("task_checklist_items")
     op.drop_index("ix_tasks_status_due_at", table_name="tasks")
-    op.drop_index("ix_tasks_project_id_status_due_at", table_name="tasks")
+    op.drop_index("ix_tasks_project_id_status", table_name="tasks")
+    op.drop_index("ix_tasks_ijro_assignment_id", table_name="tasks")
     op.drop_index("ix_tasks_assignee_person_id_status", table_name="tasks")
     op.drop_table("tasks")
-    op.drop_index("ix_project_partners_organization_id", table_name="project_partners")
-    op.drop_table("project_partners")
+    op.drop_index("ix_yearly_cycles_project_id", table_name="yearly_cycles")
+    op.drop_table("yearly_cycles")
+    op.drop_index(
+        "uq_project_organizations_project_id_organization_id", table_name="project_organizations"
+    )
+    op.drop_index(
+        "ix_project_organizations_organization_id_role", table_name="project_organizations"
+    )
+    op.drop_table("project_organizations")
     op.drop_index("ix_milestones_project_id_sort_order", table_name="milestones")
-    op.drop_index("ix_milestones_due_on", table_name="milestones")
+    op.drop_index("ix_milestones_due_on", table_name="milestones", postgresql_where="NOT is_passed")
     op.drop_table("milestones")
     op.drop_index("ix_ijro_assignments_state_due_on", table_name="ijro_assignments")
     op.drop_index("ix_ijro_assignments_responsible_person_id_due_on", table_name="ijro_assignments")
@@ -980,10 +1190,17 @@ def downgrade() -> None:
     op.drop_index("ix_sessions_user_id_expires_at", table_name="sessions")
     op.drop_table("sessions")
     op.drop_index("ix_projects_status_code_due_on", table_name="projects")
-    op.drop_index("ix_projects_direction_id_due_on", table_name="projects")
+    op.drop_index("ix_projects_responsible_person_id_due_on", table_name="projects")
+    op.drop_index("ix_projects_parent_project_id", table_name="projects")
+    op.drop_index(
+        "ix_projects_multiyear_due_on", table_name="projects", postgresql_where="is_multiyear"
+    )
     op.drop_table("projects")
     op.drop_index("ix_notifications_user_id_created_at", table_name="notifications")
     op.drop_table("notifications")
+    op.drop_index("ix_leader_decisions_target_type_target_id", table_name="leader_decisions")
+    op.drop_index("ix_leader_decisions_state_due_on", table_name="leader_decisions")
+    op.drop_table("leader_decisions")
     op.drop_index(
         "uq_ijro_imports_sha256_applied",
         table_name="ijro_imports",
@@ -998,14 +1215,16 @@ def downgrade() -> None:
     op.drop_table("access_links")
     op.drop_table("users")
     op.drop_table("ijro_person_aliases")
-    op.drop_table("ijro_org_aliases")
-    op.drop_table("task_statuses")
-    op.drop_table("tags")
-    op.drop_table("settings")
-    op.drop_table("project_statuses")
-    op.drop_table("priorities")
+    op.drop_table("project_type_milestones")
     op.drop_index("ix_people_full_name", table_name="people")
     op.drop_table("people")
+    op.drop_table("ijro_org_aliases")
+    op.drop_table("task_types")
+    op.drop_table("task_statuses")
+    op.drop_table("settings")
+    op.drop_table("regions")
+    op.drop_table("project_types")
+    op.drop_table("project_statuses")
     op.drop_table("organizations")
     op.drop_index(
         "uq_job_runs_name_period",

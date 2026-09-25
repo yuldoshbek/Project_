@@ -46,9 +46,7 @@ class LeaderDecision(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     )
     due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
-    state: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=DecisionState.OPEN.value
-    )
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default=DecisionState.OPEN.value)
     """Открыто или выполнено. «Просрочено» вычисляется (`app.domain.decisions`)."""
 
     decided_by: Mapped[uuid.UUID | None] = mapped_column(

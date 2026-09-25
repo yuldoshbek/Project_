@@ -55,7 +55,9 @@ async def load_dictionaries(session: AsyncSession, *, active_only: bool = True) 
     иначе исчезнет тип, по которому проект когда-то завели.
     """
     return Dictionaries(
-        project_types=list(await session.scalars(_ordered(ProjectTypeRef, active_only=active_only))),
+        project_types=list(
+            await session.scalars(_ordered(ProjectTypeRef, active_only=active_only))
+        ),
         task_types=list(await session.scalars(_ordered(TaskTypeRef, active_only=active_only))),
         directions=list(await session.scalars(_ordered(Direction, active_only=active_only))),
         regions=list(await session.scalars(_ordered(Region, active_only=active_only))),

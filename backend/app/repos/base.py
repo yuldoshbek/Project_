@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-
 from typing import Any
 
 from sqlalchemy import DateTime, Integer, MetaData, func, text
@@ -64,8 +63,8 @@ class UUIDPrimaryKey:
 class Timestamps:
     """Отметки создания и изменения.
 
-    `timestamptz` и `now()` на стороне базы — время одно на всех: у приложения, воркера и
-    бота (CLAUDE.md, инвариант о времени).
+    `timestamptz` и `now()` на стороне базы — время одно на всех: у запроса пользователя, у
+    задачи по расписанию и у командной строки (CLAUDE.md, инвариант о времени).
 
     `DateTime(timezone=True)` указывается явно: по одной аннотации `Mapped[datetime]`
     SQLAlchemy выводит `timestamp without time zone`. Разница не видна ни в модели, ни

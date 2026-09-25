@@ -366,9 +366,7 @@ async def _task_rows(
                 entity_id=task.id,
                 title=task.title,
                 attention=state,
-                deviation=deviation_days(
-                    state, due_on=due_on, today=today, last_sign_of_life=life
-                ),
+                deviation=deviation_days(state, due_on=due_on, today=today, last_sign_of_life=life),
                 due_on=due_on,
                 responsible_person_id=task.assignee_person_id,
             )

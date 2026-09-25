@@ -35,6 +35,4 @@ class TaskChecklistItem(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     is_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    __table_args__ = (
-        Index("ix_task_checklist_items_task_id_sort_order", "task_id", "sort_order"),
-    )
+    __table_args__ = (Index("ix_task_checklist_items_task_id_sort_order", "task_id", "sort_order"),)

@@ -22,8 +22,6 @@ for db in "$POSTGRES_DB" "$TEST_DB"; do
 		CREATE EXTENSION IF NOT EXISTS pg_trgm;
 		-- снятие диакритики при нормализации поискового текста (ADR-0006)
 		CREATE EXTENSION IF NOT EXISTS unaccent;
-		-- регистронезависимый citext для адресов почты
-		CREATE EXTENSION IF NOT EXISTS citext;
 		-- gen_random_uuid для первичных ключей
 		CREATE EXTENSION IF NOT EXISTS pgcrypto;
 	EOSQL

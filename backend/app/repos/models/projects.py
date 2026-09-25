@@ -34,8 +34,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.dictionaries import OrganizationRole
 from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
+
+# Собирается из перечисления, а не переписывается руками: переписанный список расходится
+# с кодом молча, и новая роль отвергается базой уже на первой записи, а не в тестах.
+ORGANIZATION_ROLES = ", ".join(f"'{role.value}'" for role in OrganizationRole)
 
 
 class Project(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
@@ -154,10 +159,7 @@ class ProjectOrganization(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base
     role: Mapped[str] = mapped_column(String(20), nullable=False)
 
     __table_args__ = (
-        CheckConstraint(
-            "role IN ('customer', 'executor', 'co_executor', 'lead_agency')",
-            name="role_is_known",
-        ),
+        CheckConstraint(f"role IN ({ORGANIZATION_ROLES})", name="role_is_known"),
         # Одна организация — одна роль в проекте. Вторая строка с другой ролью означала
         # бы, что ведомство одновременно заказчик и исполнитель, а на этом различии
         # держится сигнал «зависит от чужих».
