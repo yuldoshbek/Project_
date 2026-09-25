@@ -1,14 +1,19 @@
 /**
  * Управление — единственный раздел, который работает с настоящими данными в блоке 0.
  *
- * Три карточки, каждая отвечает на свой вопрос:
+ * Карточки, каждая отвечает на свой вопрос:
  *
  * - **Ссылки доступа** — «кто может войти и как закрыть доступ». Здесь же видно устройства:
- *   лишняя строка означает чужой вход.
+ *   лишняя строка означает чужой вход. Только у помощника (ТЗ 2, `can_write` из `/api/me`):
+ *   руководителю API на эти запросы отвечает 403, и вместо кнопок и списков, которые
+ *   кончаются отказом, он видит одну строку о том, кто ведёт доступ.
  * - **Справочники** — «наполнена ли система». Это критерий приёмки блока: в рабочей базе
  *   справочники заведены, в демо — вымышленные данные.
  * - **Состояние** — «что именно выложено». Коммит из `/api/health` отвечает на вопрос,
  *   который иначе выясняется по поведению системы.
+ *
+ * Каждая карточка стоит в своей границе ошибок: упавшая при отрисовке показывает отказ на
+ * своём месте, соседние продолжают работать.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,18 +21,33 @@ import { Copy, KeyRound, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ApiError } from '@/shared/api/client';
-import { api, type AccessLink, type Role } from '@/shared/api/orbita';
+import { useCurrentUser, useHealth } from '@/app/session';
+import { describeError } from '@/shared/api/client';
+import {
+  api,
+  type AccessLink,
+  type Dictionaries,
+  type DictionaryEntry,
+  type Role,
+} from '@/shared/api/orbita';
+import { dictionariesQuery, sessionsQuery } from '@/shared/api/queries';
 import { formatDateTime, formatSince } from '@/shared/time';
+import { CardBoundary } from '@/shared/ui/Boundary';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { Empty, Failure, Loading } from '@/shared/ui/States';
 
 const ROLES: readonly Role[] = ['assistant', 'leader'];
 
-function detailOf(error: unknown): string {
-  return error instanceof ApiError ? error.detail : String(error);
-}
+/** Плитки справочников — в порядке ТЗ 3.9: сначала типы, затем места, затем статусы. */
+const DICTIONARY_TILES = [
+  { field: 'project_types', label: 'management.dictionaries.projectTypes' },
+  { field: 'task_types', label: 'management.dictionaries.taskTypes' },
+  { field: 'directions', label: 'management.dictionaries.directions' },
+  { field: 'regions', label: 'management.dictionaries.regions' },
+  { field: 'project_statuses', label: 'management.dictionaries.projectStatuses' },
+  { field: 'task_statuses', label: 'management.dictionaries.taskStatuses' },
+] as const satisfies readonly { field: keyof Dictionaries; label: string }[];
 
 function LinkCard({ role }: { role: Role }) {
   const { t } = useTranslation();
@@ -35,11 +55,7 @@ function LinkCard({ role }: { role: Role }) {
   const [issued, setIssued] = useState<AccessLink | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const sessions = useQuery({
-    queryKey: ['sessions', role],
-    queryFn: () => api.sessions(role),
-    retry: (attempt, error) => !(error instanceof ApiError && error.readOnly) && attempt < 2,
-  });
+  const sessions = useQuery(sessionsQuery(role));
 
   const reissue = useMutation({
     mutationFn: () => api.reissueLink(role),
@@ -48,7 +64,7 @@ function LinkCard({ role }: { role: Role }) {
       setCopied(false);
       // Сессии гаснут вместе с перевыпуском — список устройств обязан это показать сразу,
       // иначе кнопка выглядит не сработавшей.
-      await client.invalidateQueries({ queryKey: ['sessions', role] });
+      await client.invalidateQueries({ queryKey: sessionsQuery(role).queryKey });
     },
   });
 
@@ -68,7 +84,7 @@ function LinkCard({ role }: { role: Role }) {
         </Button>
       }
     >
-      {reissue.isError ? <Failure detail={detailOf(reissue.error)} /> : null}
+      {reissue.isError ? <Failure detail={describeError(reissue.error)} /> : null}
 
       {issued ? (
         <div className="mb-4 rounded-[var(--radius)] border border-line-accent bg-accent-soft p-3">
@@ -96,7 +112,7 @@ function LinkCard({ role }: { role: Role }) {
       <h3 className="mb-2 text-sm font-medium text-ink-strong">{t('management.links.devices')}</h3>
 
       {sessions.isPending ? <Loading /> : null}
-      {sessions.isError ? <Failure detail={detailOf(sessions.error)} /> : null}
+      {sessions.isError ? <Failure detail={describeError(sessions.error)} /> : null}
       {sessions.data?.length === 0 ? <Empty label={t('management.links.noDevices')} /> : null}
 
       {sessions.data && sessions.data.length > 0 ? (
@@ -126,47 +142,34 @@ function LinkCard({ role }: { role: Role }) {
 
 function DictionariesCard() {
   const { t } = useTranslation();
-  const dictionaries = useQuery({ queryKey: ['dictionaries'], queryFn: api.dictionaries });
-
-  const groups = [
-    { key: 'directions', label: t('management.dictionaries.directions') },
-    { key: 'projectStatuses', label: t('management.dictionaries.projectStatuses') },
-    { key: 'taskStatuses', label: t('management.dictionaries.taskStatuses') },
-    { key: 'priorities', label: t('management.dictionaries.priorities') },
-  ] as const;
-
-  const counts = dictionaries.data
-    ? {
-        directions: dictionaries.data.directions,
-        projectStatuses: dictionaries.data.project_statuses,
-        taskStatuses: dictionaries.data.task_statuses,
-        priorities: dictionaries.data.priorities,
-      }
-    : null;
+  const dictionaries = useQuery(dictionariesQuery());
 
   return (
     <Card title={t('management.dictionaries.title')} question={t('management.dictionaries.body')}>
       {dictionaries.isPending ? <Loading /> : null}
-      {dictionaries.isError ? <Failure detail={detailOf(dictionaries.error)} /> : null}
+      {dictionaries.isError ? <Failure detail={describeError(dictionaries.error)} /> : null}
 
-      {counts ? (
+      {dictionaries.data ? (
         <dl className="grid gap-3 sm:grid-cols-2">
-          {groups.map((group) => (
-            // min-w-0 — по той же причине, что у карточки: элемент сетки шире своего
-            // содержимого не бывает, а `truncate` внутри него без этого не работает.
-            <div key={group.key} className="min-w-0 rounded-[var(--radius)] bg-sunken px-3 py-2">
-              <dt className="text-sm text-ink">{group.label}</dt>
-              <dd className="mt-1 text-lg font-semibold text-ink-strong numeric">
-                {counts[group.key].length}
-              </dd>
-              <p className="mt-1 truncate text-xs text-ink-muted">
-                {counts[group.key]
-                  .slice(0, 3)
-                  .map((entry) => entry.name.ru)
-                  .join(', ')}
-              </p>
-            </div>
-          ))}
+          {DICTIONARY_TILES.map((tile) => {
+            const entries: readonly DictionaryEntry[] = dictionaries.data[tile.field];
+            return (
+              // min-w-0 — по той же причине, что у карточки: элемент сетки шире своего
+              // содержимого не бывает, а `truncate` внутри него без этого не работает.
+              <div key={tile.field} className="min-w-0 rounded-[var(--radius)] bg-sunken px-3 py-2">
+                <dt className="text-sm text-ink">{t(tile.label)}</dt>
+                <dd className="mt-1 text-lg font-semibold text-ink-strong numeric">
+                  {entries.length}
+                </dd>
+                <p className="mt-1 truncate text-xs text-ink-muted">
+                  {entries
+                    .slice(0, 3)
+                    .map((entry) => entry.name.ru)
+                    .join(', ')}
+                </p>
+              </div>
+            );
+          })}
         </dl>
       ) : null}
     </Card>
@@ -175,7 +178,7 @@ function DictionariesCard() {
 
 function StateCard() {
   const { t } = useTranslation();
-  const health = useQuery({ queryKey: ['health'], queryFn: api.health });
+  const health = useHealth();
 
   return (
     <Card
@@ -188,7 +191,7 @@ function StateCard() {
       }
     >
       {health.isPending ? <Loading /> : null}
-      {health.isError ? <Failure detail={detailOf(health.error)} /> : null}
+      {health.isError ? <Failure detail={describeError(health.error)} /> : null}
 
       {health.data ? (
         <dl className="flex flex-col gap-2 text-sm">
@@ -210,6 +213,8 @@ function StateCard() {
 
 export function ManagementSection() {
   const { t } = useTranslation();
+  const user = useCurrentUser();
+  const canWrite = user.data?.can_write === true;
 
   return (
     <div className="flex flex-col gap-4">
@@ -223,12 +228,24 @@ export function ManagementSection() {
         </div>
       </div>
 
+      {user.data && !canWrite ? (
+        <p className="text-sm text-ink-muted">{t('management.links.assistantOnly')}</p>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-2">
-        {ROLES.map((role) => (
-          <LinkCard key={role} role={role} />
-        ))}
-        <DictionariesCard />
-        <StateCard />
+        {canWrite
+          ? ROLES.map((role) => (
+              <CardBoundary key={role} title={t(`role.${role}`)}>
+                <LinkCard role={role} />
+              </CardBoundary>
+            ))
+          : null}
+        <CardBoundary title={t('management.dictionaries.title')}>
+          <DictionariesCard />
+        </CardBoundary>
+        <CardBoundary title={t('management.state.title')}>
+          <StateCard />
+        </CardBoundary>
       </div>
     </div>
   );

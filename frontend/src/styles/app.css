@@ -51,7 +51,6 @@
   --color-space-deep: var(--space-deep);
   --color-space-mid: var(--space-mid);
   --color-space-glow: var(--space-glow);
-  --color-space-star: var(--space-star);
 
   --radius-sm: var(--radius-sm);
   --radius-DEFAULT: var(--radius);
@@ -65,6 +64,7 @@
   --font-numeric: var(--font-numeric);
 
   --spacing-touch: var(--touch-target);
+  --spacing-topbar: var(--topbar-height);
 }
 
 @layer base {

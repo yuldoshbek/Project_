@@ -16,6 +16,8 @@
  * тип: экран решает, что с ним делать.
  */
 
+import i18next from '@/shared/i18n';
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -35,6 +37,18 @@ export class ApiError extends Error {
   get readOnly(): boolean {
     return this.status === 403;
   }
+
+  /** Отказ, который повтор запроса не исправит: нет сессии или роль не позволяет. */
+  get refusal(): boolean {
+    return this.needsLink || this.readOnly;
+  }
+}
+
+/** Что показать человеку вместо ошибки: пояснение API, иначе текст исключения. */
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) return error.detail;
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -65,7 +79,7 @@ async function readError(response: Response): Promise<ApiError> {
     const body = (await response.json()) as { detail?: string; type?: string };
     return new ApiError(response.status, body.detail ?? response.statusText, body.type);
   } catch {
-    return new ApiError(response.status, `Ответ ${response.status} без пояснения`);
+    return new ApiError(response.status, i18next.t('common.noDetail', { status: response.status }));
   }
 }
 
@@ -96,6 +110,3 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   return (await response.json()) as T;
 }
-
-/** Обновление данными: 15 секунд — компромисс из ADR-0034. */
-export const POLL_INTERVAL_MS = 15_000;

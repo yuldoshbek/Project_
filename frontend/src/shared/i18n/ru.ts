@@ -78,15 +78,17 @@ export const ru = {
       noDevices: 'Открытых сессий нет',
       lastSeen: 'Последний раз {{when}}',
       unknownDevice: 'Устройство не назвалось',
+      assistantOnly: 'Ссылки доступа и устройства ведёт помощник.',
     },
     dictionaries: {
       title: 'Справочники',
       body: 'Типы, статусы и пороги — данные, а не код: они меняются без выкладки.',
+      projectTypes: 'Типы проектов',
+      taskTypes: 'Типы задач',
       directions: 'Направления',
+      regions: 'Регионы',
       projectStatuses: 'Статусы проектов',
       taskStatuses: 'Статусы задач',
-      priorities: 'Приоритеты',
-      count: '{{count}} значений',
     },
     state: {
       title: 'Состояние системы',
@@ -107,10 +109,18 @@ export const ru = {
     loading: 'Загружаем',
     error: 'Не получилось',
     errorBody: 'Запрос не прошёл: {{detail}}',
+    brokenBody: 'Не удалось показать: {{detail}}',
+    noDetail: 'Ответ {{status}} без пояснения',
     retry: 'Повторить',
     empty: 'Пусто',
     never: 'ни разу',
     now: 'только что',
+  },
+
+  time: {
+    minutesAgo: '{{minutes}} мин назад',
+    hoursAgo: '{{hours}} ч назад',
+    yesterdayAt: 'вчера в {{time}}',
   },
 } as const;
 

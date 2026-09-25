@@ -20,7 +20,8 @@ export function SideRail({ wide }: { wide: boolean }) {
     <nav
       aria-label={t('app.name')}
       className={cn(
-        'sticky top-[49px] h-[calc(100dvh-49px)] shrink-0 overflow-y-auto',
+        // Прилипает под верхней строкой: высота строки — токен, а не число здесь.
+        'sticky top-topbar h-[calc(100dvh-var(--topbar-height))] shrink-0 overflow-y-auto',
         'border-r border-line bg-card px-2 py-3',
         wide ? 'w-64' : 'w-56',
       )}

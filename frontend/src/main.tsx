@@ -14,24 +14,13 @@ import { createRoot } from 'react-dom/client';
 
 import { router } from '@/app/router';
 import { ThemeProvider } from '@/app/theme';
-import { POLL_INTERVAL_MS } from '@/shared/api/client';
+import { QUERY_DEFAULTS } from '@/shared/api/queries';
 import '@/shared/i18n';
 import '@/styles/app.css';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Обновление опросом, а не постоянным соединением: прокси Netlify закрывает
-      // соединение через 26 секунд (ADR-0034). Возврат на вкладку обновляет сразу —
-      // руководитель открывает систему и должен видеть сегодняшнее, а не то, что было
-      // утром.
-      refetchInterval: POLL_INTERVAL_MS,
-      refetchOnWindowFocus: true,
-      staleTime: POLL_INTERVAL_MS,
-      retry: 1,
-    },
-  },
-});
+// Опрос и его исключения — shared/api/queries.ts. Возврат на вкладку обновляет сразу:
+// руководитель открывает систему и должен видеть сегодняшнее, а не то, что было утром.
+const queryClient = new QueryClient({ defaultOptions: { queries: QUERY_DEFAULTS } });
 
 const root = document.getElementById('root');
 if (!root) throw new Error('нет элемента #root: проверьте index.html');

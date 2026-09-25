@@ -6,6 +6,8 @@
  * чужому дню. Перевод делается здесь, в одном месте, а не в каждом компоненте.
  */
 
+import i18next from '@/shared/i18n';
+
 export const AGENCY_TIMEZONE = 'Asia/Tashkent';
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', {
@@ -54,12 +56,12 @@ export function formatSince(value: string | Date | null | undefined, never: stri
   const moment = new Date(value);
   const minutes = Math.round((Date.now() - moment.getTime()) / 60_000);
 
-  if (minutes < 1) return 'только что';
-  if (minutes < 60) return `${minutes} мин назад`;
+  if (minutes < 1) return i18next.t('common.now');
+  if (minutes < 60) return i18next.t('time.minutesAgo', { minutes });
 
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} ч назад`;
-  if (hours < 48) return `вчера в ${formatTime(moment)}`;
+  if (hours < 24) return i18next.t('time.hoursAgo', { hours });
+  if (hours < 48) return i18next.t('time.yesterdayAt', { time: formatTime(moment) });
 
   return formatDate(moment);
 }
