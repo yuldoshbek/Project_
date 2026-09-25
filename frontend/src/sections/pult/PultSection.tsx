@@ -45,6 +45,7 @@ import {
   type Step,
 } from './model';
 import { Orbits } from './Orbits';
+import { ReportTab } from './Report';
 import { rowTitle } from './text';
 import { usePult, usePultAction, type PultAction, type Target } from './usePult';
 import { HoldersCard, MovesCard, SinceCard } from './Widgets';
@@ -63,6 +64,8 @@ const DOT = { call: 'bg-call', burn: 'bg-burn', wait: 'bg-wait' } as const;
 function targetFrom(row: PultRow): Target {
   return { target_type: row.target_type, target_id: row.target_id };
 }
+
+type Tab = 'now' | 'report';
 
 type Filter = { kind: 'step'; step: Step } | { kind: 'person'; person: Person } | null;
 
@@ -92,6 +95,7 @@ function Pult({ view }: { view: PultView }) {
   // проверяет то же самое сам — экран только не показывает кнопок, которые кончатся 403.
   const viewer: Viewer = user.data?.role === 'leader' ? 'leader' : 'assistant';
 
+  const [tab, setTab] = useState<Tab>('now');
   const [filter, setFilter] = useState<Filter>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -195,7 +199,7 @@ function Pult({ view }: { view: PultView }) {
 
   return (
     <div className={cn('flex flex-col', isPhone ? 'gap-3' : 'gap-5')}>
-      <PultHeader view={view} compact={isPhone} />
+      <PultHeader view={view} compact={isPhone} tab={tab} onTab={setTab} />
 
       {/* Отказ действия — словами, а не молча: решение, которое не записалось, хуже
           решения, которое не принимали, — его считают принятым. */}
@@ -203,50 +207,58 @@ function Pult({ view }: { view: PultView }) {
         <Failure detail={describeError(action.error)} onRetry={() => action.reset()} />
       ) : null}
 
-      <Counters
-        view={view}
-        compact={isPhone}
-        filter={filter}
-        onFilter={(step) =>
-          setFilter(filter?.kind === 'step' && filter.step === step ? null : { kind: 'step', step })
-        }
-      />
-
-      {isPhone ? (
-        <>
-          {ladder}
-          {widgets}
-        </>
-      ) : isMonitor ? (
-        <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] items-start gap-6">
-          {ladder}
-          <Card
-            title={t('pult.detail.title')}
-            className="sticky top-[calc(var(--topbar-height)+2rem)]"
-          >
-            {selected ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-lg leading-snug font-semibold text-ink-strong">
-                  {rowTitle(t, selected)}
-                </p>
-                <RowDetails
-                  row={selected}
-                  viewer={viewer}
-                  actions={actions}
-                  busy={action.isPending}
-                />
-              </div>
-            ) : (
-              <p className="text-sm text-ink-muted">{t('pult.detail.pick')}</p>
-            )}
-          </Card>
-          <div className="flex flex-col gap-6">{widgets}</div>
-        </div>
+      {tab === 'report' ? (
+        <ReportTab />
       ) : (
-        <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-5">
-          {ladder}
-          <div className="flex flex-col gap-5">{widgets}</div>
-        </div>
+        <>
+          <Counters
+            view={view}
+            compact={isPhone}
+            filter={filter}
+            onFilter={(step) =>
+              setFilter(
+                filter?.kind === 'step' && filter.step === step ? null : { kind: 'step', step },
+              )
+            }
+          />
+
+          {isPhone ? (
+            <>
+              {ladder}
+              {widgets}
+            </>
+          ) : isMonitor ? (
+            <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] items-start gap-6">
+              {ladder}
+              <Card
+                title={t('pult.detail.title')}
+                className="sticky top-[calc(var(--topbar-height)+2rem)]"
+              >
+                {selected ? (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-lg leading-snug font-semibold text-ink-strong">
+                      {rowTitle(t, selected)}
+                    </p>
+                    <RowDetails
+                      row={selected}
+                      viewer={viewer}
+                      actions={actions}
+                      busy={action.isPending}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-ink-muted">{t('pult.detail.pick')}</p>
+                )}
+              </Card>
+              <div className="flex flex-col gap-6">{widgets}</div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-5">
+              {ladder}
+              <div className="flex flex-col gap-5">{widgets}</div>
+            </div>
+          )}
+        </>
       )}
 
       {notice ? <UndoNotice notice={notice} onUndo={undo} phone={isPhone} /> : null}
@@ -257,10 +269,14 @@ function Pult({ view }: { view: PultView }) {
 function PultHeader({
   view,
   compact,
+  tab,
+  onTab,
 }: {
   view: PultView;
   /** Телефон: две короткие строки. Вопрос раздела и орбиты — на ноутбуке и мониторе. */
   compact: boolean;
+  tab: Tab;
+  onTab: (tab: Tab) => void;
 }) {
   const { t } = useTranslation();
   const demo = view.is_demo ? (
@@ -271,12 +287,13 @@ function PultHeader({
 
   if (compact) {
     return (
-      <header className="flex flex-col gap-1.5">
-        <div className="flex items-baseline gap-2">
+      <header className="flex flex-col gap-1.5 print:hidden">
+        <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold text-ink-strong">{t('sections.pult')}</h1>
-          <span className="text-xs text-ink-muted">
+          <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
             {t('pult.asOf', { when: formatDateTime(view.as_of) })}
           </span>
+          <PultTabs tab={tab} onTab={onTab} />
         </div>
         {demo ? <div className="flex text-xs">{demo}</div> : null}
       </header>
@@ -284,7 +301,7 @@ function PultHeader({
   }
 
   return (
-    <header className="flex items-center gap-4">
+    <header className="flex items-center gap-4 print:hidden">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="grid size-10 shrink-0 place-items-center rounded-[var(--radius)] bg-accent-soft text-accent-ink">
@@ -299,11 +316,42 @@ function PultHeader({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           <span>{t('pult.asOf', { when: formatDateTime(view.as_of) })}</span>
           {demo}
+          <PultTabs tab={tab} onTab={onTab} />
         </div>
       </div>
 
       <Orbits className="h-24 w-48 shrink-0" />
     </header>
+  );
+}
+
+/**
+ * «Сейчас» и «Отчёт». Отчёт недели и месяца — вкладка Пульта, а не отдельный раздел
+ * (ТЗ 2): его числа — те же, что на Пульте, и отдельный экран развёл бы их.
+ */
+function PultTabs({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) {
+  const { t } = useTranslation();
+  return (
+    <span role="tablist" aria-label={t('pult.tabs.label')} className="inline-flex gap-1">
+      {(['now', 'report'] as const).map((each) => (
+        <button
+          key={each}
+          type="button"
+          role="tab"
+          aria-selected={tab === each}
+          onClick={() => onTab(each)}
+          className={cn(
+            'min-h-touch rounded-[var(--radius-pill)] border px-3 text-xs font-medium',
+            'transition-colors duration-[var(--motion-fast)]',
+            tab === each
+              ? 'border-accent bg-accent text-ink-inverse'
+              : 'border-line bg-card text-ink hover:bg-hover',
+          )}
+        >
+          {t(`pult.tabs.${each}`)}
+        </button>
+      ))}
+    </span>
   );
 }
 
@@ -325,7 +373,7 @@ function Counters({
 
   if (compact) {
     const tile =
-      'flex h-full min-h-touch w-full flex-col items-center justify-center rounded-[var(--radius)] border px-1 py-1.5';
+      'flex h-full min-h-touch w-full flex-col items-center justify-center rounded-[var(--radius)] border px-0.5 py-1.5';
     return (
       <nav aria-label={t('pult.counters.title')}>
         <ul className="grid grid-cols-6 gap-1.5">
@@ -357,7 +405,7 @@ function Counters({
                       )}
                     />
                   </span>
-                  <span className="w-full truncate text-center text-[11px] text-ink-muted">
+                  <span className="w-full truncate text-center text-[11px] tracking-tight text-ink-muted">
                     {t(`pult.stepsShort.${step}`)}
                   </span>
                 </button>
@@ -370,7 +418,7 @@ function Counters({
                 value={view.on_track}
                 className="text-lg leading-tight font-semibold text-ink"
               />
-              <span className="w-full truncate text-center text-[11px] text-ink-muted">
+              <span className="w-full truncate text-center text-[11px] tracking-tight text-ink-muted">
                 {t('pult.stepsShort.on_track')}
               </span>
             </div>

@@ -22,7 +22,7 @@ export function BottomBar() {
   return (
     <nav
       aria-label={t('app.name')}
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card print:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <ul className="flex">

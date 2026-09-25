@@ -329,3 +329,38 @@ class TestVisits:
         )
 
         assert user.last_visit_at is None
+
+
+class TestReport:
+    async def test_week_report_counts_the_period_and_shows_the_state(
+        self, leader_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Итоги — за неделю по журналу, лестница — та же, что на Пульте сейчас."""
+        project = await make_project(session, due_on=today() - timedelta(days=1), title="Атлас")
+        await leader_api.post(
+            "/api/v1/decisions",
+            json={"target_type": "project", "target_id": str(project.id), "kind": "hurry"},
+        )
+
+        body = (await leader_api.get("/api/v1/pult/report", params={"period": "week"})).json()
+        pult = (await leader_api.get(PULT)).json()
+
+        assert body["period"] == "week"
+        assert date.fromisoformat(body["start"]).weekday() == 0
+        assert body["totals"]["created_projects"] >= 1
+        assert body["totals"]["decisions_made"] >= 1
+        assert body["counts"] == pult["counts"]
+        assert [decision["kind"] for decision in body["decisions"]][-1] == "hurry"
+        assert body["decisions"][-1]["title"] == "Атлас"
+
+    async def test_previous_month_is_an_earlier_range(self, leader_api: AsyncClient) -> None:
+        current = (await leader_api.get("/api/v1/pult/report", params={"period": "month"})).json()
+        previous = (
+            await leader_api.get("/api/v1/pult/report", params={"period": "month", "offset": 1})
+        ).json()
+
+        assert date.fromisoformat(previous["end"]) < date.fromisoformat(current["start"])
+
+    async def test_offset_is_bounded(self, leader_api: AsyncClient) -> None:
+        response = await leader_api.get("/api/v1/pult/report", params={"offset": 99})
+        assert response.status_code == 422

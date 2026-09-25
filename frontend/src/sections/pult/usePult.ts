@@ -13,12 +13,22 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/r
 
 import { request } from '@/shared/api/client';
 
-import type { DecisionKind, PultView, TargetType } from './model';
+import type { DecisionKind, PultView, ReportPeriod, ReportView, TargetType } from './model';
 
 export function pultQuery() {
   return queryOptions({
     queryKey: ['pult'],
     queryFn: () => request<PultView>('/api/v1/pult'),
+  });
+}
+
+/** Отчёт недели или месяца. Не опрашивается: это документ на момент формирования. */
+export function reportQuery(period: ReportPeriod, offset: number) {
+  return queryOptions({
+    queryKey: ['pult', 'report', period, offset],
+    queryFn: () => request<ReportView>('/api/v1/pult/report', { query: { period, offset } }),
+    refetchInterval: false,
+    staleTime: 60_000,
   });
 }
 

@@ -236,6 +236,7 @@ async def audit_entries(
     *,
     since: datetime,
     entity_types: Iterable[str],
+    until: datetime | None = None,
     exclude_actor: uuid.UUID | None = None,
     limit: int | None = None,
 ) -> list[AuditEntry]:
@@ -251,6 +252,8 @@ async def audit_entries(
         .where(AuditLog.occurred_at > since, AuditLog.entity_type.in_(list(entity_types)))
         .order_by(AuditLog.occurred_at.desc())
     )
+    if until is not None:
+        statement = statement.where(AuditLog.occurred_at < until)
     if exclude_actor is not None:
         statement = statement.where(
             AuditLog.actor_id.is_(None) | (AuditLog.actor_id != exclude_actor)
@@ -268,6 +271,18 @@ async def audit_entries(
         )
         for occurred_at, entity_type, entity_id, action, changes in rows
     ]
+
+
+async def decisions_between(
+    session: AsyncSession, *, start: datetime, end: datetime
+) -> list[LeaderDecision]:
+    """Решения руководителя, принятые за период, — в порядке принятия."""
+    rows = await session.scalars(
+        select(LeaderDecision)
+        .where(LeaderDecision.created_at >= start, LeaderDecision.created_at < end)
+        .order_by(LeaderDecision.created_at)
+    )
+    return list(rows)
 
 
 async def due_dates(

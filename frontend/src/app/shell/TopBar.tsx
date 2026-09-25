@@ -25,7 +25,7 @@ export function TopBar({ device }: { device: Device }) {
   const isPhone = device === 'phone';
 
   return (
-    <header className="sticky top-0 z-30 flex h-topbar flex-col border-b border-line bg-card/95 backdrop-blur">
+    <header className="sticky top-0 z-30 flex h-topbar print:hidden flex-col border-b border-line bg-card/95 backdrop-blur">
       {/* Тонкая полоса «космоса»: отделяет служебную строку от данных. */}
       <div className="h-0.5 w-full shrink-0 bg-gradient-to-r from-space-deep via-space-glow to-space-mid" />
 

@@ -11,14 +11,25 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.attention import LADDER, Attention
 from app.domain.clock import local_date
-from app.domain.pult import DECISIONS, MILESTONES, PROJECTS, TASKS, ChangeKind, classify
+from app.domain.pult import (
+    DECISIONS,
+    MILESTONES,
+    PROJECTS,
+    TASKS,
+    ChangeKind,
+    DeadlineMoves,
+    PeriodKind,
+    PeriodTotals,
+    classify,
+    period_bounds,
+)
 from app.repos import pult as read_model
 from app.repos.models import User
 from app.services import metrics
@@ -189,10 +200,6 @@ async def load(
             )
         )
 
-    moved_keys = [(item.entity_type, item.entity_id) for item in moves.items]
-    moved_titles = await read_model.titles(session, moved_keys)
-    moved_dues = await read_model.due_dates(session, moved_keys, zone)
-
     return PultView(
         as_of=now,
         last_visit_at=viewer.last_visit_at,
@@ -209,25 +216,123 @@ async def load(
             for holder in holders
         ],
         changes=changes,
-        deadline_moves=MovesView(
-            period_days=moves.period_days,
-            moves=moves.moves,
-            total_shift_days=moves.total_shift_days,
-            items=[
-                MovedView(
-                    section=SECTION_OF[item.entity_type],
-                    entity_id=item.entity_id,
-                    title=moved_titles.get((item.entity_type, item.entity_id)),
-                    original_due_on=moved_dues[(item.entity_type, item.entity_id)][0],
-                    due_on=moved_dues[(item.entity_type, item.entity_id)][1],
-                    moves=item.moves,
-                )
-                for item in moves.items
-                # Запись, которую удалили после переноса, в «держим ли сроки» не
-                # показывается: переутверждать там уже нечего.
-                if (item.entity_type, item.entity_id) in moved_dues
-            ],
-        ),
+        deadline_moves=await _moves_view(session, moves, zone),
+        is_demo=is_demo,
+    )
+
+
+async def _moves_view(session: AsyncSession, moves: DeadlineMoves, zone: ZoneInfo) -> MovesView:
+    """«Держим ли мы свои сроки?» с названиями и сроками — для Пульта и отчёта."""
+    keys = [(item.entity_type, item.entity_id) for item in moves.items]
+    titles = await read_model.titles(session, keys)
+    dues = await read_model.due_dates(session, keys, zone)
+    return MovesView(
+        period_days=moves.period_days,
+        moves=moves.moves,
+        total_shift_days=moves.total_shift_days,
+        items=[
+            MovedView(
+                section=SECTION_OF[item.entity_type],
+                entity_id=item.entity_id,
+                title=titles.get((item.entity_type, item.entity_id)),
+                original_due_on=dues[(item.entity_type, item.entity_id)][0],
+                due_on=dues[(item.entity_type, item.entity_id)][1],
+                moves=item.moves,
+            )
+            for item in moves.items
+            # Запись, которую удалили после переноса, в «держим ли сроки» не
+            # показывается: переутверждать там уже нечего.
+            if (item.entity_type, item.entity_id) in dues
+        ],
+    )
+
+
+REPORT_ROWS = 10
+"""Сколько строк лестницы в отчёте. Отчёт — лист A4, а не выгрузка: десять самых срочных
+строк и число остальных говорят руководителю больше, чем сорок строк мелким шрифтом."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReportDecision:
+    kind: str
+    title: str | None
+    decided_on: date
+    state: str
+    done_on: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReportView:
+    kind: PeriodKind
+    start: date
+    end: date
+    generated_at: datetime
+    totals: PeriodTotals
+    counts: dict[str, int]
+    on_track: int
+    rows: list[RowView]
+    more_rows: int
+    holders: list[HolderView]
+    decisions: list[ReportDecision]
+    deadline_moves: MovesView
+    is_demo: bool
+
+
+async def report(
+    session: AsyncSession,
+    *,
+    viewer: User,
+    now: datetime,
+    zone: ZoneInfo,
+    kind: PeriodKind,
+    offset: int,
+    is_demo: bool,
+) -> ReportView:
+    """Отчёт недели или месяца: итоги периода и состояние на момент печати.
+
+    Итоги — по журналу за период. Лестница и «кто держит» — на момент формирования, а не
+    на конец периода: снимков прошлых состояний нет, и отчёт честно пишет дату, на
+    которую показано состояние, вместо того чтобы выдавать сегодняшнее за прошлое.
+    """
+    start_day, end_day = period_bounds(kind, offset, local_date(now, zone))
+    start = datetime.combine(start_day, time(0), zone)
+    until = min(datetime.combine(end_day + timedelta(days=1), time(0), zone), now)
+
+    totals = await metrics.period_totals(session, start=start, end=until, zone=zone)
+    screen = await load(session, viewer=viewer, now=now, zone=zone, is_demo=is_demo)
+    moves = await metrics.deadline_moves(
+        session,
+        now=until,
+        zone=zone,
+        since=start,
+        period_days=(end_day - start_day).days + 1,
+    )
+
+    decisions = await read_model.decisions_between(session, start=start, end=until)
+    titles = await read_model.titles(session, {(DECISIONS, decision.id) for decision in decisions})
+
+    return ReportView(
+        kind=kind,
+        start=start_day,
+        end=end_day,
+        generated_at=now,
+        totals=totals,
+        counts=screen.counts,
+        on_track=screen.on_track,
+        rows=screen.rows[:REPORT_ROWS],
+        more_rows=max(len(screen.rows) - REPORT_ROWS, 0),
+        holders=screen.holders,
+        decisions=[
+            ReportDecision(
+                kind=decision.kind,
+                title=titles.get((DECISIONS, decision.id)),
+                decided_on=local_date(decision.created_at, zone),
+                state=decision.state,
+                done_on=decision.done_on,
+            )
+            for decision in decisions
+        ],
+        deadline_moves=await _moves_view(session, moves, zone),
         is_demo=is_demo,
     )
 

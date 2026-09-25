@@ -58,6 +58,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => media.removeEventListener('change', follow);
   }, [mode]);
 
+  useEffect(() => {
+    // Бумага светлая. Печать отчёта на приглушённой теме дала бы тёмные страницы: читать их
+    // трудно, а картридж кончается на второй. Подписка на события печати, а не на кнопку:
+    // Ctrl+P из меню браузера кнопку «Печать» не нажимает.
+    const html = document.documentElement;
+    const toPaper = () => html.setAttribute('data-theme', 'light');
+    const back = () => html.setAttribute('data-theme', theme);
+    window.addEventListener('beforeprint', toPaper);
+    window.addEventListener('afterprint', back);
+    return () => {
+      window.removeEventListener('beforeprint', toPaper);
+      window.removeEventListener('afterprint', back);
+    };
+  }, [theme]);
+
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
     try {

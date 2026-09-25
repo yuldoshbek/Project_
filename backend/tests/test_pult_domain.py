@@ -9,7 +9,15 @@ import uuid
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from app.domain.pult import AuditEntry, ChangeKind, classify, deadline_moves
+from app.domain.pult import (
+    AuditEntry,
+    ChangeKind,
+    PeriodKind,
+    classify,
+    deadline_moves,
+    period_bounds,
+    period_totals,
+)
 
 TASHKENT = ZoneInfo("Asia/Tashkent")
 AT = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
@@ -140,3 +148,42 @@ class TestDeadlineMoves:
         shifts = [item.shift_days for item in moves.items]
         assert shifts == sorted(shifts, reverse=True)
         assert moves.moves == 8, "в счёт идут все переносы, а не только показанные"
+
+
+class TestReportPeriod:
+    def test_week_is_monday_to_sunday(self) -> None:
+        """Календарная неделя, а не «последние семь дней»: две распечатки совпадают."""
+        thursday = date(2026, 9, 24)
+        assert period_bounds(PeriodKind.WEEK, 0, thursday) == (date(2026, 9, 21), date(2026, 9, 27))
+        assert period_bounds(PeriodKind.WEEK, 1, thursday) == (date(2026, 9, 14), date(2026, 9, 20))
+
+    def test_month_rolls_over_the_year(self) -> None:
+        assert period_bounds(PeriodKind.MONTH, 0, date(2026, 9, 24)) == (
+            date(2026, 9, 1),
+            date(2026, 9, 30),
+        )
+        assert period_bounds(PeriodKind.MONTH, 1, date(2027, 1, 10)) == (
+            date(2026, 12, 1),
+            date(2026, 12, 31),
+        )
+        assert period_bounds(PeriodKind.MONTH, 0, date(2028, 2, 3))[1] == date(2028, 2, 29)
+
+    def test_totals_count_what_happened_in_the_period(self) -> None:
+        totals = period_totals(
+            [
+                entry("projects", "created", {}),
+                entry("tasks", "created", {}),
+                entry("tasks", "updated", {"status": {"from": "in_progress", "to": "done"}}),
+                entry("milestones", "updated", {"is_passed": {"from": False, "to": True}}),
+                entry("leader_decisions", "created", {}),
+                entry("leader_decisions", "updated", {"state": {"from": "open", "to": "done"}}),
+                entry(
+                    "projects", "updated", {"due_on": {"from": "2026-09-01", "to": "2026-09-11"}}
+                ),
+            ],
+            zone=TASHKENT,
+        )
+
+        assert (totals.created_projects, totals.created_tasks, totals.closed_tasks) == (1, 1, 1)
+        assert (totals.passed_milestones, totals.decisions_made, totals.decisions_done) == (1, 1, 1)
+        assert (totals.moves, totals.shift_days) == (1, 10)

@@ -159,3 +159,42 @@ export function targetOf(item: {
   const type = SECTION_TARGET[item.section as keyof typeof SECTION_TARGET];
   return type ? { target_type: type, target_id: item.entity_id } : null;
 }
+
+/** Отчёт недели или месяца — вкладка Пульта (`GET /api/v1/pult/report`). */
+export type ReportPeriod = 'week' | 'month';
+
+export interface ReportTotals {
+  created_projects: number;
+  created_tasks: number;
+  closed_tasks: number;
+  closed_projects: number;
+  passed_milestones: number;
+  decisions_made: number;
+  decisions_done: number;
+  moves: number;
+  shift_days: number;
+}
+
+export interface ReportView {
+  period: ReportPeriod;
+  start: string;
+  end: string;
+  /** Момент формирования: лестница и «кто держит» показаны на него, а не на конец периода. */
+  generated_at: string;
+  totals: ReportTotals;
+  counts: Record<Step, number>;
+  on_track: number;
+  rows: PultRow[];
+  /** Сколько строк лестницы не попало в отчёт: лист A4, а не выгрузка. */
+  more_rows: number;
+  holders: Holder[];
+  decisions: {
+    kind: DecisionKind;
+    title: string | null;
+    decided_on: string;
+    state: 'open' | 'done';
+    done_on: string | null;
+  }[];
+  deadline_moves: DeadlineMoves;
+  is_demo: boolean;
+}

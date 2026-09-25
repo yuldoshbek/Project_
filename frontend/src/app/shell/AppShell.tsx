@@ -16,6 +16,7 @@
 import type { ReactNode } from 'react';
 
 import { useDevice } from '@/app/device';
+import { cn } from '@/shared/lib/cn';
 
 import { BottomBar } from './BottomBar';
 import { SideRail } from './SideRail';
@@ -38,14 +39,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             isPhone
               ? // Отступ снизу — под нижнюю панель и жест-полосу iPhone: без него последняя
                 // карточка списка оказывается под кнопками и её не прочитать.
-                'min-w-0 flex-1 px-4 pt-4 pb-28'
+                'min-w-0 flex-1 px-4 pt-4 pb-28 print:p-0'
               : device === 'monitor'
-                ? 'min-w-0 flex-1 px-10 py-8'
-                : 'min-w-0 flex-1 px-6 py-6'
+                ? 'min-w-0 flex-1 px-10 py-8 print:p-0'
+                : 'min-w-0 flex-1 px-6 py-6 print:p-0'
           }
         >
           <div
-            className={device === 'monitor' ? 'mx-auto max-w-[1600px]' : 'mx-auto max-w-[1100px]'}
+            className={cn(
+              'mx-auto print:max-w-none',
+              device === 'monitor' ? 'max-w-[1600px]' : 'max-w-[1100px]',
+            )}
           >
             {children}
           </div>

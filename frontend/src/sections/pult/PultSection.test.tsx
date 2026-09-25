@@ -8,12 +8,12 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUser } from '@/shared/api/orbita';
 
-import type { PultRow, PultView } from './model';
+import type { PultRow, PultView, ReportView } from './model';
 import { PultSection } from './PultSection';
 
 const KARIMOV = { id: 'p-karimov', name: 'Каримов А.' };
@@ -96,6 +96,42 @@ const VIEW: PultView = {
   is_demo: true,
 };
 
+function report(period: 'week' | 'month'): ReportView {
+  return {
+    period,
+    start: period === 'week' ? '2026-09-21' : '2026-09-01',
+    end: period === 'week' ? '2026-09-27' : '2026-09-30',
+    generated_at: '2026-09-25T12:00:00Z',
+    totals: {
+      created_projects: 2,
+      created_tasks: 5,
+      closed_tasks: 7,
+      closed_projects: 1,
+      passed_milestones: 3,
+      decisions_made: 4,
+      decisions_done: 2,
+      moves: 1,
+      shift_days: 7,
+    },
+    counts: VIEW.counts,
+    on_track: VIEW.on_track,
+    rows: VIEW.rows,
+    more_rows: 0,
+    holders: VIEW.holders,
+    decisions: [
+      {
+        kind: 'hurry',
+        title: 'Справка для Кабмина',
+        decided_on: '2026-09-23',
+        state: 'open',
+        done_on: null,
+      },
+    ],
+    deadline_moves: VIEW.deadline_moves,
+    is_demo: true,
+  };
+}
+
 function user(role: 'leader' | 'assistant'): CurrentUser {
   return {
     id: `u-${role}`,
@@ -125,6 +161,9 @@ function serve(role: 'leader' | 'assistant') {
     calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
     if (path === '/api/v1/pult') return Promise.resolve(reply(200, VIEW));
+    if (path.startsWith('/api/v1/pult/report')) {
+      return Promise.resolve(reply(200, report(path.includes('period=month') ? 'month' : 'week')));
+    }
     if (method === 'POST') return Promise.resolve(reply(201, { id: 'created-1' }));
     if (method === 'DELETE') return Promise.resolve(reply(204));
     return Promise.resolve(reply(404, { detail: `нет подмены ${path}` }));
@@ -228,5 +267,23 @@ describe('Пульт', () => {
     serve('leader');
     renderPult();
     expect(await screen.findByText('Срок 09.09.2026 → 16.09.2026')).toBeInTheDocument();
+  });
+
+  it('отчёт — вкладка Пульта: неделя по умолчанию, месяц по кнопке', async () => {
+    const calls = serve('leader');
+    renderPult();
+    await screen.findByText('Согласование ТЗ');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Отчёт' }));
+
+    expect(await screen.findByText('Отчёт за неделю 21.09.2026 — 27.09.2026')).toBeInTheDocument();
+    const closed = screen.getByText('закрыто задач').parentElement!;
+    expect(within(closed).getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('Поторопить: Справка для Кабмина')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Месяц' }));
+
+    expect(await screen.findByText('Отчёт за месяц 01.09.2026 — 30.09.2026')).toBeInTheDocument();
+    expect(calls.map((call) => call.path)).toContain('/api/v1/pult/report?period=month&offset=0');
   });
 });

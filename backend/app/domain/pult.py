@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -137,6 +137,84 @@ def due_shift(entry: AuditEntry, zone: ZoneInfo) -> tuple[date, date] | None:
     if before is None or after is None or before == after:
         return None
     return before, after
+
+
+class PeriodKind(StrEnum):
+    """Отчёт недели и месяца — вкладка Пульта (ТЗ 2, критерий 6 блока 1)."""
+
+    WEEK = "week"
+    MONTH = "month"
+
+
+def period_bounds(kind: PeriodKind, offset: int, today: date) -> tuple[date, date]:
+    """Первый и последний день отчётного периода; `offset` — сколько периодов назад.
+
+    Календарные неделя и месяц, а не «последние семь дней»: отчёт печатают и кладут в
+    папку, и «неделя с 22 по 28 сентября» у двух распечаток обязана быть одной и той же.
+    Неделя — с понедельника, как рабочая неделя агентства.
+    """
+    if kind is PeriodKind.WEEK:
+        monday = today - timedelta(days=today.weekday()) - timedelta(weeks=offset)
+        return monday, monday + timedelta(days=6)
+
+    month_index = today.year * 12 + today.month - 1 - offset
+    first = date(month_index // 12, month_index % 12 + 1, 1)
+    next_index = month_index + 1
+    after = date(next_index // 12, next_index % 12 + 1, 1)
+    return first, after - timedelta(days=1)
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodTotals:
+    """Итоги периода по журналу: что сделано, а не сколько всего накопилось.
+
+    ТЗ 5 запрещает метрики, которые только растут («закрыто задач всего»). Здесь каждое
+    число — за период, и у каждого есть ответ на вопрос «что изменилось за неделю».
+    """
+
+    created_projects: int
+    created_tasks: int
+    closed_tasks: int
+    closed_projects: int
+    passed_milestones: int
+    decisions_made: int
+    decisions_done: int
+    moves: int
+    shift_days: int
+
+
+def period_totals(entries: Iterable[AuditEntry], *, zone: ZoneInfo) -> PeriodTotals:
+    """Итоги по записям журнала за период — тем же правилом, что «С прошлого визита»."""
+    counts: dict[tuple[ChangeKind, str], int] = {}
+    decisions_made = 0
+    moves = 0
+    shift_days = 0
+    for entry in entries:
+        if entry.entity_type == DECISIONS and entry.action == AuditAction.CREATED:
+            decisions_made += 1
+        for change in classify(entry, zone):
+            key = (change.kind, change.entity_type)
+            counts[key] = counts.get(key, 0) + 1
+            if change.kind is ChangeKind.DEADLINE_MOVED and change.moved:
+                shift = (change.moved[1] - change.moved[0]).days
+                if shift > 0:
+                    moves += 1
+                    shift_days += shift
+
+    def count(kind: ChangeKind, entity_type: str) -> int:
+        return counts.get((kind, entity_type), 0)
+
+    return PeriodTotals(
+        created_projects=count(ChangeKind.CREATED, PROJECTS),
+        created_tasks=count(ChangeKind.CREATED, TASKS),
+        closed_tasks=count(ChangeKind.CLOSED, TASKS),
+        closed_projects=count(ChangeKind.CLOSED, PROJECTS),
+        passed_milestones=count(ChangeKind.MILESTONE_PASSED, MILESTONES),
+        decisions_made=decisions_made,
+        decisions_done=count(ChangeKind.DECISION_DONE, DECISIONS),
+        moves=moves,
+        shift_days=shift_days,
+    )
 
 
 @dataclass(frozen=True, slots=True)

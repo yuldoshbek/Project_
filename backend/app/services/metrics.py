@@ -36,8 +36,9 @@ from app.domain.attention import (
 )
 from app.domain.attention import holders as holders_of
 from app.domain.dictionaries import SettingKey
-from app.domain.pult import MILESTONES, PROJECTS, TASKS, DeadlineMoves
+from app.domain.pult import DECISIONS, MILESTONES, PROJECTS, TASKS, DeadlineMoves, PeriodTotals
 from app.domain.pult import deadline_moves as moves_of
+from app.domain.pult import period_totals as totals_of
 from app.repos import attention as snapshot
 from app.repos import pult as read_model
 from app.services.dictionaries import load_settings
@@ -97,14 +98,32 @@ async def deadline_moves(
     zone: ZoneInfo,
     period_days: int = MOVES_PERIOD_DAYS,
     top: int = MOVES_TOP,
+    since: datetime | None = None,
 ) -> DeadlineMoves:
-    """«Держим ли мы свои сроки?»: переносы и суммарный сдвиг за период — по журналу."""
+    """«Держим ли мы свои сроки?»: переносы и суммарный сдвиг за период — по журналу.
+
+    По умолчанию — последние `period_days` до `now`; отчёт передаёт свои границы.
+    """
     entries = await read_model.audit_entries(
         session,
-        since=now - timedelta(days=period_days),
+        since=since or now - timedelta(days=period_days),
+        until=now,
         entity_types=(PROJECTS, MILESTONES, TASKS),
     )
     return moves_of(entries, zone=zone, period_days=period_days, top=top)
+
+
+async def period_totals(
+    session: AsyncSession, *, start: datetime, end: datetime, zone: ZoneInfo
+) -> PeriodTotals:
+    """Итоги периода для отчёта недели и месяца — по журналу, тем же правилом."""
+    entries = await read_model.audit_entries(
+        session,
+        since=start,
+        until=end,
+        entity_types=(PROJECTS, MILESTONES, TASKS, DECISIONS),
+    )
+    return totals_of(entries, zone=zone)
 
 
 async def what_if(
