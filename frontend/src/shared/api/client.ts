@@ -16,6 +16,8 @@
  * тип: экран решает, что с ним делать.
  */
 
+import i18next from '@/shared/i18n';
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -65,7 +67,7 @@ async function readError(response: Response): Promise<ApiError> {
     const body = (await response.json()) as { detail?: string; type?: string };
     return new ApiError(response.status, body.detail ?? response.statusText, body.type);
   } catch {
-    return new ApiError(response.status, `Ответ ${response.status} без пояснения`);
+    return new ApiError(response.status, i18next.t('common.noDetail', { status: response.status }));
   }
 }
 

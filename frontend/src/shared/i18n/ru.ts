@@ -107,10 +107,17 @@ export const ru = {
     loading: 'Загружаем',
     error: 'Не получилось',
     errorBody: 'Запрос не прошёл: {{detail}}',
+    noDetail: 'Ответ {{status}} без пояснения',
     retry: 'Повторить',
     empty: 'Пусто',
     never: 'ни разу',
     now: 'только что',
+  },
+
+  time: {
+    minutesAgo: '{{minutes}} мин назад',
+    hoursAgo: '{{hours}} ч назад',
+    yesterdayAt: 'вчера в {{time}}',
   },
 } as const;
 
