@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { NeedsLink } from '@/app/NeedsLink';
 import { useCurrentUser } from '@/app/session';
 import { AppShell } from '@/app/shell/AppShell';
-import { ApiError } from '@/shared/api/client';
+import { ApiError, describeError } from '@/shared/api/client';
 import { Failure, Loading } from '@/shared/ui/States';
 
 export function App() {
@@ -35,10 +35,7 @@ export function App() {
     return (
       <div className="grid min-h-dvh place-items-center bg-app px-6">
         <div className="w-full max-w-md">
-          <Failure
-            detail={user.error instanceof ApiError ? user.error.detail : String(user.error)}
-            onRetry={() => void user.refetch()}
-          />
+          <Failure detail={describeError(user.error)} onRetry={() => void user.refetch()} />
         </div>
       </div>
     );

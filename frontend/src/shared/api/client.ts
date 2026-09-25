@@ -44,6 +44,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Что показать человеку вместо ошибки: пояснение API, иначе текст исключения. */
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) return error.detail;
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 interface RequestOptions {

@@ -22,6 +22,7 @@ import { App } from '@/app/App';
 import { SECTIONS, sectionPath } from '@/app/sections';
 import { ManagementSection } from '@/sections/management/ManagementSection';
 import { SoonSection } from '@/sections/SoonSection';
+import { RenderFailure } from '@/shared/ui/Boundary';
 
 const rootRoute = createRootRoute({ component: App });
 
@@ -51,6 +52,9 @@ const notFoundRoute = createRoute({
 export const router = createRouter({
   routeTree: rootRoute.addChildren([...sectionRoutes, notFoundRoute]),
   defaultPreload: 'intent',
+  // Упавший раздел показывает наше «Не получилось» внутри оболочки: навигация остаётся, и
+  // можно уйти в соседний раздел.
+  defaultErrorComponent: RenderFailure,
 });
 
 declare module '@tanstack/react-router' {

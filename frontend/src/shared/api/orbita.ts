@@ -1,11 +1,10 @@
 /**
  * Запросы к ORBITA и их типы.
  *
- * Типы описаны здесь руками и сверяются со схемой OpenAPI проверкой `npm run api:check`:
- * расхождение поля между бэкендом и интерфейсом — это не ошибка типа, а пустая графа на
- * экране у руководителя. Генерация полного клиента приедет вместе с разделами данных
- * (блок 1), когда описывать станет что: сейчас запросов четыре, и генератор вокруг них —
- * инструмент дороже задачи.
+ * Типы описаны руками по схемам ответов бэкенда (pydantic-модели в `backend/app/api/routes`).
+ * Автоматической сверки со схемой OpenAPI нет, поэтому схема ответа и тип здесь правятся
+ * одним изменением: расхождение поля — это не ошибка типа, а пустая графа на экране у
+ * руководителя.
  */
 
 import { request } from './client';
@@ -54,11 +53,25 @@ export interface DictionaryEntry {
   is_active: boolean;
 }
 
+/** Статус: цвет и терминальность — данные справочника, а не код (ТЗ 3.9). */
+export interface StatusEntry extends DictionaryEntry {
+  color: string;
+  is_terminal: boolean;
+}
+
+export interface ProjectStatusEntry extends StatusEntry {
+  /** Переход в этот статус требует причины. */
+  requires_reason: boolean;
+}
+
+/** Ответ `/api/v1/dictionaries` — `DictionariesResponse` в `routes/dictionaries.py`. */
 export interface Dictionaries {
+  project_types: DictionaryEntry[];
+  task_types: DictionaryEntry[];
   directions: DictionaryEntry[];
-  project_statuses: DictionaryEntry[];
-  task_statuses: DictionaryEntry[];
-  priorities: DictionaryEntry[];
+  regions: DictionaryEntry[];
+  project_statuses: ProjectStatusEntry[];
+  task_statuses: StatusEntry[];
 }
 
 export const api = {

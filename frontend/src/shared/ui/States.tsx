@@ -21,7 +21,14 @@ export function Loading({ label }: { label?: string }) {
   );
 }
 
-export function Failure({ detail, onRetry }: { detail: string; onRetry?: () => void }) {
+interface FailureProps {
+  detail: string;
+  /** Что именно не получилось: по умолчанию — запрос. */
+  kind?: 'request' | 'render';
+  onRetry?: (() => void) | undefined;
+}
+
+export function Failure({ detail, kind = 'request', onRetry }: FailureProps) {
   const { t } = useTranslation();
   return (
     <div className="rounded-[var(--radius)] border border-line bg-burn-soft p-4" role="alert">
@@ -29,7 +36,9 @@ export function Failure({ detail, onRetry }: { detail: string; onRetry?: () => v
         <AlertTriangle className="size-4" aria-hidden="true" />
         {t('common.error')}
       </p>
-      <p className="mt-1 text-sm text-burn-ink">{t('common.errorBody', { detail })}</p>
+      <p className="mt-1 text-sm text-burn-ink">
+        {t(kind === 'render' ? 'common.brokenBody' : 'common.errorBody', { detail })}
+      </p>
       {onRetry ? (
         <Button className="mt-3" size="small" onClick={onRetry}>
           {t('common.retry')}
