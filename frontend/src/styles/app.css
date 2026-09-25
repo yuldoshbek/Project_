@@ -67,6 +67,34 @@
   --spacing-topbar: var(--topbar-height);
 }
 
+/*
+ * Движение «космоса» — два приёма из четырёх разрешённых (ТЗ 6, PLAN-10X):
+ * вспышка изменившегося числа и медленные орбиты в шапке раздела на ноутбуке и мониторе.
+ * Под цифрами и текстом не бывает ни того ни другого; `prefers-reduced-motion` гасит оба
+ * правилом ниже.
+ */
+@theme {
+  --animate-flash: flash 900ms ease-out;
+  --animate-orbit: orbit 120s linear infinite;
+  --animate-orbit-reverse: orbit 180s linear infinite reverse;
+
+  @keyframes flash {
+    0% {
+      box-shadow: 0 0 0 8px var(--flash);
+    }
+
+    100% {
+      box-shadow: 0 0 0 0 var(--flash);
+    }
+  }
+
+  @keyframes orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
 @layer base {
   html {
     /* Плавная прокрутка отключена для тех, кто просил меньше движения: системная
