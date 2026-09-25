@@ -97,7 +97,7 @@ jobs:
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -232,7 +232,7 @@ jobs:
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Вернуть прежнюю версию API
         run: npx --yes vercel@latest rollback --yes --token="$VERCEL_TOKEN"
