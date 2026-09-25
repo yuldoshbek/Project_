@@ -16,6 +16,15 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Куда складываются снимки и PDF: папка отчёта текущего блока. Доказательства прошлого
+ * блока не перезаписываются — прежде снимки блока 1 затёрли бы снимки блока 0.
+ */
+export const REPORT_DIR = resolve(
+  here,
+  `../../docs/reports/${process.env.ORBITA_E2E_BLOCK ?? 'block-1'}`,
+);
 const backend = resolve(here, '../../backend');
 
 export function issueLink(role: 'assistant' | 'leader' = 'assistant'): string {

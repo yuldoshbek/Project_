@@ -71,6 +71,13 @@ jobs:
       ORBITA_SESSION_SECRET: ci-session-secret-not-for-production-32-chars-min
       ORBITA_JOBS_SECRET: ci-jobs-secret-not-for-production
       ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
+      # Части адреса — отдельно: тесты и миграции тестовой базы собирают адрес из них, а не
+      # из строки выше (она указывает на базу разработки). Без них берётся порт по
+      # умолчанию для машины разработчика, и в CI не находится ни одна база.
+      ORBITA_DB_HOST: localhost
+      ORBITA_DB_PORT: '5432'
+      ORBITA_DB_USER: orbita
+      ORBITA_DB_PASSWORD: orbita
       ORBITA_TEST_DB: orbita_test
       ORBITA_BASE_URL: http://localhost:5173
 
@@ -263,6 +270,9 @@ jobs:
           uv sync --all-groups --frozen
           uv run alembic upgrade head
           uv run python -m app.seed
+          # Вымышленные данные: без них Пульт пуст, и проверка «пять строк без прокрутки»
+          # проверяла бы пустой экран.
+          uv run python -m app.demo
 
       - name: Поднять API
         working-directory: backend
@@ -301,6 +311,7 @@ jobs:
         with:
           name: screens
           path: |
-            docs/reports/block-0/*.png
+            docs/reports/block-1/*.png
+            docs/reports/block-1/*.pdf
             frontend/test-results/**
           retention-days: 14

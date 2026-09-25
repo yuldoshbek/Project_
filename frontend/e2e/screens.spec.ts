@@ -11,7 +11,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { issueLink } from './link';
+import { REPORT_DIR, issueLink } from './link';
 
 const SIZES = [
   { name: 'phone', width: 390, height: 844 },
@@ -21,10 +21,9 @@ const SIZES = [
 
 const THEMES = ['light', 'dim'] as const;
 
-const PAGES = [
-  { name: 'pult', path: '/' },
-  { name: 'management', path: '/management' },
-] as const;
+// Пульт снимается глазами руководителя в pult.spec.ts: это его экран. Здесь — то, что
+// видит помощник.
+const PAGES = [{ name: 'management', path: '/management' }] as const;
 
 const MIN_TOUCH_TARGET = 44;
 
@@ -52,7 +51,7 @@ for (const size of SIZES) {
         await page.goto(target.path);
         await page.waitForLoadState('networkidle');
         await page.screenshot({
-          path: `../docs/reports/block-0/${target.name}-${size.name}-${theme}.png`,
+          path: `${REPORT_DIR}/${target.name}-${size.name}-${theme}.png`,
           fullPage: false,
         });
 

@@ -64,7 +64,7 @@ def dsn(database: str) -> str:
     user = _env("ORBITA_DB_USER", "orbita")
     password = _env("ORBITA_DB_PASSWORD", "orbita")
     host = _env("ORBITA_DB_HOST", "127.0.0.1")
-    port = _env("ORBITA_DB_PORT", "55432")
+    port = _env("ORBITA_DB_PORT", "55433")
     return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
 
@@ -130,7 +130,7 @@ def build_settings() -> Settings:
         # указывает на базу разработки, а тесты обязаны работать только со своей.
         database_url=None,
         db_host=_env("ORBITA_DB_HOST", "127.0.0.1"),
-        db_port=int(_env("ORBITA_DB_PORT", "55432")),
+        db_port=int(_env("ORBITA_DB_PORT", "55433")),
         db_name=configured_test_db(),
         db_user=_env("ORBITA_DB_USER", "orbita"),
         db_password=SecretStr(_env("ORBITA_DB_PASSWORD", "orbita")),
