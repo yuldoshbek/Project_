@@ -54,8 +54,14 @@ export function SinceCard({
       ) : (
         <>
           <ul className="flex flex-col gap-2">
-            {shown.map((change) => (
-              <li key={`${change.kind}-${change.at}`} className="flex gap-3 text-sm">
+            {shown.map((change, index) => (
+              // Порядковый номер в ключе нужен: две правки одной записи в одной транзакции
+              // приходят с одинаковым временем — так перенос вехи дважды давал два
+              // одинаковых ключа, и React терял одну из строк.
+              <li
+                key={`${change.kind}-${change.entity_id}-${index}`}
+                className="flex gap-3 text-sm"
+              >
                 <time className="w-11 shrink-0 text-ink-muted" dateTime={change.at}>
                   {formatTime(change.at)}
                 </time>
