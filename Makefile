@@ -22,7 +22,7 @@ install: ## Установить зависимости backend и frontend
 
 up: ## Поднять PostgreSQL для разработки
 	docker compose up -d --wait
-	@echo "PostgreSQL :$${ORBITA_DB_PORT:-55432}"
+	@echo "PostgreSQL :$${ORBITA_DB_PORT:-55433}"
 
 down: ## Остановить окружение (данные сохраняются)
 	docker compose down

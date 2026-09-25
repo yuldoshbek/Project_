@@ -1,11 +1,19 @@
 """Единый формат ошибок — RFC 9457 (Problem Details for HTTP APIs).
 
 Одна форма ответа на все виды отказов: и на доменную ошибку, и на неверный запрос, и на
-падение. Интерфейс и бот разбирают ответ одним кодом, а не гадают по форме тела.
+падение. Интерфейс разбирает ответ одним кодом, а не гадает по форме тела.
 
 Наружу не уходит ничего лишнего: текст исключения и стек остаются в логе. Сообщение об
-ошибке — тоже поверхность выдачи данных, и на ней действует то же правило, что и везде
-(CLAUDE.md, инвариант 1).
+ошибке — тоже поверхность выдачи данных: текст исключения базы называет таблицы,
+ограничения и значения, а данные не покидают систему иначе как через выдачу, которую
+для этого и писали.
+
+**Конфликт записи — это 409, а не 500** (инвариант 15). Двое правят одно и то же чаще,
+чем кажется: помощник вносит перенос срока ровно тогда, когда руководитель смотрит на
+этот проект с телефона. Поле версии (`repos.base.Versioned`) превращает молчаливую
+перезапись в `StaleDataError`, а ограничения базы — повтор и ссылку в пустоту — в
+`IntegrityError`. Оба случая — не поломка, а «данные изменились, обновите и повторите»,
+и человек должен прочитать именно это, а не «обратитесь к администратору».
 """
 
 from __future__ import annotations
@@ -16,6 +24,8 @@ import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.domain.errors import (
@@ -27,7 +37,7 @@ from app.domain.errors import (
     PermissionDeniedError,
     RuleViolationError,
 )
-from app.observability import REQUEST_ID_HEADER, get_request_id
+from app.observability import REQUEST_ID_HEADER, get_request_id, mask_secret_paths_in
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
 
@@ -56,6 +66,37 @@ TITLE_BY_STATUS: dict[int, str] = {
     status.HTTP_503_SERVICE_UNAVAILABLE: "Сервис временно недоступен",
 }
 
+STALE_DATA_MESSAGE = (
+    "Запись уже изменили, пока вы её редактировали. Ваша правка не сохранена: обновите "
+    "данные и внесите её ещё раз"
+)
+
+# Код состояния SQLSTATE → что сказать человеку. Классы из стандарта SQL, одинаковые для
+# любой установки PostgreSQL: https://www.postgresql.org/docs/16/errcodes-appendix.html
+INTEGRITY_MESSAGES: dict[str, str] = {
+    "23505": "Такая запись уже есть — повторить её нельзя",
+    "23503": "Запись связана с другими данными: ссылка ведёт на удалённую запись или "
+    "на эту запись ссылаются другие",
+    "23514": "Данные нарушают правило, которое держит база",
+    "23502": "Не заполнено обязательное поле",
+}
+INTEGRITY_FALLBACK = "Изменение противоречит данным, которые уже есть в системе"
+
+
+def _integrity_details(error: IntegrityError) -> tuple[str | None, str | None]:
+    """Код SQLSTATE и имя ограничения — для лога и выбора сообщения.
+
+    Драйвер кладёт код в `sqlstate` обёртки, а имя ограничения — в исходное исключение
+    asyncpg, которое лежит в `__cause__`. Ни то ни другое не обязано быть: исключение мог
+    поднять не драйвер, а тест или другой диалект.
+    """
+    sqlstate = getattr(error.orig, "sqlstate", None)
+    constraint = getattr(getattr(error.orig, "__cause__", None), "constraint_name", None)
+    return (
+        sqlstate if isinstance(sqlstate, str) else None,
+        constraint if isinstance(constraint, str) else None,
+    )
+
 
 def problem_response(
     *,
@@ -73,15 +114,19 @@ def problem_response(
     if detail:
         body["detail"] = detail
     if instance:
-        body["instance"] = instance
+        # Путь отказа возвращается без токена личной ссылки: тело ответа читают
+        # прокси и отчёты об ошибках, а ключу там не место (`app.observability`).
+        body["instance"] = mask_secret_paths_in(instance)
     if errors:
         body["errors"] = errors
 
     headers: dict[str, str] = {}
     if status_code == status.HTTP_401_UNAUTHORIZED:
-        # RFC 9110 требует его при 401. Без заголовка ответ формально некорректен, и
-        # клиентские библиотеки не понимают, каким способом входить.
-        headers["WWW-Authenticate"] = "Bearer"
+        # RFC 9110 (15.5.2) требует вызов при 401. Схема — `Cookie`, а не `Bearer`:
+        # токена в заголовке у ORBITA нет, доступ даёт cookie сессии, которую ставит
+        # личная ссылка (ADR-0029), и `Bearer` обещал бы вход, которого не существует.
+        # Браузер на незнакомую схему окна входа не показывает — в отличие от `Basic`.
+        headers["WWW-Authenticate"] = 'Cookie realm="ORBITA"'
 
     request_id = get_request_id()
     if request_id:
@@ -123,6 +168,33 @@ def register_exception_handlers(app: FastAPI) -> None:
             # подробность побеждала, и пользователь получал «начало 01.06, срок 01.05»
             # без объяснения, что именно не так. Подробность уточняет, а не заменяет.
             detail=f"{exc.message}: {exc.detail}" if exc.detail else exc.message,
+            instance=request.url.path,
+        )
+
+    @app.exception_handler(StaleDataError)
+    async def handle_stale_data(request: Request, exc: Exception) -> JSONResponse:
+        # Сюда попадает и сбой фиксации в `api.transaction`: фиксация идёт внутри
+        # обработчика маршрута, и её исключение проходит те же обработчики, что и
+        # исключение из тела обработчика. Транзакцию откатывает `deps.get_session`.
+        logger.info("stale_data", error=str(exc))
+        return problem_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="stale-data",
+            detail=STALE_DATA_MESSAGE,
+            instance=request.url.path,
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def handle_integrity_error(request: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, IntegrityError)
+        sqlstate, constraint = _integrity_details(exc)
+        # Имя ограничения — в лог, не в ответ: по нему разработчик находит правило за
+        # секунды, а человеку оно ничего не говорит и выдаёт устройство базы.
+        logger.info("integrity_conflict", sqlstate=sqlstate, constraint=constraint)
+        return problem_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="integrity-conflict",
+            detail=INTEGRITY_MESSAGES.get(sqlstate or "", INTEGRITY_FALLBACK),
             instance=request.url.path,
         )
 

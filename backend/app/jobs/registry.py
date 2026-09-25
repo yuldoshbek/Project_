@@ -9,6 +9,8 @@
 - пара «задача + период» уникальна в базе, и вторая вставка падает, а не «тоже работает»;
 - неудачный прогон период не занимает: одна ошибка не должна отменять задачу до конца
   суток;
+- брошенный прогон занимает период не дольше `ABANDONED_AFTER`: процесс, убитый
+  посреди работы, не должен заклинить задачу навсегда;
 - пропущенный период задача догоняет сама — обработчик смотрит на состояние, а не на
   календарь вызовов.
 
@@ -20,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -37,6 +39,22 @@ logger = structlog.get_logger(__name__)
 STATUS_RUNNING = "running"
 STATUS_DONE = "done"
 STATUS_FAILED = "failed"
+
+ABANDONED_AFTER = timedelta(minutes=10)
+"""Прогон, который «выполняется» дольше этого, брошен, и период снова свободен.
+
+Откуда число: функция на Vercel живёт не дольше 60 секунд (`vercel.json`, `maxDuration`),
+а задачи здесь по устройству короткие — сводка и снимок укладываются в секунды. Десять
+минут — десятикратный запас над самым долгим законным прогоном; дольше «выполняется»
+только тот, кого уже некому завершить.
+
+Откуда такой прогон вообще берётся: сейчас отметка `running` фиксируется одной
+транзакцией с результатом, и при падении процесса откатывается вместе с ним. Но достаточно
+одного прогона, прерванного между фиксацией отметки и результата — ручная правка, другой
+запускающий код на сервере агентства, будущая отметка «начато» отдельной транзакцией, — и
+без этого правила период оказался бы занят навсегда: каждое следующее утро сводка
+отвечала бы «уже выполняется».
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +144,12 @@ async def run_job(
     `force` нужен разработке и разбору происшествий: он позволяет прогнать задачу повторно,
     не дожидаясь следующего периода. В расписании его нет — иначе идемпотентность
     отключалась бы одним параметром.
+
+    Повторный прогон **занимает строку прежнего**, а не заводит вторую: уникальность пары
+    «задача + период» держит частичный индекс, и вторая строка со статусом не `failed`
+    упала бы на нём. Строка периода описывает последний прогон за этот период; прежний
+    результат остаётся в логе (`job_forced`). Если повторный прогон упадёт, откат вернёт
+    строке прежнее состояние — удачный результат не теряется из-за неудачной попытки.
     """
     jobs = all_jobs()
     job = jobs.get(name)
@@ -136,19 +160,40 @@ async def run_job(
     zone = ZoneInfo(timezone)
     period = job.period(moment, zone)
 
-    done = await session.scalar(
+    existing = await session.scalar(
         select(JobRun).where(
             JobRun.name == name,
             JobRun.period == period,
             JobRun.status != STATUS_FAILED,
         )
     )
-    if done is not None and not force:
+    abandoned = (
+        existing is not None
+        and existing.status == STATUS_RUNNING
+        and moment - existing.started_at > ABANDONED_AFTER
+    )
+    if existing is not None and not (force or abandoned):
         logger.info("job_skipped", job=name, period=period)
-        return JobResult(name=name, period=period, status=done.status, skipped=True)
+        return JobResult(name=name, period=period, status=existing.status, skipped=True)
 
-    run = JobRun(name=name, period=period, started_at=moment, status=STATUS_RUNNING)
-    session.add(run)
+    if existing is not None:
+        logger.info(
+            "job_forced" if force else "job_abandoned_run_taken_over",
+            job=name,
+            period=period,
+            previous_status=existing.status,
+            previous_started_at=existing.started_at.isoformat(),
+            previous_result=existing.result,
+        )
+        run = existing
+        run.started_at = moment
+        run.finished_at = None
+        run.status = STATUS_RUNNING
+        run.result = None
+        run.error = None
+    else:
+        run = JobRun(name=name, period=period, started_at=moment, status=STATUS_RUNNING)
+        session.add(run)
     try:
         # Отметка о начале уходит в базу до работы: так второй одновременный вызов
         # упирается в уникальность пары «задача + период», а не делает работу параллельно.

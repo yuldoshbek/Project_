@@ -70,19 +70,7 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-async def get_active_user(user: CurrentUser) -> User:
-    """Псевдоним `CurrentUser`.
-
-    Имя сохранено намеренно: на эту зависимость ссылаются восемь роутеров, а
-    переименование тронуло бы их все и ничего не изменило бы по существу.
-    """
-    return user
-
-
-ActiveUser = Annotated[User, Depends(get_active_user)]
-
-
-async def require_assistant(user: ActiveUser) -> User:
+async def require_assistant(user: CurrentUser) -> User:
     """Действия, изменяющие данные.
 
     Данные вносит помощник. Руководитель открывает систему, чтобы смотреть и решать, и

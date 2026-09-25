@@ -58,7 +58,10 @@ async def run(
     if not hmac.compare_digest(x_orbita_jobs_secret.encode("utf-8"), expected.encode("utf-8")):
         raise NotAuthenticatedError("Неверный секрет задачи")
 
-    outcome = await run_job(session, name)
+    # Часовой пояс — из настроек системы, как у командной строки (`app.jobs.run`): период
+    # «сутки» у расписания и у ручного запуска обязан быть одним и тем же, иначе вызов
+    # руками и вызов по расписанию разойдутся в том, какой сегодня день.
+    outcome = await run_job(session, name, timezone=settings.timezone)
     return JobRunResponse(
         status=outcome.status,
         job=outcome.name,
