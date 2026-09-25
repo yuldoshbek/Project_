@@ -116,6 +116,14 @@ jobs:
       - name: Границы слоёв
         run: uv run lint-imports
 
+      # Тестовую базу на машине разработчика создаёт init-скрипт контейнера
+      # (docker/postgres/init), а сервис-контейнер CI заводит только POSTGRES_DB. Без этого
+      # шага все тесты падают на подготовке: «database orbita_test does not exist».
+      - name: Тестовая база
+        env:
+          PGPASSWORD: orbita
+        run: psql -h localhost -U orbita -d orbita -c "CREATE DATABASE orbita_test"
+
       - name: Тесты
         run: uv run pytest
 
