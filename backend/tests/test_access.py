@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -42,6 +43,10 @@ from tests.conftest import open_session_for
 pytestmark = pytest.mark.infra
 
 SAMPLE_ID = "00000000-0000-0000-0000-000000000000"
+
+# Любой параметр пути — `{id}`, `{project_type_id}` и те, что придут с экранами блока.
+# Подстановка по одному имени пропускала бы новые маршруты мимо проверки молча.
+PATH_PARAMETER = re.compile(r"\{[^}]+\}")
 
 # Точка, в которой проверяется охранник. Пробный маршрут, а не настоящий: он проверяет
 # зависимость насквозь — через маршрутизацию, обработчик ошибок и формат ответа, — и при
@@ -79,8 +84,14 @@ def api_endpoints(application: FastAPI) -> list[tuple[str, str]]:
 
 class TestSessionIsRequired:
     def test_the_check_has_something_to_check(self, app: FastAPI) -> None:
-        """Страховка от пустого обхода: без маршрутов проверка ничего не значит."""
-        assert len(api_endpoints(app)) > 10
+        """Страховка от пустого обхода: без маршрутов проверка ничего не значит.
+
+        Проверяется присутствие известного маршрута данных, а не их число: число меняется
+        с каждым экраном блока, и порог «больше N» пришлось бы переписывать вместе с ним.
+        """
+        endpoints = api_endpoints(app)
+        assert ("GET", f"{API_PREFIX}/dictionaries") in endpoints
+        assert ("POST", f"{API_PREFIX}/probe/write") in endpoints
 
     async def test_every_data_route_refuses_without_a_session(
         self, app: FastAPI, api: AsyncClient
@@ -92,14 +103,14 @@ class TestSessionIsRequired:
         """
         answered: list[str] = []
         for method, path in api_endpoints(app):
-            response = await api.request(method, path.replace("{id}", SAMPLE_ID))
+            response = await api.request(method, PATH_PARAMETER.sub(SAMPLE_ID, path))
             if response.status_code != 401:
                 answered.append(f"{method} {path} → {response.status_code}")
 
         assert not answered, "эти маршруты отвечают без сессии:\n" + "\n".join(answered)
 
     async def test_refusal_says_what_to_do(self, api: AsyncClient) -> None:
-        response = await api.get(f"{API_PREFIX}/projects")
+        response = await api.get(f"{API_PREFIX}/dictionaries")
 
         assert response.status_code == 401
         assert "ссылк" in response.json()["detail"].lower()

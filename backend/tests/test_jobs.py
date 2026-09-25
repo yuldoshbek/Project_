@@ -47,7 +47,8 @@ class TestIdempotency:
 
         assert outcome.status == "done"
         assert outcome.skipped is False
-        assert "overdue_tasks" in outcome.result
+        # Состав ступеней — лестница внимания (ТЗ §4), считанная `services/metrics.py`.
+        assert {"needs_attention", "overdue", "burning", "silent"} <= set(outcome.result)
 
     async def test_the_second_run_in_the_same_period_does_nothing(
         self, session: AsyncSession

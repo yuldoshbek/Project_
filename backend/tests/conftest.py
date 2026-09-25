@@ -44,7 +44,7 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 # без дополнительной настройки. Файл .env, если он есть, перекрывает умолчания.
 load_dotenv(REPO_ROOT / ".env", override=False)
 
-REQUIRED_EXTENSIONS = ("pg_trgm", "unaccent", "citext", "pgcrypto")
+REQUIRED_EXTENSIONS = ("pg_trgm", "unaccent", "pgcrypto")
 
 
 def _env(name: str, default: str) -> str:
