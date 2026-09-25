@@ -24,7 +24,7 @@ export function rowTitle(
 }
 
 /** «Ждёт 6 дн», «срок завтра», «тишина 21 дн» — число рядом со ступенью, словами ступени. */
-export function deviationText(t: TFunction, row: PultRow): string {
+export function deviationText(t: TFunction, row: Pick<PultRow, 'step' | 'deviation'>): string {
   const days = row.deviation;
   if (row.step === 'awaiting_decision') {
     return days === 0

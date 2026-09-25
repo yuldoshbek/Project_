@@ -31,6 +31,18 @@ const timeFormat = new Intl.DateTimeFormat('ru-RU', {
   minute: '2-digit',
 });
 
+/** День в Ташкенте как `YYYY-MM-DD` — для полей дат и сравнения со сроками. */
+const dayFormat = new Intl.DateTimeFormat('en-CA', {
+  timeZone: AGENCY_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+export function localDay(value: string | Date): string {
+  return dayFormat.format(new Date(value));
+}
+
 export function formatDate(value: string | Date): string {
   return dateFormat.format(new Date(value));
 }

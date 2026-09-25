@@ -1,0 +1,116 @@
+/**
+ * Проекты на живой оболочке — экран на утверждение (вымышленные данные `demo.ts`).
+ *
+ * Снимки трёх устройств в двух темах, таблица и таймлайн на ноутбуке, карточка проекта с
+ * расчётом «что если», перенос плитки на паузу с причиной. Каждый переход страницы
+ * начинает вымышленные данные заново — сценарии друг другу не мешают.
+ */
+
+import { expect, test, type Page } from '@playwright/test';
+
+import { REPORT_DIR, issueLink } from './link';
+
+const SIZES = [
+  { name: 'phone', width: 390, height: 844 },
+  { name: 'laptop', width: 1440, height: 900 },
+  { name: 'monitor', width: 2560, height: 1440 },
+] as const;
+
+const THEMES = ['light', 'dim'] as const;
+
+let link: string;
+
+test.beforeAll(() => {
+  link = issueLink('assistant');
+});
+
+async function openProjects(page: Page, theme: (typeof THEMES)[number] = 'light') {
+  await page.goto(link);
+  await page.evaluate((value) => {
+    localStorage.setItem('orbita.theme', value);
+    document.documentElement.setAttribute('data-theme', value);
+  }, theme);
+  await page.goto('/projects');
+  await expect(page.getByRole('heading', { name: 'Проекты', level: 1 })).toBeVisible();
+}
+
+async function noOverflow(page: Page) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'горизонтальная прокрутка').toBeLessThanOrEqual(1);
+}
+
+for (const size of SIZES) {
+  for (const theme of THEMES) {
+    test(`Проекты: ${size.name}, тема ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await openProjects(page, theme);
+      await page.screenshot({ path: `${REPORT_DIR}/projects-${size.name}-${theme}.png` });
+      await noOverflow(page);
+    });
+  }
+}
+
+test('таблица и таймлайн на ноутбуке', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openProjects(page);
+
+  await page.getByRole('tab', { name: 'Таблица' }).click();
+  await expect(page.getByRole('columnheader', { name: 'Что мешает' })).toBeVisible();
+  await noOverflow(page);
+  await page.screenshot({ path: `${REPORT_DIR}/projects-table-laptop-light.png` });
+
+  await page.getByRole('tab', { name: 'Таймлайн' }).click();
+  await expect(page.getByText('Сегодня', { exact: true })).toBeVisible();
+  await noOverflow(page);
+  await page.screenshot({ path: `${REPORT_DIR}/projects-timeline-laptop-light.png` });
+});
+
+test('«что если» считает и ничего не записывает', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openProjects(page);
+
+  await page
+    .getByRole('button', { name: /Постановление о порядке обмена/ })
+    .first()
+    .click();
+  const panel = page.getByRole('dialog');
+  await expect(panel.getByText('Что если')).toBeVisible();
+
+  const milestone = panel.getByLabel('Внесение в Кабинет Министров');
+  const before = await milestone.inputValue();
+  await milestone.fill('2026-09-28');
+  await panel.getByRole('button', { name: 'Посчитать' }).click();
+  await expect(panel.getByText(/Горит: \d+ → \d+/)).toBeVisible();
+  await expect(panel.getByText(/в базе ничего не изменилось/)).toBeVisible();
+  await panel.getByText('Что если').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${REPORT_DIR}/projects-whatif-laptop-light.png` });
+
+  // «Сбросить» возвращает даты: расчёт ничего не записал.
+  await panel.getByRole('button', { name: 'Сбросить' }).click();
+  await expect(milestone).toHaveValue(before);
+});
+
+test('перенос на паузу — только с причиной', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openProjects(page);
+
+  // Первая плитка колонки: она на экране без прокрутки, и перетаскивание не промахнётся.
+  const tile = page.getByRole('region', { name: 'В работе' }).getByRole('article').first();
+  const code = (await tile.textContent())?.match(/PRJ-\d{4}-\d{3}/)?.[0];
+  expect(code, 'у плитки нет номера').toBeTruthy();
+  await tile.dragTo(page.getByRole('region', { name: 'На паузе' }));
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+  await dialog.getByRole('textbox').fill('Ждём снимки за август');
+  await dialog.getByRole('button', { name: 'Сохранить' }).click();
+
+  const paused = page
+    .getByRole('region', { name: 'На паузе' })
+    .getByRole('article')
+    .filter({ hasText: code! });
+  await expect(paused).toBeVisible();
+  await expect(paused.getByText('Причина: Ждём снимки за август')).toBeVisible();
+});
