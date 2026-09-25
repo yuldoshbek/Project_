@@ -1,23 +1,24 @@
 /**
  * Данные Пульта и три действия над ними: решить, спросить, отменить.
  *
- * Устроено так же, как будет устроено с API: запрос через TanStack Query, действие —
- * мутация, после неё лестница перечитывается у сервера. Экран не пересчитывает счётчики
- * сам — после решения он получает новые числа от того же источника (инвариант 2).
+ * Запрос — `GET /api/v1/pult`, опрос по умолчанию раз в 15 секунд (ADR-0034,
+ * `shared/api/queries.ts`). После действия лестница перечитывается у сервера: экран не
+ * пересчитывает счётчики сам (инвариант 2).
  *
- * Сейчас сервер — `demoPult`. Когда появится `GET /api/v1/pult`, меняются тела трёх
- * функций ниже и больше ничего.
+ * Решение и вопрос возвращают идентификатор записи — его держит кнопка «Отменить»:
+ * отмена — это удаление ровно того, что создано этим касанием, а не «последнего вообще».
  */
 
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { demoPult } from './demo';
-import type { DecisionKind, PultView } from './model';
+import { request } from '@/shared/api/client';
+
+import type { DecisionKind, PultView, TargetType } from './model';
 
 export function pultQuery() {
   return queryOptions({
     queryKey: ['pult'],
-    queryFn: async (): Promise<PultView> => demoPult.view(),
+    queryFn: () => request<PultView>('/api/v1/pult'),
   });
 }
 
@@ -25,19 +26,46 @@ export function usePult() {
   return useQuery(pultQuery());
 }
 
-type Action =
-  | { type: 'decide'; key: string; kind: DecisionKind }
-  | { type: 'ask'; key: string; text: string }
-  | { type: 'undo'; key: string };
+export interface Target {
+  target_type: TargetType;
+  target_id: string;
+}
+
+export type PultAction =
+  | { type: 'decide'; target: Target; kind: DecisionKind }
+  | { type: 'ask'; target: Target; text: string }
+  | { type: 'undo-decision'; id: string }
+  | { type: 'undo-question'; id: string };
+
+async function perform(action: PultAction): Promise<string | null> {
+  switch (action.type) {
+    case 'decide':
+      return (
+        await request<{ id: string }>('/api/v1/decisions', {
+          method: 'POST',
+          body: { ...action.target, kind: action.kind },
+        })
+      ).id;
+    case 'ask':
+      return (
+        await request<{ id: string }>('/api/v1/questions', {
+          method: 'POST',
+          body: { ...action.target, text: action.text },
+        })
+      ).id;
+    case 'undo-decision':
+      await request(`/api/v1/decisions/${action.id}`, { method: 'DELETE' });
+      return null;
+    case 'undo-question':
+      await request(`/api/v1/questions/${action.id}`, { method: 'DELETE' });
+      return null;
+  }
+}
 
 export function usePultAction() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (action: Action) => {
-      if (action.type === 'decide') demoPult.decide(action.key, action.kind);
-      if (action.type === 'ask') demoPult.ask(action.key, action.text);
-      if (action.type === 'undo') demoPult.undo(action.key);
-    },
-    onSuccess: () => client.invalidateQueries({ queryKey: pultQuery().queryKey }),
+    mutationFn: perform,
+    onSettled: () => client.invalidateQueries({ queryKey: pultQuery().queryKey }),
   });
 }

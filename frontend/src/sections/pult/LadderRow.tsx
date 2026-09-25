@@ -23,7 +23,7 @@ import { Button } from '@/shared/ui/Button';
 import { Signal } from '@/shared/ui/Signal';
 
 import { STEP_DECISIONS, STEP_SIGNAL, rowKey, type DecisionKind, type PultRow } from './model';
-import { deviationText, dueText } from './text';
+import { deviationText, dueText, rowTitle } from './text';
 
 export type Viewer = 'leader' | 'assistant';
 
@@ -100,7 +100,7 @@ export function LadderRow({
               expanded ? '' : compact ? 'truncate' : 'line-clamp-2',
             )}
           >
-            {row.title}
+            {rowTitle(t, row)}
           </span>
           <span className="mt-0.5 block truncate text-xs text-ink-muted">{subtitle}</span>
         </button>

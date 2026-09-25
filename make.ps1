@@ -41,6 +41,7 @@ switch ($Target) {
   revision   Создать миграцию: .\make.ps1 revision "описание"
   heads      Проверить, что голова миграций одна
   seed       Загрузить справочники
+  demo       Вымышленные данные для разработки
   job        Выполнить задачу: .\make.ps1 job morning-summary
   dev        Запустить backend (отдельное окно) и frontend
   dev-back   Запустить backend на :8000
@@ -71,6 +72,7 @@ switch ($Target) {
     }
     'heads' { Invoke-In $backend 'uv' @('run', 'alembic', 'heads') }
     'seed' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.seed') }
+    'demo' { Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.demo') }
     'job' {
         if (-not $Name) { throw 'укажите задачу: .\make.ps1 job morning-summary' }
         Invoke-In $backend 'uv' @('run', 'python', '-m', 'app.jobs.run', $Name)

@@ -37,6 +37,7 @@ import {
   LADDER,
   STEP_SIGNAL,
   rowKey,
+  targetOf,
   type DecisionKind,
   type Person,
   type PultRow,
@@ -44,7 +45,8 @@ import {
   type Step,
 } from './model';
 import { Orbits } from './Orbits';
-import { usePult, usePultAction } from './usePult';
+import { rowTitle } from './text';
+import { usePult, usePultAction, type PultAction, type Target } from './usePult';
 import { HoldersCard, MovesCard, SinceCard } from './Widgets';
 
 /**
@@ -57,10 +59,16 @@ const UNDO_SECONDS = 8;
 /** Точка ступени. Классы полностью: имя, собранное из частей, Tailwind при сборке не найдёт. */
 const DOT = { call: 'bg-call', burn: 'bg-burn', wait: 'bg-wait' } as const;
 
+/** Объект решения строки — ровно два поля, а не вся строка в теле запроса. */
+function targetFrom(row: PultRow): Target {
+  return { target_type: row.target_type, target_id: row.target_id };
+}
+
 type Filter = { kind: 'step'; step: Step } | { kind: 'person'; person: Person } | null;
 
 interface Notice {
-  key: string;
+  /** Что сделает «Отменить»: удалит ровно ту запись, что создало касание. */
+  undo: PultAction;
   text: string;
 }
 
@@ -80,11 +88,9 @@ function Pult({ view }: { view: PultView }) {
   const user = useCurrentUser();
   const action = usePultAction();
 
-  // Пока данные вымышленные, экран можно посмотреть глазами обоих: заказчик утверждает и
-  // вид руководителя, и вид помощника. С настоящими данными вид задаёт вход по ссылке.
-  const sessionViewer: Viewer = user.data?.role === 'leader' ? 'leader' : 'assistant';
-  const [demoViewer, setDemoViewer] = useState<Viewer>('leader');
-  const viewer = view.is_demo ? demoViewer : sessionViewer;
+  // Вид задаёт вход по личной ссылке: решает руководитель, спрашивает помощник. Сервер
+  // проверяет то же самое сам — экран только не показывает кнопок, которые кончатся 403.
+  const viewer: Viewer = user.data?.role === 'leader' ? 'leader' : 'assistant';
 
   const [filter, setFilter] = useState<Filter>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -102,27 +108,41 @@ function Pult({ view }: { view: PultView }) {
     return view.rows.filter((row) => row.responsible?.id === filter.person.id);
   }, [view.rows, filter]);
 
-  const decide = (row: Pick<PultRow, 'section' | 'entity_id' | 'title'>, kind: DecisionKind) => {
-    const key = rowKey(row);
-    action.mutate({ type: 'decide', key, kind });
-    setNotice({
-      key,
-      text: t('pult.notice.decided', { what: t(`pult.decisions.${kind}`), title: row.title }),
-    });
+  const decide = (target: Target, kind: DecisionKind, title: string) => {
+    action.mutate(
+      { type: 'decide', target, kind },
+      {
+        onSuccess: (id) => {
+          if (!id) return;
+          setNotice({
+            undo: { type: 'undo-decision', id },
+            text: t('pult.notice.decided', { what: t(`pult.decisions.${kind}`), title }),
+          });
+        },
+      },
+    );
   };
 
   const actions: RowActions = {
-    decide,
-    ask: (row, text) => {
-      const key = rowKey(row);
-      action.mutate({ type: 'ask', key, text });
-      setNotice({ key, text: t('pult.notice.asked', { title: row.title }) });
-    },
+    decide: (row, kind) => decide(targetFrom(row), kind, rowTitle(t, row)),
+    ask: (row, text) =>
+      action.mutate(
+        { type: 'ask', target: targetFrom(row), text },
+        {
+          onSuccess: (id) => {
+            if (!id) return;
+            setNotice({
+              undo: { type: 'undo-question', id },
+              text: t('pult.notice.asked', { title: rowTitle(t, row) }),
+            });
+          },
+        },
+      ),
   };
 
   const undo = () => {
     if (!notice) return;
-    action.mutate({ type: 'undo', key: notice.key });
+    action.mutate(notice.undo);
     setNotice(null);
   };
 
@@ -165,19 +185,23 @@ function Pult({ view }: { view: PultView }) {
         moves={view.deadline_moves}
         canDecide={viewer === 'leader'}
         busy={action.isPending}
-        onReapprove={(item) => decide(item, 'approve')}
+        onReapprove={(item) => {
+          const target = targetOf(item);
+          if (target) decide(target, 'approve', item.title ?? '');
+        }}
       />
     </>
   );
 
   return (
     <div className={cn('flex flex-col', isPhone ? 'gap-3' : 'gap-5')}>
-      <PultHeader
-        view={view}
-        compact={isPhone}
-        viewer={viewer}
-        onViewer={view.is_demo ? setDemoViewer : undefined}
-      />
+      <PultHeader view={view} compact={isPhone} />
+
+      {/* Отказ действия — словами, а не молча: решение, которое не записалось, хуже
+          решения, которое не принимали, — его считают принятым. */}
+      {action.isError ? (
+        <Failure detail={describeError(action.error)} onRetry={() => action.reset()} />
+      ) : null}
 
       <Counters
         view={view}
@@ -203,7 +227,7 @@ function Pult({ view }: { view: PultView }) {
             {selected ? (
               <div className="flex flex-col gap-3">
                 <p className="text-lg leading-snug font-semibold text-ink-strong">
-                  {selected.title}
+                  {rowTitle(t, selected)}
                 </p>
                 <RowDetails
                   row={selected}
@@ -233,14 +257,10 @@ function Pult({ view }: { view: PultView }) {
 function PultHeader({
   view,
   compact,
-  viewer,
-  onViewer,
 }: {
   view: PultView;
   /** Телефон: две короткие строки. Вопрос раздела и орбиты — на ноутбуке и мониторе. */
   compact: boolean;
-  viewer: Viewer;
-  onViewer: ((viewer: Viewer) => void) | undefined;
 }) {
   const { t } = useTranslation();
   const demo = view.is_demo ? (
@@ -258,12 +278,7 @@ function PultHeader({
             {t('pult.asOf', { when: formatDateTime(view.as_of) })}
           </span>
         </div>
-        {demo || onViewer ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-            {demo}
-            {onViewer ? <ViewerSwitch viewer={viewer} onViewer={onViewer} /> : null}
-          </div>
-        ) : null}
+        {demo ? <div className="flex text-xs">{demo}</div> : null}
       </header>
     );
   }
@@ -284,38 +299,11 @@ function PultHeader({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           <span>{t('pult.asOf', { when: formatDateTime(view.as_of) })}</span>
           {demo}
-          {onViewer ? <ViewerSwitch viewer={viewer} onViewer={onViewer} /> : null}
         </div>
       </div>
 
       <Orbits className="h-24 w-48 shrink-0" />
     </header>
-  );
-}
-
-function ViewerSwitch({ viewer, onViewer }: { viewer: Viewer; onViewer: (v: Viewer) => void }) {
-  const { t } = useTranslation();
-  return (
-    <span className="inline-flex items-center gap-1" role="group" aria-label={t('pult.viewAs')}>
-      <span className="mr-1">{t('pult.viewAs')}</span>
-      {(['leader', 'assistant'] as const).map((each) => (
-        <button
-          key={each}
-          type="button"
-          aria-pressed={viewer === each}
-          onClick={() => onViewer(each)}
-          className={cn(
-            'min-h-touch rounded-[var(--radius-pill)] border px-3 text-xs font-medium',
-            'transition-colors duration-[var(--motion-fast)]',
-            viewer === each
-              ? 'border-accent bg-accent text-ink-inverse'
-              : 'border-line bg-card text-ink hover:bg-hover',
-          )}
-        >
-          {t(`role.${each}`)}
-        </button>
-      ))}
-    </span>
   );
 }
 

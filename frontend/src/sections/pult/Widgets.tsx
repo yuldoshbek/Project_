@@ -25,6 +25,7 @@ import {
   type Holder,
   type Person,
 } from './model';
+import { rowTitle } from './text';
 
 /** Сколько изменений видно до «показать все»: на телефоне карточка не должна съесть экран. */
 const CHANGES_PREVIEW = 3;
@@ -62,7 +63,7 @@ export function SinceCard({
                   <span className="block text-xs font-medium text-ink-muted">
                     {t(`pult.since.kinds.${change.kind}`)}
                   </span>
-                  <span className="block text-ink">{change.title}</span>
+                  <span className="block text-ink">{rowTitle(t, change)}</span>
                   {change.moved ? (
                     <span className="numeric block text-xs text-wait-ink">
                       {t('pult.dueMoved', {
@@ -170,7 +171,7 @@ export function MovesCard({
           const history = [
             t('pult.dueMoved', {
               from: formatDate(item.original_due_on),
-              to: formatDate(item.due_on),
+              to: item.due_on ? formatDate(item.due_on) : '—',
             }),
             item.moves > 1 ? t('pult.moves.times', { count: item.moves }) : null,
           ]
@@ -182,7 +183,7 @@ export function MovesCard({
               className="flex items-center gap-3 text-sm"
             >
               <span className="min-w-0 flex-1">
-                <span className="block text-ink">{item.title}</span>
+                <span className="block text-ink">{rowTitle(t, item)}</span>
                 <span className="numeric block text-xs text-wait-ink">{history}</span>
               </span>
               {canDecide ? (

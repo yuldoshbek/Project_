@@ -7,7 +7,8 @@
  *
  * **Числа считает сервер** (инвариант 2): порядок строк, отклонения, счётчики ступеней,
  * «кто держит», переносы сроков. Экран их только показывает — второй расчёт на клиенте дал
- * бы два разных числа на двух экранах. Пока API нет, сервером служит `demo.ts`.
+ * бы два разных числа на двух экранах. Отвечает `GET /api/v1/pult`
+ * (`backend/app/api/routes/pult.py`) — экран утверждён заказчиком 25.09.2026.
  */
 
 /** Ступень лестницы внимания (ТЗ 4). Порядок объявления — порядок показа. */
@@ -57,10 +58,23 @@ export interface Person {
   name: string;
 }
 
+/** По какому объекту принимается решение (ТЗ 3.7). */
+export type TargetType = 'project' | 'milestone' | 'task' | 'ijro_assignment';
+
 export interface PultRow {
   section: RowSection;
   entity_id: string;
-  title: string;
+  /** У решения без текста названия нет: подпись — вид решения, её переводит экран. */
+  title: string | null;
+  /** Вид решения — у строк раздела `decisions`. */
+  decision_kind: DecisionKind | null;
+  /**
+   * Объект, по которому решают из этой строки. У проекта, вехи и задачи — они сами; у
+   * строки-решения — объект того решения: «поторопить» относится к работе, а не к
+   * решению.
+   */
+  target_type: TargetType;
+  target_id: string;
   /** Чему принадлежит: проект у вехи и задачи. */
   context: string | null;
   step: Step;
@@ -89,10 +103,12 @@ export interface Holder {
 export interface Change {
   kind: 'created' | 'closed' | 'deadline_moved' | 'milestone_passed' | 'decision_done';
   section: RowSection;
-  title: string;
+  entity_id: string;
+  /** Удалённая после правки запись названия не имеет: её видно в журнале, но не в базе. */
+  title: string | null;
   at: string;
   /** Для переноса срока: было → стало. */
-  moved?: { from: string; to: string };
+  moved: { from: string; to: string } | null;
 }
 
 /** «Держим ли мы свои сроки?» — переносы за период (ТЗ 5). */
@@ -103,9 +119,9 @@ export interface DeadlineMoves {
   items: {
     section: RowSection;
     entity_id: string;
-    title: string;
+    title: string | null;
     original_due_on: string;
-    due_on: string;
+    due_on: string | null;
     moves: number;
   }[];
 }
@@ -127,4 +143,19 @@ export interface PultView {
 
 export function rowKey(row: Pick<PultRow, 'section' | 'entity_id'>): string {
   return `${row.section}:${row.entity_id}`;
+}
+
+const SECTION_TARGET = {
+  projects: 'project',
+  milestones: 'milestone',
+  tasks: 'task',
+} as const satisfies Partial<Record<RowSection, TargetType>>;
+
+/** Объект решения для записи из «Держим ли сроки?»: там только проекты, вехи и задачи. */
+export function targetOf(item: {
+  section: RowSection;
+  entity_id: string;
+}): { target_type: TargetType; target_id: string } | null {
+  const type = SECTION_TARGET[item.section as keyof typeof SECTION_TARGET];
+  return type ? { target_type: type, target_id: item.entity_id } : null;
 }

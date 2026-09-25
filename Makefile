@@ -4,7 +4,7 @@
 # Канонический список — здесь; при изменении правьте и make.ps1, иначе команды разойдутся.
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor install up down reset logs migrate revision heads seed dev dev-back dev-front \
+.PHONY: help doctor install up down reset logs migrate revision heads seed demo dev dev-back dev-front \
         test test-back test-front e2e check docs fmt reqs job clean
 
 BACKEND  := backend
@@ -46,6 +46,9 @@ heads: ## Проверить, что голова миграций одна
 
 seed: ## Загрузить справочники
 	cd $(BACKEND) && uv run python -m app.seed
+
+demo: ## Вымышленные данные для разработки (не для рабочего контура)
+	cd $(BACKEND) && uv run python -m app.demo
 
 dev: ## Запустить backend и frontend
 	@echo "Backend: http://localhost:8000   Frontend: http://localhost:5173"
