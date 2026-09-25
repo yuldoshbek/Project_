@@ -33,7 +33,7 @@ async def _summary(context: JobContext) -> dict[str, Any]:
     # Сегодняшний день — по Ташкенту: просрочка считается по календарным дням
     # (инвариант 8), иначе работа становится просроченной в пять утра по местному времени.
     today = context.now.astimezone(context.timezone).date()
-    ladder = await metrics.ladder(context.session, today=today)
+    ladder = await metrics.ladder(context.session, today=today, zone=context.timezone)
 
     return {
         "local_date": today.isoformat(),

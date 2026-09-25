@@ -687,6 +687,52 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "leader_questions",
+        sa.Column("target_type", sa.String(length=20), nullable=False),
+        sa.Column("target_id", sa.UUID(), nullable=False),
+        sa.Column("text", sa.Text(), nullable=False),
+        sa.Column("asked_by", sa.UUID(), nullable=True),
+        sa.Column("decision_id", sa.UUID(), nullable=True),
+        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
+        sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "decision_id IS NULL OR closed_at IS NOT NULL",
+            name=op.f("ck_leader_questions_answered_question_is_closed"),
+        ),
+        sa.CheckConstraint(
+            "target_type IN ('project', 'task', 'milestone', 'ijro_assignment')",
+            name=op.f("ck_leader_questions_target_type_is_known"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["asked_by"],
+            ["users.id"],
+            name=op.f("fk_leader_questions_asked_by_users"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["decision_id"],
+            ["leader_decisions.id"],
+            name=op.f("fk_leader_questions_decision_id_leader_decisions"),
+            ondelete="SET NULL",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_leader_questions")),
+    )
+    op.create_index(
+        "ix_leader_questions_open_target",
+        "leader_questions",
+        ["target_type", "target_id"],
+        unique=False,
+        postgresql_where="closed_at IS NULL",
+    )
+    op.create_table(
         "notifications",
         sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("kind", sa.String(length=50), nullable=False),
@@ -1198,6 +1244,12 @@ def downgrade() -> None:
     op.drop_table("projects")
     op.drop_index("ix_notifications_user_id_created_at", table_name="notifications")
     op.drop_table("notifications")
+    op.drop_index(
+        "ix_leader_questions_open_target",
+        table_name="leader_questions",
+        postgresql_where="closed_at IS NULL",
+    )
+    op.drop_table("leader_questions")
     op.drop_index("ix_leader_decisions_target_type_target_id", table_name="leader_decisions")
     op.drop_index("ix_leader_decisions_state_due_on", table_name="leader_decisions")
     op.drop_table("leader_decisions")

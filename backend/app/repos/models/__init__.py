@@ -10,7 +10,7 @@ from app.repos.models.audit import Auditable, AuditLog
 from app.repos.models.checklists import TaskChecklistItem
 from app.repos.models.comments import Comment
 from app.repos.models.cycles import YearlyCycle
-from app.repos.models.decisions import LeaderDecision
+from app.repos.models.decisions import LeaderDecision, LeaderQuestion
 from app.repos.models.dictionaries import (
     Direction,
     Organization,
@@ -49,6 +49,7 @@ __all__ = [
     "IjroPersonAlias",
     "JobRun",
     "LeaderDecision",
+    "LeaderQuestion",
     "Milestone",
     "Notification",
     "Organization",
