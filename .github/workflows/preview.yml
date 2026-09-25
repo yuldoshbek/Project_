@@ -169,7 +169,7 @@ jobs:
             --env ORBITA_BASE_URL="$ORBITA_BASE_URL")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
