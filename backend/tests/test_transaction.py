@@ -163,6 +163,9 @@ class TestEveryRouterHasTheBoundary:
 
     def test_the_check_has_something_to_check(self) -> None:
         """Страховка от тихого вырождения: пустой обход прошёл бы молча."""
-        names = [name for name, _ in self.routers()]
+        names = {name for name, _ in self.routers()}
 
-        assert len(names) >= 8, f"роутеров почти не нашлось, обход сломан: {names}"
+        # Известные модули, а не порог по числу: роутеров становится больше с каждым экраном
+        # блока, и порог «не меньше N» пришлось бы переписывать вместе с ними.
+        expected = {"access", "dictionaries", "health", "internal"}
+        assert expected <= names, f"обход не нашёл известные роутеры, он сломан: {names}"

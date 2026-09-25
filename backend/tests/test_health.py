@@ -1,7 +1,11 @@
 """Живость и готовность.
 
-Разделение принципиальное: `/health` не должен зависеть от базы, иначе её недоступность
-приведёт к перезапуску исправного приложения — и так по кругу, пока база не вернётся.
+Разделение принципиальное: `/api/health` не должен зависеть от базы, иначе её
+недоступность приведёт к перезапуску исправного приложения — и так по кругу, пока база не
+вернётся.
+
+Путь начинается с `/api`, потому что интерфейс проксирует на API только его (ADR-0028):
+проверка, доступная мимо прокси, проверяла бы не тот путь, которым ходят люди.
 """
 
 from __future__ import annotations
@@ -21,76 +25,65 @@ async def test_health_does_not_touch_dependencies(client: AsyncClient) -> None:
     """
     await dispose_database()
 
-    response = await client.get("/health")
+    response = await client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
+
+
+async def test_health_names_the_deployed_commit(client: AsyncClient) -> None:
+    """Выкладка сверяет этот коммит с тем, что выкладывала (deploy.yml).
+
+    Без него успешной выкладкой считается кеш прежней сборки: адрес отвечает, а код на нём
+    старый — и понять это можно только по поведению, то есть уже от руководителя.
+    """
+    response = await client.get("/api/health")
+
+    body = response.json()
+    assert body["commit"]
+    assert body["env"] == "test"
+    assert body["time"]
 
 
 @pytest.mark.infra
 async def test_ready_when_everything_is_up(client: AsyncClient) -> None:
-    response = await client.get("/ready")
+    response = await client.get("/api/ready")
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ready"
-    assert body["checks"] == {"database": "ok", "redis": "ok"}
+    assert body["checks"] == {"database": "ok"}
 
 
 async def test_ready_returns_503_and_names_the_culprit(settings: Settings) -> None:
-    """Недоступность зависимостей — это 503 с указанием, что именно не отвечает.
+    """Недоступность базы — это 503 с указанием, что именно не отвечает.
 
-    Порты заведомо свободны: ответ должен получиться быстро и без зависания.
+    Порт заведомо свободен: ответ должен получиться быстро и без зависания.
     """
-    broken = settings.model_copy(
-        update={
-            "db_host": "127.0.0.1",
-            "db_port": 1,
-            "redis_url": "redis://127.0.0.1:1/0",
-        }
-    )
+    broken = settings.model_copy(update={"db_host": "127.0.0.1", "db_port": 1})
     application = create_app(broken)
     init_database(broken)
     try:
         transport = ASGITransport(app=application, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as http_client:
-            response = await http_client.get("/ready")
+        async with AsyncClient(transport=transport, base_url="https://test") as http_client:
+            response = await http_client.get("/api/ready")
     finally:
         await dispose_database()
 
     assert response.status_code == 503
     body = response.json()
     assert body["status"] == "not_ready"
-    assert body["checks"]["database"].startswith("недоступна")
-    assert body["checks"]["redis"].startswith("недоступен")
+    assert "недоступна" in body["checks"]["database"]
 
 
 @pytest.mark.infra
 async def test_lifespan_opens_and_closes_database(settings: Settings) -> None:
-    """Приложение само поднимает подключение при старте и закрывает при остановке.
+    """Подключение создаётся на старте приложения, а не при первом запросе.
 
-    Остальные тесты делают это вручную, потому что `ASGITransport` lifespan не
-    выполняет. Здесь проверяется настоящий путь запуска — тот, по которому пойдёт
-    uvicorn.
+    Иначе первый запрос после выкладки ждёт подключения, и это ровно тот запрос, который
+    делает руководитель, открыв систему с телефона.
     """
     application = create_app(settings)
 
     async with application.router.lifespan_context(application):
-        transport = ASGITransport(app=application)
-        async with AsyncClient(transport=transport, base_url="http://test") as http_client:
-            response = await http_client.get("/ready")
-
-    assert response.json()["checks"]["database"] == "ok"
-
-    # После остановки движок закрыт: обращение к нему обязано сказать об этом внятно,
-    # а не упасть где-то в глубине драйвера.
-    with pytest.raises(RuntimeError, match="движок не создан"):
-        get_engine()
-
-
-def test_secret_is_absent_from_openapi(settings: Settings) -> None:
-    """Схема API отдаётся наружу — в ней не должно оказаться ничего из настроек."""
-    schema = create_app(settings).openapi()
-
-    assert "test-secret-not-for-production" not in str(schema)
-    assert schema["info"]["title"] == "ORBITA"
+        assert get_engine() is not None

@@ -1,59 +1,67 @@
-import type { RouteObject } from 'react-router-dom';
-import { createBrowserRouter } from 'react-router-dom';
-
-import { ProjectCardPage } from '../features/projects/ProjectCardPage';
-import { EditProjectPage, NewProjectPage } from '../features/projects/ProjectFormPage';
-import { ProjectsPage } from '../features/projects/ProjectsPage';
-import { TasksPage } from '../features/tasks/TasksPage';
-import { AppLayout } from '../layout/AppLayout';
-import { ForbiddenPage } from '../pages/ForbiddenPage';
-import { NotFoundPage } from '../pages/NotFoundPage';
-import { PlaceholderPage } from '../pages/PlaceholderPage';
-import { NAV_ITEMS, ROUTES } from './routes';
-
-/** Готовые экраны по адресу. Заглушка остаётся там, где экрана ещё нет. */
-const SCREENS: Record<string, React.ReactElement> = {
-  [ROUTES.projects]: <ProjectsPage />,
-  [ROUTES.tasks]: <TasksPage />,
-};
-
 /**
- * Маршруты приложения.
+ * Маршруты — по одному на раздел ТЗ, из одного списка `app/sections.ts`.
  *
- * Разделы собираются из `NAV_ITEMS`: меню и маршруты обязаны совпадать, а два списка
- * рано или поздно расходятся. По мере готовности экранов `PlaceholderPage` заменяется
- * настоящим компонентом — построчно, по одному тикету.
+ * Маршруты описаны кодом, а не файлами: разделов десять, они заданы требованиями и не
+ * меняются от правки к правке, а генерация дерева по файлам добавила бы шаг сборки и
+ * сгенерированный файл в репозиторий ради той же таблицы.
+ *
+ * Раздел, у которого ещё нет данных, ведёт на `SoonSection` с его вопросом и номером блока.
+ * Так ссылка никогда не приводит на пустой экран — это ровно та поломка, которую нельзя
+ * отличить от забытого раздела.
  */
-export const routes: RouteObject[] = [
-  // Ворот больше нет: входа в системе не существует (ADR-0026), и приложение
-  // открывается сразу. Кого до него допускать, решает периметр, а не маршрутизатор.
-  {
-    errorElement: <NotFoundPage />,
-    children: [
-      {
-        path: ROUTES.dashboard,
-        element: <AppLayout />,
-        children: [
-          ...NAV_ITEMS.map((item): RouteObject => {
-            const element = SCREENS[item.to] ?? (
-              <PlaceholderPage titleKey={item.labelKey} ticket={item.ticket} />
-            );
-            return item.end === true
-              ? { index: true, element }
-              : { path: item.to.slice(1), element };
-          }),
-          // Экраны портфеля, которых нет в меню: на них приводят из списка и из
-          // карточки, а не из бокового меню. Собираются не из `NAV_ITEMS` именно
-          // поэтому — пункт меню «Новый проект» был бы разделом, которым он не является.
-          { path: ROUTES.projectNew.slice(1), element: <NewProjectPage /> },
-          { path: ROUTES.projectEdit.slice(1), element: <EditProjectPage /> },
-          { path: ROUTES.projectCard.slice(1), element: <ProjectCardPage /> },
-          { path: ROUTES.forbidden.slice(1), element: <ForbiddenPage /> },
-          { path: '*', element: <NotFoundPage /> },
-        ],
-      },
-    ],
-  },
-];
 
-export const router = createBrowserRouter(routes);
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Navigate,
+  type AnyRoute,
+} from '@tanstack/react-router';
+
+import { App } from '@/app/App';
+import { SECTIONS, sectionPath } from '@/app/sections';
+import { ManagementSection } from '@/sections/management/ManagementSection';
+import { PultSection } from '@/sections/pult/PultSection';
+import { SoonSection } from '@/sections/SoonSection';
+import { RenderFailure } from '@/shared/ui/Boundary';
+
+const rootRoute = createRootRoute({ component: App });
+
+const sectionRoutes: AnyRoute[] = SECTIONS.map((section) =>
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: sectionPath(section.id),
+    component:
+      section.id === 'management'
+        ? ManagementSection
+        : section.id === 'pult'
+          ? PultSection
+          : function Section() {
+              return <SoonSection section={section} />;
+            },
+  }),
+);
+
+// Неизвестный адрес уводит на Пульт, а не показывает «страница не найдена»: пользователей
+// двое, ссылок снаружи нет, и единственный источник неверного адреса — опечатка в строке.
+const notFoundRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '*',
+  component: function NotFound() {
+    return <Navigate to="/" replace />;
+  },
+});
+
+export const router = createRouter({
+  routeTree: rootRoute.addChildren([...sectionRoutes, notFoundRoute]),
+  defaultPreload: 'intent',
+  // Упавший раздел показывает наше «Не получилось» внутри оболочки: навигация остаётся, и
+  // можно уйти в соседний раздел.
+  defaultErrorComponent: RenderFailure,
+});
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router;
+  }
+}

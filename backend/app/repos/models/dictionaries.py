@@ -1,4 +1,4 @@
-"""Справочники.
+"""Справочники (ТЗ 3.9).
 
 Хранят то, что принадлежит данным: название на трёх письменностях, порядок, цвет,
 видимость. Смысл значений принадлежит коду — см. `app.domain.dictionaries`.
@@ -9,17 +9,31 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, Integer, SmallInteger, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.dictionaries import OrganizationKind
 from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.models.audit import Auditable
+
+ORGANIZATION_KINDS = ", ".join(f"'{kind.value}'" for kind in OrganizationKind)
 
 
 class LocalizedName:
-    """Название на трёх письменностях (ТЗ 10.3).
+    """Название на трёх письменностях.
 
     Все три обязательны. Необязательный перевод означает, что в узбекской версии
     интерфейса рано или поздно появится русское слово, и заметят это на приёмке.
@@ -31,11 +45,12 @@ class LocalizedName:
 
 
 class DictionaryEntry(UUIDPrimaryKey, LocalizedName, Timestamps):
-    """Общее для всех справочников.
+    """Общее у всех справочников.
 
     `code` — стабильный технический ключ, на него ссылается код и внешние ключи; он не
     меняется никогда. `is_active` — мягкое исключение: удалять значение, на которое уже
-    ссылаются записи, нельзя, а убрать его из форм создания нужно (критерий ORB-010).
+    ссылаются записи, нельзя, а убрать его из форм создания нужно, иначе в старом проекте
+    исчезнет направление, по которому его когда-то завели.
     """
 
     code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
@@ -44,21 +59,79 @@ class DictionaryEntry(UUIDPrimaryKey, LocalizedName, Timestamps):
 
 
 class Direction(DictionaryEntry, Base):
-    """Направление работы (ТЗ 7).
-
-    Стартовый набор взят из мандата агентства (ТЗ 3.1): космический мониторинг, ДЗЗ,
-    международное сотрудничество и далее. Справочник редактируемый — портфель агентства
-    меняется вместе с задачами, которые на него возлагают.
-    """
+    """Направление работы агентства. Необязательное поле проекта (ТЗ 3.1)."""
 
     __tablename__ = "directions"
 
 
-class ProjectStatusRef(DictionaryEntry, Base):
-    """Статус проекта (ТЗ 7).
+class Region(DictionaryEntry, Base):
+    """Регион — одна из 14 административных единиц (ТЗ 3.1).
 
-    Суффикс `Ref` отличает таблицу от перечисления `ProjectStatus`, в котором живёт смысл.
+    Двенадцать областей, Республика Каракалпакстан и город Ташкент. Необязательное поле
+    проекта. Заведён справочником, а не списком в коде, потому что
+    вопрос «нужен ли руководителю срез по регионам» ещё открыт (V7): если нужен — срез
+    собирается по этой таблице, если нет — поле остаётся пустым и никому не мешает.
     """
+
+    __tablename__ = "regions"
+
+
+class ProjectTypeRef(DictionaryEntry, Base):
+    """Тип проекта — десять значений из ТЗ 3.9, каждое со своим шаблоном вех.
+
+    Смысл типа коду не нужен: он не считает по нему ни одного сигнала. Тип приносит
+    шаблон вех, и это всё — поэтому здесь нет перечисления рядом, в отличие от статусов.
+    Заказчик вправе завести одиннадцатый тип из интерфейса, и система от этого не
+    изменится.
+    """
+
+    __tablename__ = "project_types"
+
+
+class ProjectTypeMilestone(UUIDPrimaryKey, LocalizedName, Timestamps, Base):
+    """Веха шаблона: что подставляется в новый проект этого типа (ТЗ 3.1).
+
+    Ради этого типы и заводятся. Помощник выбирает «нормативный акт» — и получает
+    разработку, согласование, внесение в Кабмин готовыми строками, а не вспоминает их
+    каждый раз. Дальше вехи правятся как обычные: шаблон — это начало, а не рамка.
+
+    `offset_days` — через сколько дней от начала проекта наступает срок вехи. Дни, а не
+    доли срока: «согласование через месяц» — это то, что помощник знает, а «согласование
+    на 40 % срока» — то, что ему пришлось бы вычислять.
+
+    **Место в шаблоне уникально** — пара «тип + порядок». Две вехи на одном месте не
+    имеют порядка между собой, и новый проект получал бы их то так, то этак. Эта же пара —
+    ключ, по которому наполнение (`app.seed`) узнаёт уже заведённую веху. Цена названа
+    вслух: переставить две вехи местами одним `UPDATE` нельзя, перестановка идёт через
+    временное значение порядка в одной транзакции.
+    """
+
+    __tablename__ = "project_type_milestones"
+
+    project_type_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("project_types.id", ondelete="CASCADE"), nullable=False
+    )
+    offset_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+
+    __table_args__ = (
+        CheckConstraint("offset_days >= 0", name="offset_is_not_negative"),
+        UniqueConstraint("project_type_id", "sort_order"),
+    )
+
+
+class TaskTypeRef(DictionaryEntry, Base):
+    """Тип задачи — одиннадцать значений из ТЗ 3.9.
+
+    Как и у проекта, смысл принадлежит данным: тип отвечает на вопрос «что это за
+    работа», а не меняет поведение системы.
+    """
+
+    __tablename__ = "task_types"
+
+
+class ProjectStatusRef(DictionaryEntry, Base):
+    """Статусы проекта. Суффикс `Ref` отличает таблицу от перечисления, где живёт смысл."""
 
     __tablename__ = "project_statuses"
 
@@ -68,12 +141,7 @@ class ProjectStatusRef(DictionaryEntry, Base):
 
 
 class TaskStatusRef(DictionaryEntry, Base):
-    """Статус задачи.
-
-    «Просрочена» здесь отсутствует: это вычисляемый признак, а не состояние работы
-    (ADR-0004). Попытка завести её значением справочника вернула бы ровно ту проблему,
-    ради ухода от которой принималось решение.
-    """
+    """Статусы задачи. «Просрочена» здесь отсутствует: она вычисляется (инвариант 1)."""
 
     __tablename__ = "task_statuses"
 
@@ -81,40 +149,37 @@ class TaskStatusRef(DictionaryEntry, Base):
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="grey")
 
 
-class PriorityRef(DictionaryEntry, Base):
-    """Приоритет (ТЗ 7)."""
+class Organization(Auditable, UUIDPrimaryKey, Timestamps, Base):
+    """Организация: министерство, ведомство, хокимият, международная организация, компания.
 
-    __tablename__ = "priorities"
+    `is_founded_by_agency` отмечает Центр космического мониторинга — организацию,
+    учреждённую агентством (CONTEXT, «Учреждённая организация»). Признак, а не вид,
+    потому что Центр — это компания и одновременно наша: на нём держится срез «что держит
+    Центр» (ТЗ 5), а вид отвечает на другой вопрос.
 
-    color: Mapped[str] = mapped_column(String(20), nullable=False, default="grey")
+    Журналируется: смена вида или названия — деловое изменение, и вопрос «кто это
+    поменял» по ней возникает.
 
-    warn_days_override: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    """Свой порог жёлтой зоны для этого приоритета.
-
-    Нужен «Срочно»: по ADR-0005 у него порог равен нулю — задача жёлтая с момента
-    постановки и красная сразу после срока. Хранится значением, а не условием в коде,
-    чтобы помощник мог поправить его сам.
-    """
-
-
-class Organization(UUIDPrimaryKey, Timestamps, Base):
-    """Организация-партнёр (ТЗ 6.1, сценарий U6).
-
-    Не наследует `DictionaryEntry`: у организации нет технического кода и нет трёх
-    названий — она называется так, как называется, включая зарубежных партнёров с
-    латинским написанием.
+    **Название уникально**, и это ключ, а не только поиск. Технического кода у
+    организации нет и не заводится: ТЗ 3.4 его не называет, а помощник знает организацию
+    по названию. Две строки с одним названием — это одна организация, заведённая дважды:
+    роли в проектах и написания из таблиц «Ижро» разошлись бы по двум записям, и срез «что
+    держит Центр» потерял бы половину. Тот же ключ узнаёт Центр при повторном наполнении
+    (`app.seed`).
     """
 
     __tablename__ = "organizations"
 
-    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
     short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    is_founded_by_agency: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
+        CheckConstraint(f"kind IN ({ORGANIZATION_KINDS})", name="kind_is_known"),
         CheckConstraint(
             "country_code IS NULL OR country_code = upper(country_code)",
             name="country_code_upper",
@@ -123,22 +188,19 @@ class Organization(UUIDPrimaryKey, Timestamps, Base):
 
 
 class Setting(UUIDPrimaryKey, Timestamps, Base):
-    """Настраиваемый параметр системы.
+    """Пороги сигналов: их меняет помощник, а не разработчик (ТЗ 3.9).
 
-    Не путать с `app.settings`: там настройки окружения — адреса, ключи, пароли, которые
-    задаёт тот, кто разворачивает систему. Здесь то, что меняет помощник в интерфейсе:
-    пороги светофора, интервалы напоминаний, время сводки.
+    Не путать с переменными окружения: те задаёт тот, кто разворачивает систему.
 
-    Значение хранится в JSONB, потому что параметры разнотипны: число дней, доля,
-    время суток, список интервалов. Отдельная колонка на каждый тип превратила бы таблицу
-    в набор почти всегда пустых полей.
+    `min_value` и `max_value` нужны форме редактирования: порог «горит за 900 дней»
+    выключает сигнал, не сообщая об этом, и восстановить его будет некому.
     """
 
     __tablename__ = "settings"
 
     key: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
-    description_ru: Mapped[str] = mapped_column(Text, nullable=False)
     value_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    description_ru: Mapped[str] = mapped_column(Text, nullable=False)
     min_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_value: Mapped[int | None] = mapped_column(Integer, nullable=True)

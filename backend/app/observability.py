@@ -8,14 +8,30 @@
 Наши записи и записи библиотек проходят через один и тот же конвейер: библиотеки пишут
 в стандартный `logging`, и без общей настройки их сообщения остались бы без `request_id`
 и в другом формате — то есть бесполезными ровно тогда, когда нужны.
+
+**Личная ссылка в журнал не попадает.** Путь `/api/access/{token}` — это и есть ключ:
+кто прочитал его в логе, тот вошёл в систему на тридцать дней (ADR-0029). Поэтому токен
+маскируется в трёх местах, и каждое закрывает свою дыру:
+
+1. путь, который middleware кладёт в контекст каждой записи, маскируется на входе;
+2. журнал доступа uvicorn (`"GET /api/access/… HTTP/1.1" 303`) маскируется фильтром на
+   его логгере — фильтр висит на логгере, а не на обработчике, и срабатывает даже тогда,
+   когда uvicorn подключил собственный обработчик мимо нашего;
+3. любая строка любой записи, прошедшей через наш конвейер, проверяется ещё раз
+   процессором `mask_secret_paths` — на случай, когда путь попал в сообщение иначе.
+
+Журналы самих площадок (Vercel, Netlify) пишутся мимо приложения, и этот модуль их не
+закрывает: путь запроса там видит площадка, а не наш код.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, MutableMapping
+from typing import Any
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -35,8 +51,55 @@ LIBRARY_LOGGERS = (
     "uvicorn.error",
     "uvicorn.access",
     "sqlalchemy.engine",
-    "arq",
 )
+
+ACCESS_LOG_LOGGER = "uvicorn.access"
+
+MASKED_TOKEN = "***"  # noqa: S105 — это заглушка вместо секрета, а не сам секрет
+
+# Токен личной ссылки — всё, что стоит после `/api/access/` до конца сегмента. Соседние
+# служебные пути (`/api/access/links/{role}`, `/api/access/sessions/{role}`) секрета не
+# несут и остаются читаемыми: без этого в журнале не отличить перевыпуск от входа.
+SECRET_PATH = re.compile(r"(/api/access/)(?!(?:links|sessions)/)[^/?#\s\"']+")
+
+
+def mask_secret_paths_in(text: str) -> str:
+    """Строка, в которой токен личной ссылки заменён на `***`."""
+    return SECRET_PATH.sub(rf"\g<1>{MASKED_TOKEN}", text)
+
+
+def _masked(value: Any) -> Any:
+    return mask_secret_paths_in(value) if isinstance(value, str) else value
+
+
+def mask_secret_paths(
+    _: Any, __: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """Процессор structlog: последняя линия защиты для любой строки в записи.
+
+    Стоит в общем конвейере, поэтому проверяет и наши записи, и записи библиотек — для
+    них сообщение к этому моменту уже собрано в поле `event`.
+    """
+    for key, value in event_dict.items():
+        event_dict[key] = _masked(value)
+    return event_dict
+
+
+class MaskSecretPaths(logging.Filter):
+    """Фильтр стандартного `logging`: маскирует токен в сообщении и его аргументах.
+
+    Журнал доступа uvicorn передаёт путь аргументом (`'%s - "%s %s HTTP/%s" %d'`), а не
+    готовой строкой, поэтому проверяются и `msg`, и `args`. Запись не отбрасывается —
+    факт входа в журнале нужен, не нужен только ключ.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = _masked(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(_masked(arg) for arg in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {key: _masked(value) for key, value in record.args.items()}
+        return True
 
 
 def configure_logging(*, level: str = "INFO", json_output: bool = False) -> None:
@@ -78,6 +141,9 @@ def configure_logging(*, level: str = "INFO", json_output: bool = False) -> None
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.processors.format_exc_info,
+            # После сборки стека и перед отрисовкой: так проверяется всё, что уйдёт в
+            # вывод, включая текст исключения, — и наши записи, и записи библиотек.
+            mask_secret_paths,
             renderer,
         ],
     )
@@ -104,6 +170,12 @@ def route_library_logs() -> None:
         library_logger = logging.getLogger(name)
         library_logger.handlers = []
         library_logger.propagate = True
+
+    # Фильтр на самом логгере журнала доступа, а не на нашем обработчике: он срабатывает
+    # до любого обработчика, в том числе подключённого uvicorn позже нас.
+    access_log = logging.getLogger(ACCESS_LOG_LOGGER)
+    if not any(isinstance(each, MaskSecretPaths) for each in access_log.filters):
+        access_log.addFilter(MaskSecretPaths())
 
 
 def normalize_request_id(raw: str | None) -> str:
@@ -140,7 +212,9 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.bind_contextvars(
             request_id=request_id,
             method=request.method,
-            path=request.url.path,
+            # Путь попадает в каждую запись запроса — маскируется здесь, на входе, а не
+            # в каждом месте, где что-то пишется в лог.
+            path=mask_secret_paths_in(request.url.path),
         )
         request.state.request_id = request_id
 

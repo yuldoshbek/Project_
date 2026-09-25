@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, UniqueConstraint
 
 from app.repos.base import NAMING_CONVENTION, SCHEMA, Base
-from tests.conftest import configured_test_db, dsn, run_alembic
+from tests.conftest import REQUIRED_EXTENSIONS, configured_test_db, dsn, run_alembic
 
 pytestmark = pytest.mark.infra
 
@@ -138,7 +138,7 @@ def test_required_extensions_are_installed(clean_database: str) -> None:
         finally:
             await connection.close()
 
-    assert {"pg_trgm", "unaccent", "citext", "pgcrypto"} <= asyncio.run(fetch_extensions())
+    assert set(REQUIRED_EXTENSIONS) <= asyncio.run(fetch_extensions())
 
 
 def test_no_naive_timestamp_columns(clean_database: str) -> None:

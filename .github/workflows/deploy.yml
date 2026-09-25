@@ -1,0 +1,247 @@
+# Выкладка в рабочий контур — по кнопке, и только по кнопке.
+#
+# Слияние в main ничего не выкладывает нарочно: в рабочей системе живут настоящие
+# поручения Администрации Президента, и решение «показать это заказчику сейчас»
+# принимает человек, а не событие push.
+#
+# Здесь же откат. Он не пишется в момент аварии — он должен уже лежать готовым.
+#
+# Запуск: вкладка Actions → «Выкладка» → Run workflow. Что выбрать и что делать, если
+# упало, — docs/RUNBOOK.md.
+
+name: Выкладка
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Имена входов — латиницей: GitHub принимает только [a-zA-Z0-9_-], кириллическое имя
+      # делает файл невалидным целиком. Русский — в описаниях, их и видит человек.
+      action:
+        description: 'Что сделать: deploy — выложить, rollback — откатить'
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      migrate:
+        description: 'Применять миграции базы'
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '22'
+
+jobs:
+  keys:
+    name: Ключи площадок
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    # Окружение обязательно: секреты PRODUCTION_* заведены в окружении production
+    # (docs/SETUP.md), а работе без него видны только секреты репозитория. Без этой
+    # строки проверка не видела ключей, которые на месте, и выкладка не начиналась никогда.
+    environment: production
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        # Все ключи, которые читают работы ниже, а не часть: иначе проверка пропускает
+        # выкладку, которая упадёт через десять минут на середине.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          PRODUCTION_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          PRODUCTION_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          PRODUCTION_API_ORIGIN: ${{ secrets.PRODUCTION_API_ORIGIN }}
+        run: |
+          missing=""
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID NETLIFY_AUTH_TOKEN \
+            NETLIFY_SITE_ID PRODUCTION_DATABASE_URL PRODUCTION_SESSION_SECRET \
+            PRODUCTION_JOBS_SECRET PRODUCTION_URL PRODUCTION_API_ORIGIN; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            {
+              echo "### Выкладка невозможна"
+              echo "Не заведены секреты:$missing. Порядок — docs/SETUP.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Выложить
+    needs: keys
+    if: inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Окружение production хранит ключи рабочего контура и, если заказчик включит
+    # обязательное подтверждение, спрашивает разрешение перед запуском.
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Зависимости backend
+        working-directory: backend
+        run: uv sync --all-groups --frozen
+
+      # Точка отката записывается до изменений: после аварии выяснять её поздно.
+      - name: Точка отката базы
+        id: before
+        working-directory: backend
+        env:
+          ORBITA_ENV: production
+          ORBITA_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+        run: |
+          current="$(uv run alembic current | tail -1)"
+          echo "версия схемы до выкладки: $current" >> "$GITHUB_STEP_SUMMARY"
+          echo "revision=$current" >> "$GITHUB_OUTPUT"
+
+      - name: Миграции рабочей базы
+        if: inputs.migrate
+        working-directory: backend
+        env:
+          ORBITA_ENV: production
+          ORBITA_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+        run: uv run alembic upgrade head
+
+      # Справочники — отдельная команда, а не часть миграции. Повтор ничего не задваивает и
+      # не затирает правки помощника (ON CONFLICT DO NOTHING), поэтому шаг идёт на каждой
+      # выкладке: новое значение справочника доезжает вместе с кодом, который его ждёт.
+      - name: Справочники
+        working-directory: backend
+        env:
+          ORBITA_ENV: production
+          ORBITA_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+        run: uv run python -m app.seed
+
+      # Первая ссылка помощника — по токену из секрета, без печати ссылки: журнал прогона
+      # публичного репозитория читает кто угодно. Ссылка, которая уже есть, не
+      # перевыпускается, и открытые сессии не гаснут. Дальше ссылки выпускаются в
+      # «Управлении».
+      - name: Первая ссылка помощника
+        working-directory: backend
+        env:
+          ORBITA_ENV: production
+          ORBITA_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          ORBITA_SESSION_SECRET: ${{ secrets.PRODUCTION_SESSION_SECRET }}
+          ORBITA_JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+          ORBITA_FIRST_ACCESS_TOKEN: ${{ secrets.PRODUCTION_FIRST_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$ORBITA_FIRST_ACCESS_TOKEN" ]; then
+            echo "Секрета PRODUCTION_FIRST_ACCESS_TOKEN нет — первая ссылка не выпускается (docs/SETUP.md, шаг 5)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          uv run python -m app.access_cli assistant \
+            --token-from-env ORBITA_FIRST_ACCESS_TOKEN --only-if-missing
+
+      # Из корня репозитория, а не из backend/: в проекте Vercel корневая папка задана
+      # `backend` (docs/SETUP.md), и CLI сам в неё переходит. Запуск из backend/ при такой
+      # настройке ищет backend/backend и падает.
+      - name: API на Vercel
+        run: |
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN" --env ORBITA_COMMIT="$GITHUB_SHA"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Интерфейс на Netlify
+        working-directory: frontend
+        env:
+          ORBITA_API_ORIGIN: ${{ secrets.PRODUCTION_API_ORIGIN }}
+          ORBITA_REQUIRE_API_ORIGIN: '1'
+          ORBITA_COMMIT: ${{ github.sha }}
+        run: |
+          npm ci
+          npm run build
+          npx --yes netlify-cli@latest deploy --prod --dir=dist --site="$NETLIFY_SITE_ID"
+
+      # Проверка после выкладки: не «что-то ответило», а ответил именно этот коммит.
+      # Иначе успешной выкладкой считается кеш прежней сборки.
+      - name: Проверка после выкладки
+        id: smoke
+        run: |
+          health="$(curl --fail --silent --show-error --location "$PRODUCTION_URL/api/health")"
+          echo "$health"
+          echo "$health" | jq -e --arg sha "$GITHUB_SHA" '.commit == $sha' > /dev/null
+          curl --fail --silent --show-error --location --output /dev/null "$PRODUCTION_URL"
+          echo "выложен коммит $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      # Автоматический откат площадок: если проверка не прошла, руководитель не должен
+      # успеть открыть сломанную систему с телефона. База сама не откатывается —
+      # порядок восстановления в RUNBOOK.
+      - name: Откат при неудачной проверке
+        if: failure() && steps.smoke.conclusion == 'failure'
+        run: |
+          npx --yes vercel@latest rollback --yes --token="$VERCEL_TOKEN" || true
+          bash scripts/netlify-restore-previous.sh || true
+          {
+            echo "### Выкладка откачена"
+            echo "Проверка после выкладки не прошла, площадки возвращены на прежнюю версию."
+            echo "Схема базы осталась на версии этой выкладки; до неё было — ${{ steps.before.outputs.revision }}."
+            echo "Порядок восстановления — docs/RUNBOOK.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rollback:
+    name: Откатить
+    needs: keys
+    if: inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Вернуть прежнюю версию API
+        run: npx --yes vercel@latest rollback --yes --token="$VERCEL_TOKEN"
+
+      - name: Вернуть прежнюю версию интерфейса
+        run: bash scripts/netlify-restore-previous.sh
+
+      - name: Система отвечает
+        run: |
+          curl --fail --silent --show-error --location "$PRODUCTION_URL/api/health" | jq -e '.status == "ok"' > /dev/null
+          curl --fail --silent --show-error --location --output /dev/null "$PRODUCTION_URL"
+          echo "откат выполнен" >> "$GITHUB_STEP_SUMMARY"

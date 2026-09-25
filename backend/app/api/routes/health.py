@@ -2,17 +2,22 @@
 
 Две разные проверки, и путать их нельзя.
 
-`/health` — живость: процесс отвечает. Не трогает ни базу, ни Redis. Если бы трогал,
-недоступность базы приводила бы к перезапуску приложения, которое исправно, — и
-перезапускалось бы оно по кругу, пока база не вернётся.
+`/api/health` — живость: процесс отвечает и говорит, какой коммит в нём выложен. Базу не
+трогает. Если бы трогал, недоступность базы приводила бы к перезапуску исправного
+приложения — и перезапускалось бы оно по кругу, пока база не вернётся.
 
-`/ready` — готовность обслуживать запросы: база и Redis отвечают. Отдаёт 503, если нет,
-и называет, что именно не отвечает: без этого разбирательство начинается с угадывания.
+`/api/ready` — готовность обслуживать запросы: база отвечает. Отдаёт 503, если нет, и
+называет, что именно не отвечает: без этого разбирательство начинается с угадывания.
+
+Путь начинается с `/api` не для красоты: интерфейс стоит на Netlify и проксирует на API
+только `/api/*` (ADR-0028). Проверка, доступная мимо прокси, проверяла бы не тот путь,
+которым ходят люди.
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Literal
 
 import structlog
@@ -20,20 +25,25 @@ from fastapi import Response, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app.adapters.redis_client import create_redis
 from app.api.deps import SettingsDep
 from app.api.transaction import transactional_router
 from app.repos.database import get_engine
 
-router = transactional_router(tags=["служебные"])
+router = transactional_router(prefix="/api", tags=["служебные"])
 logger = structlog.get_logger(__name__)
 
-# Проверка готовности не должна висеть: балансировщик ждёт ответа, а не правды любой ценой.
+# Проверка готовности не должна висеть: тот, кто её опрашивает, ждёт ответа, а не правды
+# любой ценой.
 CHECK_TIMEOUT_SECONDS = 3.0
 
 
 class HealthResponse(BaseModel):
     status: Literal["ok"]
+    commit: str
+    """Коммит выложенной сборки. Выкладка сверяет его с тем, что выкладывала: иначе
+    успешной выкладкой считается кеш прежней сборки (deploy.yml)."""
+    env: str
+    time: datetime
 
 
 class ReadinessResponse(BaseModel):
@@ -42,8 +52,13 @@ class ReadinessResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse, summary="Живость процесса")
-async def health() -> HealthResponse:
-    return HealthResponse(status="ok")
+async def health(settings: SettingsDep) -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        commit=settings.commit,
+        env=settings.env,
+        time=datetime.now(UTC),
+    )
 
 
 async def check_database() -> str:
@@ -58,31 +73,14 @@ async def check_database() -> str:
     return "ok"
 
 
-async def check_redis(url: str) -> str:
-    client = create_redis(url)
-    try:
-        async with asyncio.timeout(CHECK_TIMEOUT_SECONDS):
-            await client.ping()
-    except Exception as error:
-        logger.warning("redis_check_failed", error=str(error))
-        return f"недоступен: {type(error).__name__}"
-    finally:
-        await client.aclose()
-    return "ok"
-
-
 @router.get(
     "/ready",
     response_model=ReadinessResponse,
     summary="Готовность обслуживать запросы",
-    responses={503: {"description": "Одна из зависимостей недоступна"}},
+    responses={503: {"description": "База недоступна"}},
 )
-async def ready(settings: SettingsDep, response: Response) -> ReadinessResponse:
-    database, redis = await asyncio.gather(
-        check_database(),
-        check_redis(settings.redis_url),
-    )
-    checks = {"database": database, "redis": redis}
+async def ready(response: Response) -> ReadinessResponse:
+    checks = {"database": await check_database()}
     is_ready = all(value == "ok" for value in checks.values())
 
     if not is_ready:

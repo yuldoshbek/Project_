@@ -1,14 +1,23 @@
-# Локальное окружение разработки ORBITA.
-# Поднимается одной командой: make up (в Windows — .\make.ps1 up).
+# Локальное окружение разработки: одна PostgreSQL и ничего больше.
 #
-# Продовый контур этим файлом не описывается: площадка размещения уточняется у IT-службы
-# Агентства (OPEN-QUESTIONS Q9), сборка образов и деплой — тикет ORB-047.
+# Раньше здесь жили Redis, MinIO, антивирус, преобразователь документов и перехватчик
+# почты — пять контейнеров и гигабайты образов. Все они сняты вместе с прежним стеком
+# (ADR-0032, CLAUDE.md, раздел «Чего не делать»): фон работает задачами по расписанию,
+# файлы уходят в хранилище через порт, уведомления приходят пушем.
 #
-# Порты на хосте смещены (55432, 56379, 59000/59001, 51025/58025) и привязаны к 127.0.0.1.
-# Причина не косметическая: если на машине уже работает PostgreSQL, он занимает IPv4:5432,
-# контейнер садится только на IPv6, и клиент молча уходит в чужую базу — соединение
-# рвётся без единой записи в логах контейнера. Привязка к 127.0.0.1 заодно не выставляет
-# базу разработки в локальную сеть. Переопределяется через .env.
+# Рабочий контур этим файлом не описывается: он собирается из облачных площадок
+# (ADR-0028). Сборка для сервера агентства появится в блоке 3.
+#
+# Порт на хосте смещён (55433) и привязан к 127.0.0.1. Две причины, обе из практики.
+#
+# Первая: 55432 на машине разработчика занимает база ассистента SETA. Совпадение портов
+# означает, что тесты ORBITA накатывают схему в чужую базу, и узнаётся это не по отказу, а
+# по её содержимому.
+#
+# Вторая: если оставить порт 5432 и на машине уже работает PostgreSQL, он занимает
+# IPv4:5432, контейнер садится только на IPv6, и клиент молча уходит в чужую базу —
+# соединение рвётся без единой записи в логах контейнера. Привязка к 127.0.0.1 заодно не
+# выставляет базу разработки в локальную сеть.
 
 name: orbita
 
@@ -22,10 +31,10 @@ services:
       POSTGRES_DB: ${ORBITA_DB_NAME:-orbita}
       # Тестовая база создаётся рядом с рабочей: тесты не должны затирать данные разработки
       ORBITA_TEST_DB: ${ORBITA_TEST_DB:-orbita_test}
-      # Локаль влияет на сортировку — для узбекской латиницы это существенно (ADR-0006)
+      # Локаль влияет на сортировку — для узбекской латиницы это существенно
       LANG: C.UTF-8
     ports:
-      - '127.0.0.1:${ORBITA_DB_PORT:-55432}:5432'
+      - '127.0.0.1:${ORBITA_DB_PORT:-55433}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -36,136 +45,5 @@ services:
       retries: 12
       start_period: 10s
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    # appendonly: очередь напоминаний и эскалаций не должна теряться при перезапуске (ADR-0008)
-    command: redis-server --appendonly yes
-    ports:
-      - '127.0.0.1:${ORBITA_REDIS_PORT:-56379}:6379'
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${ORBITA_S3_ACCESS_KEY:-orbita}
-      MINIO_ROOT_PASSWORD: ${ORBITA_S3_SECRET_KEY:-orbita-secret}
-    ports:
-      - '127.0.0.1:${ORBITA_S3_PORT:-59000}:9000'
-      - '127.0.0.1:${ORBITA_S3_CONSOLE_PORT:-59001}:9001'
-    volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
-  # Разовая задача: создаёт бакет вложений, чтобы приложение не занималось этим на старте.
-  # Вынесена в профиль: `up --wait` считает любой завершившийся контейнер отказом, даже
-  # с нулевым кодом. Запускается отдельно через `docker compose run --rm minio-init`,
-  # что заодно даёт честный код возврата (см. цель up в Makefile).
-  minio-init:
-    profiles: [setup]
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${ORBITA_S3_ACCESS_KEY:-orbita}
-      MINIO_ROOT_PASSWORD: ${ORBITA_S3_SECRET_KEY:-orbita-secret}
-      BUCKET: ${ORBITA_S3_BUCKET:-orbita}
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
-      mc mb --ignore-existing local/$$BUCKET &&
-      mc anonymous set none local/$$BUCKET &&
-      echo 'бакет '$$BUCKET' готов'
-      "
-    restart: 'no'
-
-  # Предпросмотр офисных форматов (ТЗ 6.6, ADR-0009): LibreOffice в headless-режиме с
-  # HTTP-обёрткой. Отдельный контейнер, а не пакет рядом с приложением: семьсот мегабайт
-  # ради одного вызова, и на машине разработчика под Windows его нет вовсе.
-  #
-  # Маршруты Chromium и работы с готовыми PDF выключены: мы пользуемся одним — офисным.
-  # Выход в сеть из документа запрещён в обе стороны: связанная картинка в DOCX — это
-  # адрес, по которому пойдёт преобразователь, и указать его может тот, кто прислал файл.
-  gotenberg:
-    image: gotenberg/gotenberg:8
-    restart: unless-stopped
-    command:
-      - gotenberg
-      - --chromium-disable-routes
-      - --pdfengines-disable-routes
-      - --libreoffice-deny-private-ips
-      - --libreoffice-deny-public-ips
-      - --api-timeout=120s
-    ports:
-      - '127.0.0.1:${ORBITA_PREVIEW_PORT:-53000}:3000'
-    healthcheck:
-      test: ['CMD', 'curl', '--silent', '--fail', 'http://localhost:3000/health']
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-
-  # Антивирус (OPEN-QUESTIONS Q7). Проверка идёт до того, как файл попадёт в хранилище,
-  # в базу и в интерфейс, — поэтому без поднятого clamav загрузка вложений не работает
-  # вовсе. Это намеренно: недоступный антивирус означает непроверенный файл, а не
-  # проверенный.
-  #
-  # Первый запуск долгий: базы сигнатур весят под гигабайт и распаковываются минутами.
-  # `start_period` это учитывает; дальше базы лежат в томе и загружаются заново только
-  # обновлением.
-  clamav:
-    image: clamav/clamav:latest
-    restart: unless-stopped
-    environment:
-      # Обновлять базы раз в сутки. По умолчанию образ проверяет обновления каждый час —
-      # для машины разработчика это лишний трафик и лишний шум в логах.
-      FRESHCLAM_CHECKS: 1
-    ports:
-      - '127.0.0.1:${ORBITA_ANTIVIRUS_PORT:-53310}:3310'
-    volumes:
-      - clamav-data:/var/lib/clamav
-      - ./docker/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
-    healthcheck:
-      test: ['CMD', 'clamdcheck.sh']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 300s
-
-  # Перехватывает исходящую почту в разработке: письма видны в веб-интерфейсе и никуда не уходят.
-  # Вместо MailHog из карточки тикета — Mailpit: MailHog не поддерживается с 2020 года,
-  # Mailpit его прямой преемник с теми же портами (SMTP 1025, интерфейс 8025).
-  mailpit:
-    image: axllent/mailpit:latest
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:${ORBITA_SMTP_PORT:-51025}:1025'
-      - '127.0.0.1:${ORBITA_MAIL_UI_PORT:-58025}:8025'
-    environment:
-      MP_MAX_MESSAGES: 500
-      MP_SMTP_AUTH_ACCEPT_ANY: 1
-      MP_SMTP_AUTH_ALLOW_INSECURE: 1
-    healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:8025/readyz']
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
 volumes:
   postgres-data:
-  redis-data:
-  minio-data:
-  clamav-data:

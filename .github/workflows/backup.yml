@@ -1,0 +1,85 @@
+# Ночная копия рабочей базы и проверка, что из неё можно восстановиться.
+#
+# Копия — ветка Neon от рабочей базы с датой в имени: создаётся секунды, хранится как
+# разница относительно родителя и не выносит данные за пределы базы. Выгружать дамп в
+# артефакты GitHub нельзя — в нём настоящие поручения с фамилиями, а артефакт виден всем,
+# у кого есть доступ к репозиторию.
+#
+# Копия без проверки восстановления — это надежда, а не копия. Поэтому каждую ночь на
+# свежем снимке выполняется запрос: схема на месте, данные читаются.
+#
+# Восстановление на момент времени (7 дней) остаётся за Neon — порядок в docs/RUNBOOK.md.
+
+name: Копия базы
+
+on:
+  schedule:
+    - cron: '0 20 * * *' # 01:00 Ташкент
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  snapshot:
+    name: Снимок и проверка
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+      PRODUCTION_DB_BRANCH: ${{ vars.PRODUCTION_DB_BRANCH || 'production' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Проверить ключи
+        id: keys
+        run: |
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            {
+              echo "### Копия не делается"
+              echo "Нет секретов NEON_API_KEY или NEON_PROJECT_ID. Порядок — docs/SETUP.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Снимок рабочей базы
+        if: steps.keys.outputs.ready == 'true'
+        run: scripts/neon.sh snapshot snapshot "$PRODUCTION_DB_BRANCH"
+
+      - name: Данные в снимке читаются
+        if: steps.keys.outputs.ready == 'true'
+        run: |
+          name="snapshot-$(date --utc +%Y-%m-%d)"
+          # Проверяем не «база отвечает», а «в схеме orbita есть таблицы»: пустая копия
+          # тоже отвечает, и именно так копия оказывается бесполезной в нужный день.
+          # Вычислитель на время проверки поднимает и убирает сам скрипт.
+          tables="$(scripts/neon.sh snapshot-check "$name")"
+          echo "таблиц в схеме orbita: $tables"
+          test "$tables" -gt 0
+          echo "Снимок \`$name\`: таблиц в схеме — $tables" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Убрать снимки старше недели
+        if: steps.keys.outputs.ready == 'true'
+        # Сколько дней хранить — переменная репозитория: у бесплатного тарифа Neon лимит
+        # веток на проект, а снимки делят его с production, demo и превью (docs/SETUP.md).
+        run: scripts/neon.sh prune snapshot "${{ vars.BACKUP_KEEP_DAYS || '7' }}"
+
+      # Молчаливо упавшая копия — худший вид отказа: о нём узнают в день, когда нужно
+      # восстановиться. Поэтому падение открывает задачу в репозитории.
+      - name: Сообщить о неудаче
+        if: failure() && steps.keys.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "Ночная копия базы не сделана $(date --utc +%Y-%m-%d)" \
+            --body "Прогон: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Порядок разбора — docs/RUNBOOK.md, раздел «Копии и восстановление»."

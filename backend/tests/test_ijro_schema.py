@@ -33,7 +33,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.comments import CommentTarget
 from app.domain.dictionaries import OrganizationKind
-from app.domain.documents import DocumentTarget
 from app.domain.ijro import DuePrecision, IjroSource, IjroState
 from app.repos.models import Comment, IjroAssignment, IjroDocument, IjroImport, Organization
 
@@ -211,9 +210,6 @@ class TestTheAssignmentOwnsATimelineAndFiles:
         with pytest.raises((IntegrityError, DBAPIError)):
             session.add(Comment(entity_type="meeting", entity_id=uuid.uuid4(), body="встреча"))
             await session.flush()
-
-    def test_files_know_the_new_owner_too(self) -> None:
-        assert DocumentTarget.IJRO_ASSIGNMENT.value == "ijro_assignment"
 
 
 class TestImportBatches:

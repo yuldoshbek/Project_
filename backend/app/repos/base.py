@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import DateTime, Integer, MetaData, func, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 SCHEMA = "orbita"
 
@@ -62,8 +63,8 @@ class UUIDPrimaryKey:
 class Timestamps:
     """Отметки создания и изменения.
 
-    `timestamptz` и `now()` на стороне базы — время одно на всех: у приложения, воркера и
-    бота (CLAUDE.md, инвариант о времени).
+    `timestamptz` и `now()` на стороне базы — время одно на всех: у запроса пользователя, у
+    задачи по расписанию и у командной строки (CLAUDE.md, инвариант о времени).
 
     `DateTime(timezone=True)` указывается явно: по одной аннотации `Mapped[datetime]`
     SQLAlchemy выводит `timestamp without time zone`. Разница не видна ни в модели, ни
@@ -81,3 +82,30 @@ class Timestamps:
         onupdate=func.now(),
         nullable=True,
     )
+
+
+class Versioned:
+    """Версия записи: защита от молчаливой перезаписи (инвариант 15).
+
+    Пользователей двое, и они правят одно и то же чаще, чем кажется: помощник вносит
+    перенос срока ровно тогда, когда руководитель смотрит на этот проект с телефона. Без
+    версии тот, кто сохранил вторым, затирает первого — и никто из них об этом не
+    узнаёт.
+
+    Считает версию сама SQLAlchemy: при сохранении она добавляет в условие `WHERE`
+    прежнее значение и, если строку уже изменили, поднимает `StaleDataError`. Сервисный
+    слой превращает его в честный ответ «запись изменил помощник» с кнопкой «обновить»
+    ([ADR-0034](../../../docs/adr/ADR-0034-near-real-time.md)).
+
+    **Следствие, о котором легко забыть:** запись, изменённая запросом `UPDATE` мимо
+    ORM, версию не поднимает. Поэтому деловые записи правятся только через объекты, а
+    `update()` остаётся для служебных таблиц вроде сессий, у которых версии нет.
+    """
+
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+    @declared_attr.directive
+    def __mapper_args__(cls) -> dict[str, Any]:  # noqa: N805
+        return {"version_id_col": cls.version}

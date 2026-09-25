@@ -111,4 +111,6 @@ def test_library_list_covers_what_we_actually_use() -> None:
     """Список библиотек — не декорация: пропущенная пишет мимо общего формата."""
     assert "uvicorn.access" in LIBRARY_LOGGERS
     assert "sqlalchemy.engine" in LIBRARY_LOGGERS
-    assert "arq" in LIBRARY_LOGGERS
+    # arq из списка убран вместе с воркером (ADR-0032): логгер библиотеки, которой нет,
+    # — это строка, которую однажды примут за доказательство, что воркер ещё живёт.
+    assert "arq" not in LIBRARY_LOGGERS

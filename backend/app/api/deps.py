@@ -12,9 +12,6 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.antivirus import VirusScanner, create_virus_scanner
-from app.adapters.queue import JobQueue, create_job_queue
-from app.adapters.storage import FileStorage, create_file_storage
 from app.api.transaction import SESSION_STATE_ATTRIBUTE
 from app.repos.database import new_session
 from app.settings import Settings
@@ -46,7 +43,7 @@ def get_app_settings(request: Request) -> Settings:
     Намеренно не `get_settings()`: тот читает окружение и кеширует результат на процесс.
     Тогда `create_app(settings)` создавал бы приложение, часть которого работает с
     переданными настройками (подключение к базе), а часть — с прочитанными из окружения
-    (адрес Redis). Такое расхождение проявляется не в тесте, а в бою.
+    (строка подключения из чужого окружения). Такое расхождение проявляется не в тесте, а в бою.
     """
     settings = getattr(request.app.state, "settings", None)
     if settings is None:
@@ -55,23 +52,5 @@ def get_app_settings(request: Request) -> Settings:
     return settings
 
 
-def get_storage(request: Request) -> FileStorage:
-    """Хранилище вложений (ADR-0009)."""
-    return create_file_storage(get_app_settings(request))
-
-
-def get_virus_scanner(request: Request) -> VirusScanner:
-    """Антивирус (Q7). Зависимость, а не прямой вызов: тест подменяет её целиком."""
-    return create_virus_scanner(get_app_settings(request))
-
-
-def get_job_queue(request: Request) -> JobQueue:
-    """Очередь фоновых заданий."""
-    return create_job_queue(get_app_settings(request))
-
-
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
-StorageDep = Annotated[FileStorage, Depends(get_storage)]
-ScannerDep = Annotated[VirusScanner, Depends(get_virus_scanner)]
-QueueDep = Annotated[JobQueue, Depends(get_job_queue)]

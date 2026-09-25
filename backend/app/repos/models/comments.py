@@ -1,12 +1,14 @@
-"""Комментарии к проектам и задачам.
+"""Лента хода исполнения поручения «Ижро» (ТЗ 3.3).
 
-Одна таблица на оба вида записей, а не `project_comments` и `task_comments`: реплика
-устроена одинаково, различается только то, к чему она относится. Две таблицы означали бы
-два одинаковых набора запросов и две ленты, которые однажды разойдутся по поведению.
+Владелец у ленты сейчас один — поручение (`app.domain.comments`); у проекта и задачи
+ленты нет, ТЗ v2.0 её не предусматривает. Ограничение `entity_type_is_known` держит это в
+базе: реплика к чему-то ещё не запишется.
 
-Ссылка на проект или задачу внешним ключом не закрыта — `entity_id` указывает то на одну
-таблицу, то на другую, и база такую связь не выразит. Целостность держит удаление: сервис
-уносит комментарии вместе с записью, к которой они относились, а тест это стережёт.
+Ссылка при этом полиморфная (`entity_type` + `entity_id`), а не внешний ключ на
+`ijro_assignments`: в блоке 2 владельцами станут письмо и подготовка доклада, и вторая
+таблица под ту же ленту однажды разошлась бы с первой по поведению. Плата названа вслух:
+базой ссылка не закрыта, и уносить реплики вместе с владельцем обязан сервисный слой —
+он появится вместе с лентой в блоке 2.
 """
 
 from __future__ import annotations
@@ -19,14 +21,14 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.comments import CommentTarget
-from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
 
 TARGETS = ", ".join(f"'{target.value}'" for target in CommentTarget)
 
 
-class Comment(Auditable, UUIDPrimaryKey, Timestamps, Base):
-    """Реплика в обсуждении проекта или задачи (ТЗ 6.1, 6.2)."""
+class Comment(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
+    """Реплика в ленте хода исполнения поручения."""
 
     __tablename__ = "comments"
 
@@ -64,7 +66,7 @@ class Comment(Auditable, UUIDPrimaryKey, Timestamps, Base):
 
     __table_args__ = (
         CheckConstraint(f"entity_type IN ({TARGETS})", name="entity_type_is_known"),
-        # Лента одной записи — единственный частый запрос: «что обсуждали по этому проекту».
+        # Лента одной записи — единственный частый запрос: «что сделано по этому поручению».
         Index(
             "ix_comments_entity_type_entity_id_created_at", "entity_type", "entity_id", "created_at"
         ),

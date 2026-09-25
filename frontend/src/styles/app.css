@@ -1,0 +1,147 @@
+/*
+ * Сборка стилей: токены, Tailwind и связка между ними.
+ *
+ * `@theme inline` — не формальность: так утилиты Tailwind ссылаются на переменные, а не на
+ * посчитанные при сборке значения. Без `inline` смена темы во время работы не меняла бы
+ * ничего — цвета запеклись бы в классы, и переключатель работал бы только до перезагрузки.
+ */
+
+@import './tokens.css';
+@import 'tailwindcss';
+
+@theme inline {
+  /* Поверхности и текст */
+  --color-app: var(--surface-app);
+  --color-card: var(--surface-card);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-hover: var(--surface-hover);
+  --color-active: var(--surface-active);
+
+  --color-ink-strong: var(--ink-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-inverse: var(--ink-inverse);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-line-accent: var(--line-accent);
+
+  /* Действие */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+
+  /* Четыре сигнала */
+  --color-burn: var(--burn);
+  --color-burn-soft: var(--burn-soft);
+  --color-burn-ink: var(--burn-ink);
+  --color-wait: var(--wait);
+  --color-wait-soft: var(--wait-soft);
+  --color-wait-ink: var(--wait-ink);
+  --color-calm: var(--calm);
+  --color-calm-soft: var(--calm-soft);
+  --color-calm-ink: var(--calm-ink);
+  --color-call: var(--call);
+  --color-call-soft: var(--call-soft);
+  --color-call-ink: var(--call-ink);
+
+  /* Космос */
+  --color-space-deep: var(--space-deep);
+  --color-space-mid: var(--space-mid);
+  --color-space-glow: var(--space-glow);
+
+  --radius-sm: var(--radius-sm);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
+  --font-sans: var(--font-sans);
+  --font-numeric: var(--font-numeric);
+
+  --spacing-touch: var(--touch-target);
+  --spacing-topbar: var(--topbar-height);
+}
+
+/*
+ * Движение «космоса» — два приёма из четырёх разрешённых (ТЗ 6, PLAN-10X):
+ * вспышка изменившегося числа и медленные орбиты в шапке раздела на ноутбуке и мониторе.
+ * Под цифрами и текстом не бывает ни того ни другого; `prefers-reduced-motion` гасит оба
+ * правилом ниже.
+ */
+@theme {
+  --animate-flash: flash 900ms ease-out;
+  --animate-orbit: orbit 120s linear infinite;
+  --animate-orbit-reverse: orbit 180s linear infinite reverse;
+
+  @keyframes flash {
+    0% {
+      box-shadow: 0 0 0 8px var(--flash);
+    }
+
+    100% {
+      box-shadow: 0 0 0 0 var(--flash);
+    }
+  }
+
+  @keyframes orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+/* Отчёт недели и месяца печатается на лист A4 (критерий 6 блока 1). Поля — как у
+   служебного документа: подшивается в папку левым краем. */
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+@layer base {
+  html {
+    /* Плавная прокрутка отключена для тех, кто просил меньше движения: системная
+       настройка сильнее нашего вкуса. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--surface-app);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    /* Нижняя вставка — под жест-полосу iPhone: без неё нижняя панель навигации
+       оказывается под ней, и кнопки не нажимаются вовсе. */
+    padding-bottom: env(safe-area-inset-bottom);
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  /* Цифры одинаковой ширины: в списке сроков и процентов прыгающая ширина колонки
+     читается как ошибка вёрстки. */
+  .numeric,
+  time,
+  td.numeric {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Кто попросил меньше движения — тот его не получает. Не «поменьше», а нисколько:
+     Motion переведён в режим reducedMotion="user", а это правило закрывает CSS-переходы. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

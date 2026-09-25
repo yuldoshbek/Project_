@@ -24,6 +24,20 @@ def today_in(timezone: str) -> date:
     return datetime.now(UTC).astimezone(ZoneInfo(timezone)).date()
 
 
+def local_date(moment: datetime, zone: ZoneInfo) -> date:
+    """Календарная дата момента в поясе пользователей.
+
+    `moment.date()` здесь не годится: у времени из базы пояс UTC, и срок «26.09 в 03:00
+    по Ташкенту» — это «25.09 в 22:00» по UTC. Взятая так дата делает работу просроченной
+    на сутки раньше, и заметно это только ночью.
+    """
+    if moment.tzinfo is None:
+        # Время без пояса в системе не хранится (инвариант 8). Появилось — это ошибка в
+        # коде, а не в данных, и угадывать пояс молча значило бы спрятать её.
+        raise ValueError("момент без часового пояса: хранение только timestamptz")
+    return moment.astimezone(zone).date()
+
+
 def now_utc() -> datetime:
     """Текущий момент в UTC.
 

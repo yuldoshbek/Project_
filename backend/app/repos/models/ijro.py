@@ -1,12 +1,15 @@
 """Реестр поручений вышестоящих органов «Ижро».
 
 Пять таблиц по [ADR-0025](../../../../docs/adr/ADR-0025-ijro-standalone-register.md).
-Связи с проектами и задачами нет и не заводится: у них разное происхождение (чужой
+Поручение не сливается с проектом или задачей: у них разное происхождение (чужой
 документ против нашей воли), разный владелец срока и разный вопрос от руководителя.
+Связь есть только одна и только в одну сторону — задача помнит поручение, из которого
+выросла (`tasks.ijro_assignment_id`, ТЗ 3.2). Состояние поручения из задач не выводится
+(ТЗ 3.3).
 
-Ленты хода исполнения и вложений здесь тоже нет — они живут в существующих полиморфных
-`comments` и `documents`, которым добавлено одно значение. Две новые таблицы под то же
-самое означали бы вторую ленту, которая однажды разойдётся с первой по поведению.
+Ленты хода исполнения здесь нет — она живёт в полиморфной таблице `comments`, где
+поручение единственный владелец (`app.domain.comments`). Вложений у поручения пока нет
+вовсе: файлы приходят в блоке 2 вместе с хранилищем и своей миграцией.
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ from app.domain.ijro import (
     IjroState,
     ImportState,
 )
-from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
 
 
@@ -99,7 +102,7 @@ class IjroDocument(Auditable, UUIDPrimaryKey, Timestamps, Base):
     )
 
 
-class IjroAssignment(Auditable, UUIDPrimaryKey, Timestamps, Base):
+class IjroAssignment(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     """Поручение — строка контрольной таблицы.
 
     Ключ повтора — `(документ, банд, срок)`. Проверено на всех 165 строках: **164 группы**,
@@ -212,7 +215,13 @@ class IjroAssignment(Auditable, UUIDPrimaryKey, Timestamps, Base):
 
     __table_args__ = (
         # Ключ повтора. Проверен на всех 165 строках данных заказчика.
-        UniqueConstraint("document_id", "band", "due_on"),
+        #
+        # NULLS NOT DISTINCT (PostgreSQL 15+) — обязательная часть ключа, а не тонкость.
+        # По умолчанию два NULL считаются разными, и строка без пункта или без срока
+        # (обе законны — см. `band` и `due_on`) проходила бы уникальность при каждом
+        # привозе: еженедельная таблица задваивала бы ровно те строки, которые и так
+        # труднее всего опознать глазами.
+        UniqueConstraint("document_id", "band", "due_on", postgresql_nulls_not_distinct=True),
         CheckConstraint(f"state IN ({_values(IjroState)})", name="state_is_known"),
         CheckConstraint(
             f"due_precision IN ({_values(DuePrecision)})", name="due_precision_is_known"

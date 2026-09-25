@@ -1,0 +1,96 @@
+# Задачи по расписанию: утренняя сводка, снимок дня, проверка сроков.
+#
+# Расписание держит GitHub, а не площадка размещения (ADR-0035). Выполняет задачу всегда
+# само приложение — обработчик за защищённым эндпоинтом. Здесь только будильник, поэтому
+# переезд на сервер агентства меняет строку cron, а не код.
+#
+# Задачи обязаны быть идемпотентными: GitHub может пропустить запуск или позвать дважды,
+# и второй вызов не должен отправить второе уведомление (CLAUDE.md, инвариант 10).
+# Догоняющий режим — обязанность обработчика: он сам видит, что снимок за вчера не сделан.
+
+name: Задачи по расписанию
+
+on:
+  schedule:
+    # Ташкент — UTC+5 круглый год, перехода на летнее время нет.
+    - cron: '30 3 * * *' # 08:30 — утренняя сводка руководителю
+    - cron: '50 18 * * *' # 23:50 — снимок состояния за день
+    # Каждый час в рабочее время, а не круглосуточно: просрочка считается по
+    # календарным дням, и за ночь её результат измениться не может. 456 лишних
+    # пробуждений базы в месяц — это деньги за вычислитель и ноль пользы.
+    - cron: '0 4-14 * * 1-6' # 09:00–19:00 Ташкент, кроме воскресенья — сроки
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Какую задачу выполнить сейчас'
+        type: choice
+        default: deadline-check
+        options:
+          - morning-summary
+          - daily-snapshot
+          - deadline-check
+
+concurrency:
+  group: jobs-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Выполнить задачу
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Позвать обработчик
+        env:
+          API_ORIGIN: ${{ secrets.PRODUCTION_API_ORIGIN }}
+          JOBS_SECRET: ${{ secrets.PRODUCTION_JOBS_SECRET }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_JOB: ${{ inputs.job }}
+        run: |
+          if [ -z "$API_ORIGIN" ] || [ -z "$JOBS_SECRET" ]; then
+            {
+              echo "### Расписание выключено"
+              echo "Нет секретов PRODUCTION_API_ORIGIN или PRODUCTION_JOBS_SECRET."
+              echo "Порядок — docs/SETUP.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Строки case обязаны совпадать со строками cron выше символ в символ: GitHub
+          # передаёт в github.event.schedule ровно строку расписания. Совпадение держит
+          # тест backend/tests/test_jobs.py — прежде ежечасная строка разошлась с case,
+          # и проверка сроков молча не запускалась ни разу.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            job="$MANUAL_JOB"
+          else
+            case "$SCHEDULE" in
+              '30 3 * * *') job=morning-summary ;;
+              '50 18 * * *') job=daily-snapshot ;;
+              '0 4-14 * * 1-6') job=deadline-check ;;
+              *)
+                echo "::error::Расписание «$SCHEDULE» не сопоставлено задаче — поправьте case рядом с cron"
+                exit 1
+                ;;
+            esac
+          fi
+          if [ -z "$job" ]; then
+            echo "::error::Имя задачи пусто"
+            exit 1
+          fi
+          echo "задача: $job"
+
+          # Три попытки: функция может подниматься из холодного состояния дольше, чем
+          # ждёт curl, и один отказ сети не должен означать пропущенную сводку.
+          curl --fail-with-body --silent --show-error --location \
+            --retry 3 --retry-delay 10 --retry-all-errors --max-time 120 \
+            --request POST "$API_ORIGIN/internal/jobs/$job" \
+            --header "X-Orbita-Jobs-Secret: $JOBS_SECRET" \
+            --header 'Content-Type: application/json' \
+            --data '{"source":"github-actions"}' | tee response.json
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Задача \`$job\`: $(jq -r '.status // "без ответа"' response.json)" >> "$GITHUB_STEP_SUMMARY"

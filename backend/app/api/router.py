@@ -1,40 +1,30 @@
 """Корневой роутер API.
 
 Версия закреплена префиксом `/api/v1`: ломающее изменение получит новый префикс, а не
-сломает работающий интерфейс и бота (CLAUDE.md, сквозные правила).
+сломает работающий интерфейс.
+
+**Роутеры разделов приходят вместе с экранами, которые их вызывают:** порядок работы —
+сначала экран, заказчик его утверждает, потом API под утверждённый экран (CLAUDE.md, цикл
+блока). Прежние сорок эндпоинтов были написаны раньше экранов, не получили ни одного
+потребителя и ушли вместе со старой схемой (docs/audit/AUDIT-2026-09-20.md). Сейчас здесь
+справочники и Пульт — экран утверждён заказчиком 25.09.2026.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.api.routes import (
-    checklists,
-    comments,
-    dictionaries,
-    documents,
-    milestones,
-    partners,
-    people,
-    projects,
-    tasks,
-)
+from app.api.routes import decisions, dictionaries, pult
+from app.api.security import get_current_user
 
 API_PREFIX = "/api/v1"
 
+# Проверка доступа стоит здесь — один раз на все данные (ADR-0029). Забытая зависимость
+# на отдельном пути незаметна на ревью, а открывает она всё, что этот путь отдаёт.
+#
 # Класс маршрута задаётся на каждом роутере отдельно, а не наследуется отсюда:
 # `include_router` берёт класс у включаемого роутера, а не у включающего.
-api_router = APIRouter(prefix=API_PREFIX)
+api_router = APIRouter(prefix=API_PREFIX, dependencies=[Depends(get_current_user)])
 api_router.include_router(dictionaries.router)
-api_router.include_router(people.router)
-api_router.include_router(projects.router)
-api_router.include_router(tasks.router)
-api_router.include_router(checklists.router)
-api_router.include_router(comments.router)
-api_router.include_router(documents.router)
-api_router.include_router(milestones.router)
-api_router.include_router(partners.router)
-
-# Роутеры разделов подключаются здесь по мере готовности:
-#   calendar (ORB-026), dashboard (ORB-029),
-#   briefing (ORB-061), search (ORB-033), integrations/google (ORB-057).
+api_router.include_router(pult.router)
+api_router.include_router(decisions.router)

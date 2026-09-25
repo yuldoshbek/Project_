@@ -71,7 +71,7 @@ def test_violation_is_detected() -> None:
     )
 
 
-@pytest.mark.parametrize("layer", ["api", "services", "domain", "repos", "adapters", "workers"])
+@pytest.mark.parametrize("layer", ["api", "services", "domain", "repos", "adapters", "jobs"])
 def test_layer_package_exists(layer: str) -> None:
     """Все слои из CLAUDE.md существуют: контракт ссылается на реальные пакеты."""
     assert (BACKEND_ROOT / "app" / layer / "__init__.py").is_file()
