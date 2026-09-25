@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import itertools
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -18,59 +17,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.attention import Attention
 from app.domain.clock import local_date, now_utc
-from app.domain.dictionaries import ProjectStatus, TaskStatus
+from app.domain.dictionaries import ProjectStatus
 from app.jobs import run_job
-from app.repos.models import AuditLog, LeaderQuestion, Project, ProjectTypeRef, Task
+from app.repos.models import AuditLog, LeaderQuestion
 from app.services import metrics
+from tests.factories import make_project, make_task
 
 pytestmark = pytest.mark.infra
 
 TASHKENT = ZoneInfo("Asia/Tashkent")
-_codes = itertools.count(1)
 
 
 def local_today() -> date:
     return local_date(now_utc(), TASHKENT)
-
-
-async def make_project(
-    session: AsyncSession,
-    *,
-    due_on: date,
-    status: ProjectStatus = ProjectStatus.IN_PROGRESS,
-) -> Project:
-    project_type = await session.scalar(select(ProjectTypeRef.id).limit(1))
-    assert project_type is not None
-    number = next(_codes)
-    project = Project(
-        code=f"PRJ-T-{number:04d}",
-        title=f"Проект {number}",
-        project_type_id=project_type,
-        started_on=due_on - timedelta(days=90),
-        due_on=due_on,
-        original_due_on=due_on,
-        status_code=status.value,
-        status_reason="причина для проверки" if status.requires_reason else None,
-    )
-    session.add(project)
-    await session.flush()
-    return project
-
-
-async def make_task(
-    session: AsyncSession, *, due_at: datetime | None, project: Project | None = None
-) -> Task:
-    number = next(_codes)
-    task = Task(
-        code=f"TSK-T-{number:04d}",
-        title=f"Задача {number}",
-        project_id=project.id if project else None,
-        status=TaskStatus.IN_PROGRESS.value,
-        due_at=due_at,
-    )
-    session.add(task)
-    await session.flush()
-    return task
 
 
 class TestSnapshot:

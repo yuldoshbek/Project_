@@ -87,11 +87,12 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     last_visit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    """Когда пользователь смотрел систему в прошлый раз.
+    """Когда закончился прошлый визит — последнее обращение перед перерывом.
 
     Отсюда берётся «С прошлого визита» (ТЗ 4) — строка, ради которой руководитель и
-    открывает Пульт после поездки. Отметка сдвигается при входе, а не при каждом запросе:
-    иначе «прошлый визит» всегда оказывался бы пятнадцатью секундами назад.
+    открывает Пульт после поездки. Отметка сдвигается в начале нового визита, после
+    перерыва дольше `app.domain.access.VISIT_GAP`, а не при каждом запросе: иначе
+    «прошлый визит» всегда оказывался бы пятнадцатью секундами назад.
     """
 
     __table_args__ = (CheckConstraint(f"role IN ({ROLES})", name="role_is_known"),)

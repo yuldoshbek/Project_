@@ -21,18 +21,36 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.attention import DueChanges, Item, Ladder, build_ladder, with_due_changes
+from app.domain.attention import (
+    DueChanges,
+    Holder,
+    Item,
+    Ladder,
+    build_ladder,
+    with_due_changes,
+)
+from app.domain.attention import holders as holders_of
 from app.domain.dictionaries import SettingKey
+from app.domain.pult import MILESTONES, PROJECTS, TASKS, DeadlineMoves
+from app.domain.pult import deadline_moves as moves_of
 from app.repos import attention as snapshot
+from app.repos import pult as read_model
 from app.services.dictionaries import load_settings
 
 DEFAULT_BURN_DAYS = 7
 DEFAULT_QUIET_DAYS = 14
+
+MOVES_PERIOD_DAYS = 30
+"""«Держим ли мы свои сроки?» — за месяц: короче не видно привычки переносить, длиннее
+в ответ попадают переносы, о которых уже договорились и забыли."""
+
+MOVES_TOP = 5
+"""Сколько самых переносимых записей показать: на телефоне больше пяти не читают."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +83,28 @@ async def ladder(
     return build_ladder(
         items, today=today, burn_days=limits.burn_days, quiet_days=limits.quiet_days
     )
+
+
+def holders(ladder: Ladder) -> list[Holder]:
+    """«Кто держит» — по строкам той же лестницы, а не отдельным подсчётом."""
+    return holders_of(ladder.rows)
+
+
+async def deadline_moves(
+    session: AsyncSession,
+    *,
+    now: datetime,
+    zone: ZoneInfo,
+    period_days: int = MOVES_PERIOD_DAYS,
+    top: int = MOVES_TOP,
+) -> DeadlineMoves:
+    """«Держим ли мы свои сроки?»: переносы и суммарный сдвиг за период — по журналу."""
+    entries = await read_model.audit_entries(
+        session,
+        since=now - timedelta(days=period_days),
+        entity_types=(PROJECTS, MILESTONES, TASKS),
+    )
+    return moves_of(entries, zone=zone, period_days=period_days, top=top)
 
 
 async def what_if(

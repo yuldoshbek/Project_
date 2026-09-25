@@ -40,6 +40,21 @@ TOKEN_BYTES = 32
 TOUCH_INTERVAL = timedelta(minutes=30)
 
 
+VISIT_GAP = timedelta(hours=2)
+"""Перерыв, после которого обращение считается новым визитом.
+
+От конца прошлого визита считается «что изменилось с моего прошлого визита» (Пульт).
+Два часа, а не «новая сессия»: сессия живёт тридцать дней, и руководитель открывает
+систему утром, в обед и вечером — это три визита, а не один. Меньше двух часов — это
+та же работа, прерванная совещанием.
+"""
+
+
+def visit_began(last_seen_at: datetime | None, now: datetime) -> bool:
+    """Начался ли новый визит: с последнего обращения прошло больше `VISIT_GAP`."""
+    return last_seen_at is not None and now - last_seen_at >= VISIT_GAP
+
+
 def new_token() -> str:
     """Новый секрет для ссылки или сессии."""
     return secrets.token_urlsafe(TOKEN_BYTES)

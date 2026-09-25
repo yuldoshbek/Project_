@@ -310,6 +310,49 @@ def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_da
     return Ladder(rows=tuple(rows), on_track=on_track)
 
 
+@dataclass(frozen=True, slots=True)
+class Holder:
+    """«Кто держит»: строки лестницы одного ответственного (Пульт, блок 1)."""
+
+    person_id: uuid.UUID
+    counts: dict[Attention, int]
+    total: int
+    worst: Attention
+    """Самая высокая ступень у этого человека — ею окрашена его строка."""
+
+
+def holders(rows: Iterable[Row]) -> list[Holder]:
+    """Строки лестницы по ответственным: кому звонить первым.
+
+    Считается по уже построенной лестнице, а не отдельным запросом: число строк у
+    человека обязано совпадать с числом его строк на экране (инвариант 2). Первым идёт
+    тот, у кого ступень выше, при равной — у кого больше просроченного, затем больше
+    строк. Строки без ответственного сюда не попадают: звонить некому, и это видно в
+    самой строке.
+    """
+    grouped: dict[uuid.UUID, list[Row]] = {}
+    for row in rows:
+        if row.responsible_person_id is not None:
+            grouped.setdefault(row.responsible_person_id, []).append(row)
+
+    result = []
+    for person_id, own in grouped.items():
+        counts = {step: 0 for step in LADDER if not step.is_normal}
+        for row in own:
+            counts[row.attention] += 1
+        worst = min((row.attention for row in own), key=lambda step: step.rank)
+        result.append(Holder(person_id=person_id, counts=counts, total=len(own), worst=worst))
+
+    return sorted(
+        result,
+        key=lambda holder: (
+            holder.worst.rank,
+            -holder.counts[Attention.OVERDUE],
+            -holder.total,
+        ),
+    )
+
+
 DueChanges = Mapping[tuple[str, uuid.UUID], date]
 """Новые сроки для «что если»: (раздел, запись) → срок."""
 

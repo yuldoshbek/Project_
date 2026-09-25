@@ -32,6 +32,7 @@ from app.domain.access import (
     link_for,
     needs_touch,
     new_token,
+    visit_began,
 )
 from app.domain.errors import NotAuthenticatedError, NotFoundError, RuleViolationError
 from app.repos.models import AccessLink, Session, User
@@ -164,6 +165,12 @@ async def resolve(
     user = await session.get(User, record.user_id)
     if user is None or not user.is_active:
         raise NotAuthenticatedError("Сессия закончилась: откройте ORBITA по своей ссылке")
+
+    # Новый визит — после перерыва дольше двух часов. Конец прошлого визита — последнее
+    # обращение перед перерывом: от него Пульт считает «что изменилось с моего прошлого
+    # визита». Проверка до отметки обращения, иначе перерыв всегда был бы нулевым.
+    if visit_began(record.last_seen_at, now):
+        user.last_visit_at = record.last_seen_at
 
     if needs_touch(record.last_seen_at, now):
         record.last_seen_at = now

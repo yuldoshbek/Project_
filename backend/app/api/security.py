@@ -86,3 +86,17 @@ async def require_assistant(user: CurrentUser) -> User:
 
 
 Assistant = Annotated[User, Depends(require_assistant)]
+
+
+async def require_leader(user: CurrentUser) -> User:
+    """Решение руководителя — единственная запись, которую делает он сам (ТЗ 3.7).
+
+    Это то самое исключение из `require_assistant`, и оно отдельное и явное: решение
+    помощника от имени руководителя подписало бы журнал решений чужой рукой.
+    """
+    if Role(user.role) is not Role.LEADER:
+        raise PermissionDeniedError("Решения принимает руководитель")
+    return user
+
+
+Leader = Annotated[User, Depends(require_leader)]
