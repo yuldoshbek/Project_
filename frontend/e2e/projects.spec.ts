@@ -136,3 +136,35 @@ test('перенос на паузу — только с причиной', asyn
     page.getByRole('region', { name: 'В работе' }).getByRole('article').filter({ hasText: code! }),
   ).toBeVisible();
 });
+
+// Карточка с организациями — экран на утверждение: правка ложится во временный слой
+// вкладки (`draft.ts`), база не меняется.
+for (const size of [
+  { name: 'laptop', width: 1440, height: 900 },
+  { name: 'phone', width: 390, height: 844 },
+] as const) {
+  test(`карточка: организации и сведения, ${size.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await openProjects(page);
+    if (size.name === 'phone') await page.getByRole('tab', { name: /В работе/ }).click();
+
+    await page
+      .getByRole('button', { name: /Совместная программа наблюдения/ })
+      .first()
+      .click();
+    const panel = page.getByRole('dialog');
+    const organizations = panel.locator('section').filter({ hasText: 'Кто заказчик' });
+    await expect(organizations.getByText('Министерство экологии')).toBeVisible();
+    await expect(organizations.getByText(/Головное ведомство — не агентство/)).toBeVisible();
+
+    // Центр — одним касанием.
+    await organizations.getByRole('button', { name: 'исполнитель', exact: true }).click();
+    await expect(
+      organizations.getByRole('combobox', { name: /Роль: Центр космического мониторинга/ }),
+    ).toHaveValue('executor');
+
+    await organizations.scrollIntoViewIfNeeded();
+    await noOverflow(page);
+    await page.screenshot({ path: `${REPORT_DIR}/projects-card-orgs-${size.name}-light.png` });
+  });
+}

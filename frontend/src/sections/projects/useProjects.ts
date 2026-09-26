@@ -6,18 +6,27 @@
  * что на экране устаревшая картина, и правку надо делать по свежей (инвариант 15).
  *
  * «Что если» — тоже мутация, но ничего не перечитывает: он ничего не записал.
+ *
+ * Правка организаций и сведений — на утверждении экрана: пока API нет, она ложится во
+ * временный слой `draft.ts` поверх ответа сервера.
  */
 
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { request } from '@/shared/api/client';
 
+import { draft, withCreated, withDraft, withDraftCard } from './draft';
 import type {
   DatesChange,
+  NewOrganization,
   NewProject,
+  OrganizationRef,
+  OrganizationRole,
+  ProjectDetails,
   ProjectDetail,
   ProjectStatus,
   ProjectsView,
+  Ref,
   WhatIfChange,
   WhatIfResult,
 } from './model';
@@ -27,15 +36,32 @@ const BASE = '/api/v1/projects';
 export function projectsQuery() {
   return queryOptions({
     queryKey: ['projects'],
-    queryFn: () => request<ProjectsView>(BASE),
+    queryFn: async () => {
+      const view = await request<ProjectsView>(BASE);
+      return { ...view, items: view.items.map(withDraftCard) };
+    },
   });
 }
 
 export function projectQuery(id: string) {
   return queryOptions({
     queryKey: ['projects', id],
-    queryFn: () => request<ProjectDetail>(`${BASE}/${id}`),
+    queryFn: async () => withDraft(await request<ProjectDetail>(`${BASE}/${id}`)),
   });
+}
+
+/** Организации для выбора в карточке. Справочник меняется редко — без опроса. */
+export function organizationsQuery() {
+  return queryOptions({
+    queryKey: ['organizations'],
+    queryFn: async () => withCreated(await request<OrganizationRef[]>('/api/v1/organizations')),
+    staleTime: 5 * 60_000,
+    refetchInterval: false,
+  });
+}
+
+export function useOrganizations(enabled: boolean) {
+  return useQuery({ ...organizationsQuery(), enabled });
 }
 
 export function useProjects() {
@@ -114,5 +140,49 @@ export function useApplyWhatIf() {
         body: { changes: input.changes },
       }),
     onSettled: refresh,
+  });
+}
+
+/** Сведения проекта: название, ответственный, направление, регион, описание. */
+export function useSaveDetails() {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: async (input: {
+      project: ProjectDetail;
+      details: ProjectDetails;
+      names: { responsible: Ref | null; direction: string | null; region: string | null };
+    }) => draft.saveDetails(input.project, input.details, input.names),
+    onSettled: refresh,
+  });
+}
+
+/** Добавить организацию в проект или сменить её роль. */
+export function useSetOrganization() {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: async (input: {
+      project: ProjectDetail;
+      organization: OrganizationRef;
+      role: OrganizationRole;
+    }) => draft.setOrganization(input.project, input.organization, input.role),
+    onSettled: refresh,
+  });
+}
+
+export function useRemoveOrganization() {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: async (input: { project: ProjectDetail; organizationId: string }) =>
+      draft.removeOrganization(input.project, input.organizationId),
+    onSettled: refresh,
+  });
+}
+
+/** Новая организация — название и вид; сразу доступна для выбора. */
+export function useCreateOrganization() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: NewOrganization) => draft.createOrganization(input),
+    onSettled: () => client.invalidateQueries({ queryKey: ['organizations'] }),
   });
 }

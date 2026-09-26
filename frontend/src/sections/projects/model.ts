@@ -146,6 +146,34 @@ export interface WhatIfResult {
   pult: { before: Record<Step, number>; after: Record<Step, number> };
 }
 
+/** Вид организации (ТЗ 3.4). */
+export type OrganizationKind = 'ministry' | 'agency' | 'khokimiyat' | 'international' | 'company';
+
+/** Организация из справочника — ответ `GET /api/v1/organizations`. */
+export interface OrganizationRef {
+  id: string;
+  name: string;
+  short_name: string | null;
+  kind: OrganizationKind;
+  /** Центр космического мониторинга — учреждён агентством (CONTEXT). */
+  is_founded_by_agency: boolean;
+}
+
+export interface NewOrganization {
+  name: string;
+  kind: OrganizationKind;
+}
+
+/** Сведения проекта, которые правит помощник в карточке. */
+export interface ProjectDetails {
+  title: string;
+  responsible_id: string | null;
+  direction_code: string | null;
+  region_code: string | null;
+  description: string | null;
+  version: number;
+}
+
 export interface NewProject {
   title: string;
   type_code: string;

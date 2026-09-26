@@ -29,6 +29,9 @@ import {
   type ProjectDetail,
   type ProjectStatus,
 } from './model';
+import { Block } from './Block';
+import { DetailsBlock } from './DetailsBlock';
+import { OrganizationsBlock } from './OrganizationsBlock';
 import { StatusReason } from './StatusReason';
 import { dueText, lagText } from './text';
 import { useImpediment, useProject, useProjectStatus } from './useProjects';
@@ -159,25 +162,9 @@ function Panel({
 
       {canEdit ? <StatusControl project={project} /> : null}
 
-      <Block title={t('projects.panel.organizations')}>
-        {project.organizations.length === 0 ? (
-          <p className="text-sm text-ink-muted">{t('projects.panel.noOrganizations')}</p>
-        ) : (
-          <ul className="flex flex-col gap-1 text-sm">
-            {project.organizations.map((org) => (
-              <li key={`${org.id}-${org.role}`} className="flex justify-between gap-3">
-                <span className={cn('text-ink', org.is_center && 'font-medium text-ink-strong')}>
-                  {org.name}
-                </span>
-                <span className="text-ink-muted">{t(`projects.roles.${org.role}`)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {project.lead_outside ? (
-          <p className="mt-2 text-xs text-wait-ink">{t('projects.card.outside')}</p>
-        ) : null}
-      </Block>
+      <OrganizationsBlock project={project} canEdit={canEdit} />
+
+      <DetailsBlock project={project} canEdit={canEdit} />
 
       {project.subproject_list.length > 0 ? (
         <Block title={t('projects.panel.subprojects')}>
@@ -221,23 +208,6 @@ function Panel({
           </ul>
         )}
       </Block>
-
-      {project.direction || project.region ? (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          {project.direction ? (
-            <>
-              <dt className="text-ink-muted">{t('projects.panel.direction')}</dt>
-              <dd className="text-ink">{project.direction}</dd>
-            </>
-          ) : null}
-          {project.region ? (
-            <>
-              <dt className="text-ink-muted">{t('projects.panel.region')}</dt>
-              <dd className="text-ink">{project.region}</dd>
-            </>
-          ) : null}
-        </dl>
-      ) : null}
     </>
   );
 }
@@ -248,31 +218,6 @@ function Chip({ icon, children }: { icon: ReactNode; children: string }) {
       {icon}
       {children}
     </span>
-  );
-}
-
-function Block({
-  title,
-  question,
-  aside,
-  children,
-}: {
-  title: string;
-  question?: string;
-  aside?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-[var(--radius-lg)] border border-line bg-card p-4">
-      <header className="mb-2 flex items-baseline justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-ink-strong">{title}</h3>
-          {question ? <p className="text-xs text-ink-muted">{question}</p> : null}
-        </div>
-        {aside ? <span className="numeric shrink-0 text-xs text-ink-muted">{aside}</span> : null}
-      </header>
-      {children}
-    </section>
   );
 }
 

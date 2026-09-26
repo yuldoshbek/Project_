@@ -9,13 +9,14 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUser } from '@/shared/api/orbita';
 import { localDay } from '@/shared/time';
 import { setViewport } from '@/test-setup';
 
-import type { ProjectCard, WhatIfResult } from './model';
+import { draft } from './draft';
+import type { OrganizationRef, ProjectCard, WhatIfResult } from './model';
 import { ProjectsSection } from './ProjectsSection';
 import { ITEMS, card, detail, view } from './test-data';
 
@@ -57,6 +58,40 @@ const WHAT_IF: WhatIfResult = {
 
 const STALE = 'Запись уже изменили, пока вы её редактировали';
 
+const ORGANIZATIONS: OrganizationRef[] = [
+  {
+    id: 'o-center',
+    name: 'Центр космического мониторинга и геоинформационных технологий (МЧЖ)',
+    short_name: 'Центр космического мониторинга',
+    kind: 'company',
+    is_founded_by_agency: true,
+  },
+  {
+    id: 'o-ecology',
+    name: 'Министерство экологии',
+    short_name: null,
+    kind: 'ministry',
+    is_founded_by_agency: false,
+  },
+];
+
+const entry = (code: string, ru: string) => ({
+  id: code,
+  code,
+  name: { ru, uz_cyrl: ru, uz_latn: ru },
+  sort_order: 1,
+  is_active: true,
+});
+
+const DICTIONARIES = {
+  project_types: [],
+  task_types: [],
+  directions: [entry('monitoring', 'Космический мониторинг')],
+  regions: [entry('tashkent_city', 'город Ташкент')],
+  project_statuses: [],
+  task_statuses: [],
+};
+
 /** Подменить сеть. Возвращает список запросов, чтобы проверить, что ушло на сервер. */
 interface ServeOptions {
   stale?: boolean;
@@ -74,6 +109,8 @@ function serve(role: 'leader' | 'assistant', { stale = false, milestone }: Serve
     calls.push({ method, path, body });
 
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
+    if (path === '/api/v1/organizations') return Promise.resolve(reply(200, ORGANIZATIONS));
+    if (path === '/api/v1/dictionaries') return Promise.resolve(reply(200, DICTIONARIES));
     if (method === 'GET' && path === BASE) return Promise.resolve(reply(200, view()));
     if (method === 'POST' && path === BASE) {
       const fresh = card({ id: 'pr-new', code: 'PRJ-2026-022', title: body.title });
@@ -117,6 +154,7 @@ function drop(column: HTMLElement, id: string) {
 /** Клиент запросов последнего рендера — чтобы изобразить опрос карточки. */
 let rendered: QueryClient;
 
+beforeEach(() => draft.reset());
 afterEach(() => vi.restoreAllMocks());
 
 describe('Проекты', () => {
@@ -308,6 +346,125 @@ describe('Проекты', () => {
     fireEvent.click(await within(panel).findByRole('button', { name: 'Завершён' }));
 
     expect(await within(panel).findByText(new RegExp(STALE))).toBeInTheDocument();
+  });
+
+  it('Центр — одним касанием; роль видна и на доске', async () => {
+    serve('assistant');
+    renderProjects();
+
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: /Постановление о порядке/ }))[0]!,
+    );
+    const panel = await screen.findByRole('dialog');
+    const organizations = (await within(panel).findByText('Организации')).closest('section')!;
+    fireEvent.click(await within(organizations).findByRole('button', { name: 'исполнитель' }));
+
+    expect(
+      await within(organizations).findByRole('combobox', {
+        name: 'Роль: Центр космического мониторинга',
+      }),
+    ).toHaveValue('executor');
+    const board = screen.getByRole('region', { name: 'В работе' });
+    const tile = within(board)
+      .getByText('Постановление о порядке обмена геоданными')
+      .closest('article')!;
+    await waitFor(() => expect(within(tile).getByText('Центр — исполнитель')).toBeInTheDocument());
+  });
+
+  it('новая организация — название, вид и роль; головное ведомство одно', async () => {
+    serve('assistant');
+    renderProjects();
+
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: /Постановление о порядке/ }))[0]!,
+    );
+    const panel = await screen.findByRole('dialog');
+    const organizations = (await within(panel).findByText('Организации')).closest('section')!;
+
+    // Сначала чужое головное ведомство — из справочника.
+    fireEvent.click(within(organizations).getByRole('button', { name: /Добавить организацию/ }));
+    fireEvent.change(within(organizations).getByLabelText('Название организации'), {
+      target: { value: 'эколог' },
+    });
+    fireEvent.click(
+      await within(organizations).findByRole('button', { name: /Министерство экологии/ }),
+    );
+    fireEvent.change(within(organizations).getByLabelText('Роль'), {
+      target: { value: 'lead_agency' },
+    });
+    fireEvent.click(within(organizations).getByRole('button', { name: 'Добавить' }));
+    expect(
+      await within(organizations).findByText(/Головное ведомство — не агентство/),
+    ).toBeVisible();
+
+    // Затем новая организация: головное ведомство уже занято.
+    fireEvent.click(within(organizations).getByRole('button', { name: /Добавить организацию/ }));
+    fireEvent.change(within(organizations).getByLabelText('Название организации'), {
+      target: { value: 'Министерство здравоохранения' },
+    });
+    fireEvent.click(
+      within(organizations).getByRole('button', {
+        name: 'Новая организация «Министерство здравоохранения»',
+      }),
+    );
+    const role = within(organizations).getByLabelText('Роль');
+    expect(within(role).getByRole('option', { name: 'головное ведомство' })).toBeDisabled();
+    fireEvent.click(within(organizations).getByRole('button', { name: 'Завести и добавить' }));
+
+    expect(
+      await within(organizations).findByRole('combobox', {
+        name: 'Роль: Министерство здравоохранения',
+      }),
+    ).toHaveValue('customer');
+  });
+
+  it('сведения — направление и регион из справочников', async () => {
+    serve('assistant');
+    renderProjects();
+
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: /Постановление о порядке/ }))[0]!,
+    );
+    const panel = await screen.findByRole('dialog');
+    const details = (await within(panel).findByText('Сведения')).closest('section')!;
+    fireEvent.click(within(details).getByRole('button', { name: 'Изменить' }));
+
+    fireEvent.change(await within(details).findByLabelText('Направление'), {
+      target: { value: 'monitoring' },
+    });
+    fireEvent.change(within(details).getByLabelText('Регион'), {
+      target: { value: 'tashkent_city' },
+    });
+    fireEvent.change(within(details).getByLabelText('Описание'), {
+      target: { value: 'Порядок обмена данными между ведомствами' },
+    });
+    fireEvent.click(within(details).getByRole('button', { name: 'Сохранить' }));
+
+    // Сначала форма закрывается — иначе «Космический мониторинг» найдётся в её списке.
+    await waitFor(() =>
+      expect(within(details).queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument(),
+    );
+    expect(within(details).getByText('Космический мониторинг')).toBeInTheDocument();
+    expect(within(details).getByText('город Ташкент')).toBeInTheDocument();
+    expect(
+      within(details).getByText('Порядок обмена данными между ведомствами'),
+    ).toBeInTheDocument();
+  });
+
+  it('руководитель видит организации и сведения без правки', async () => {
+    serve('leader');
+    renderProjects();
+
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: /Постановление о порядке/ }))[0]!,
+    );
+    const panel = await screen.findByRole('dialog');
+    await within(panel).findByText('Организации');
+    expect(
+      within(panel).queryByRole('button', { name: /Добавить организацию/ }),
+    ).not.toBeInTheDocument();
+    const details = within(panel).getByText('Сведения').closest('section')!;
+    expect(within(details).queryByRole('button', { name: 'Изменить' })).not.toBeInTheDocument();
   });
 
   it('на телефоне — список по статусам, без таблицы и таймлайна', async () => {
