@@ -35,8 +35,23 @@ from app.domain.attention import (
     with_due_changes,
 )
 from app.domain.attention import holders as holders_of
-from app.domain.dictionaries import SettingKey
-from app.domain.pult import DECISIONS, MILESTONES, PROJECTS, TASKS, DeadlineMoves, PeriodTotals
+from app.domain.dictionaries import ProjectStatus, SettingKey
+from app.domain.projects import (
+    DEFAULT_IMPEDIMENT_STALE_DAYS,
+    impediment_is_stale,
+    project_lag,
+    project_readiness,
+)
+from app.domain.pult import (
+    DECISIONS,
+    MILESTONES,
+    PROJECTS,
+    TASKS,
+    AuditEntry,
+    DeadlineMoves,
+    PeriodTotals,
+    due_shift,
+)
 from app.domain.pult import deadline_moves as moves_of
 from app.domain.pult import period_totals as totals_of
 from app.repos import attention as snapshot
@@ -60,6 +75,7 @@ class Thresholds:
 
     burn_days: int
     quiet_days: int
+    impediment_stale_days: int = DEFAULT_IMPEDIMENT_STALE_DAYS
 
 
 async def load_thresholds(session: AsyncSession) -> Thresholds:
@@ -68,6 +84,55 @@ async def load_thresholds(session: AsyncSession) -> Thresholds:
     return Thresholds(
         burn_days=int(stored.get(SettingKey.BURN_DAYS, DEFAULT_BURN_DAYS)),
         quiet_days=int(stored.get(SettingKey.QUIET_DAYS, DEFAULT_QUIET_DAYS)),
+        impediment_stale_days=int(
+            stored.get(SettingKey.IMPEDIMENT_STALE_DAYS, DEFAULT_IMPEDIMENT_STALE_DAYS)
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Progress:
+    """Где проект по плану: готовность и отставание — одна пара на все экраны."""
+
+    readiness: int
+    lag_days: int
+
+
+def progress(
+    *,
+    status: ProjectStatus,
+    started_on: date,
+    due_on: date,
+    today: date,
+    passed_milestones: int,
+    total_milestones: int,
+    done_tasks: int,
+    total_tasks: int,
+) -> Progress:
+    """Готовность и отставание проекта (ТЗ 3.1, 4).
+
+    Отсюда их берут карточка, таблица, таймлайн и «что если»: отставание при другом сроке
+    считается этой же функцией, а не второй формулой рядом с экраном.
+    """
+    ready = project_readiness(
+        status=status,
+        passed_milestones=passed_milestones,
+        total_milestones=total_milestones,
+        done_tasks=done_tasks,
+        total_tasks=total_tasks,
+    )
+    return Progress(
+        readiness=ready,
+        lag_days=project_lag(
+            status=status, started_on=started_on, due_on=due_on, today=today, readiness_pct=ready
+        ),
+    )
+
+
+def impediment_stale(*, updated_on: date | None, today: date, thresholds: Thresholds) -> bool:
+    """Устарела ли строка «что мешает» — порог из справочника (ТЗ 3.9), по дням Ташкента."""
+    return impediment_is_stale(
+        updated_on=updated_on, today=today, stale_days=thresholds.impediment_stale_days
     )
 
 
@@ -111,6 +176,21 @@ async def deadline_moves(
         entity_types=(PROJECTS, MILESTONES, TASKS),
     )
     return moves_of(entries, zone=zone, period_days=period_days, top=top)
+
+
+def moves_count(entries: Iterable[AuditEntry], *, zone: ZoneInfo) -> int:
+    """Сколько раз срок записи переносили позже — за всю её жизнь, по журналу.
+
+    Правило то же, что у «Держим ли мы свои сроки?» (`app.domain.pult.deadline_moves`):
+    перенос — сдвиг позже, подтянутый срок переносом не считается. Иначе карточка и Пульт
+    назвали бы разное число переносов одной и той же работы.
+    """
+    count = 0
+    for entry in entries:
+        shift = due_shift(entry, zone)
+        if shift is not None and shift[1] > shift[0]:
+            count += 1
+    return count
 
 
 async def period_totals(

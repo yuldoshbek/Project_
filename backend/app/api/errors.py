@@ -29,6 +29,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.domain.errors import (
+    STALE_VERSION_MESSAGE,
     ConflictError,
     DomainError,
     ExternalServiceError,
@@ -66,10 +67,9 @@ TITLE_BY_STATUS: dict[int, str] = {
     status.HTTP_503_SERVICE_UNAVAILABLE: "Сервис временно недоступен",
 }
 
-STALE_DATA_MESSAGE = (
-    "Запись уже изменили, пока вы её редактировали. Ваша правка не сохранена: обновите "
-    "данные и внесите её ещё раз"
-)
+# Один текст на оба пути: гонка внутри запроса (`StaleDataError`) и правка по старой
+# версии (`StaleVersionError`) для человека — одно событие.
+STALE_DATA_MESSAGE = STALE_VERSION_MESSAGE
 
 # Код состояния SQLSTATE → что сказать человеку. Классы из стандарта SQL, одинаковые для
 # любой установки PostgreSQL: https://www.postgresql.org/docs/16/errcodes-appendix.html

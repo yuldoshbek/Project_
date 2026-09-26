@@ -29,7 +29,9 @@ const button = cva(
       size: {
         // Телефон: минимальная цель нажатия. Уменьшать нельзя.
         base: 'min-h-touch px-4 text-[15px]',
-        small: 'min-h-9 px-3 text-sm',
+        // Малая — только на ноутбуке и мониторе. На телефоне та же цель нажатия, что у
+        // обычной: 36 px под пальцем промахиваются, а критерий приёмки — 44 px.
+        small: 'min-h-touch px-3 text-sm md:min-h-9',
         icon: 'min-h-touch min-w-touch',
       },
     },

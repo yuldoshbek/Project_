@@ -21,6 +21,7 @@ import {
 import { App } from '@/app/App';
 import { SECTIONS, sectionPath } from '@/app/sections';
 import { ManagementSection } from '@/sections/management/ManagementSection';
+import { ProjectsSection } from '@/sections/projects/ProjectsSection';
 import { PultSection } from '@/sections/pult/PultSection';
 import { SoonSection } from '@/sections/SoonSection';
 import { RenderFailure } from '@/shared/ui/Boundary';
@@ -36,9 +37,11 @@ const sectionRoutes: AnyRoute[] = SECTIONS.map((section) =>
         ? ManagementSection
         : section.id === 'pult'
           ? PultSection
-          : function Section() {
-              return <SoonSection section={section} />;
-            },
+          : section.id === 'projects'
+            ? ProjectsSection
+            : function Section() {
+                return <SoonSection section={section} />;
+              },
   }),
 );
 
