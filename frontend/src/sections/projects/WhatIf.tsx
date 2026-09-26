@@ -20,7 +20,7 @@ import { formatDate } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
 import { Failure } from '@/shared/ui/States';
 
-import type { ProjectDetail, WhatIfChange, WhatIfResult } from './model';
+import type { DatesChange, ProjectDetail, WhatIfChange, WhatIfResult } from './model';
 import { stepLabel } from './text';
 import { useApplyWhatIf, useWhatIf } from './useProjects';
 
@@ -38,6 +38,13 @@ export function WhatIf({ project, canApply }: { project: ProjectDetail; canApply
   const apply = useApplyWhatIf();
   const [draft, setDraft] = useState(() => initial(project));
   const [applied, setApplied] = useState(false);
+  /**
+   * Что посчитано: сроки и версии записей на момент «Посчитать». «Применить» записывает
+   * ровно это. Версии с экрана в момент нажатия не годятся: карточка перечитывается каждые
+   * 15 секунд, и чужая правка, сделанная между расчётом и применением, прошла бы проверку
+   * версии — а расчёт уже показывал бы другую картину (инвариант 15).
+   */
+  const [basis, setBasis] = useState<DatesChange[] | null>(null);
 
   const original = initial(project);
   const changes: WhatIfChange[] = Object.entries(draft)
@@ -51,17 +58,28 @@ export function WhatIf({ project, canApply }: { project: ProjectDetail; canApply
   const edit = (key: string, value: string) => {
     setDraft({ ...draft, [key]: value });
     setApplied(false);
+    setBasis(null);
     compute.reset();
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (changes.length) compute.mutate({ id: project.id, changes });
+    if (!changes.length) return;
+    const versions = new Map(project.milestone_list.map((mark) => [mark.id, mark.version]));
+    setBasis(
+      changes.map((change) => ({
+        ...change,
+        version: change.kind === 'project' ? project.version : (versions.get(change.id) ?? 0),
+      })),
+    );
+    apply.reset();
+    compute.mutate({ id: project.id, changes });
   };
 
   const reset = () => {
     setDraft(original);
     setApplied(false);
+    setBasis(null);
     compute.reset();
     apply.reset();
   };
@@ -98,16 +116,17 @@ export function WhatIf({ project, canApply }: { project: ProjectDetail; canApply
           <Button type="submit" look="primary" disabled={!changes.length || compute.isPending}>
             {t('projects.whatIf.compute')}
           </Button>
-          {canApply && compute.data ? (
+          {canApply && compute.data && basis ? (
             <Button
               type="button"
               disabled={apply.isPending}
               onClick={() =>
                 apply.mutate(
-                  { id: project.id, changes },
+                  { id: project.id, changes: basis },
                   {
                     onSuccess: () => {
                       compute.reset();
+                      setBasis(null);
                       setApplied(true);
                     },
                   },

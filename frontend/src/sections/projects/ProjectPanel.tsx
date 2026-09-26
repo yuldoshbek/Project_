@@ -341,11 +341,25 @@ function Impediment({ project, canEdit }: { project: ProjectDetail; canEdit: boo
   const save = useImpediment();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(project.impediment?.text ?? '');
+  // Версия — та, с которой начали править: карточка перечитывается каждые 15 секунд, и
+  // версия с экрана в момент «Сохранить» пропустила бы чужую правку (инвариант 15).
+  const [basis, setBasis] = useState(project.version);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    save.mutate({ id: project.id, text }, { onSuccess: () => setEditing(false) });
+    save.mutate({ id: project.id, text, version: basis }, { onSuccess: () => setEditing(false) });
   };
+
+  // Правка начинается с того, что на экране сейчас, а не с того, что было при первом
+  // открытии карточки: строку могли поменять, пока лист был открыт.
+  const edit = () => {
+    save.reset();
+    setText(project.impediment?.text ?? '');
+    setBasis(project.version);
+    setEditing(true);
+  };
+
+  const failure = save.isError ? <Failure detail={describeError(save.error)} /> : null;
 
   if (editing) {
     return (
@@ -375,13 +389,14 @@ function Impediment({ project, canEdit }: { project: ProjectDetail; canEdit: boo
             {t('projects.panel.cancel')}
           </Button>
         </div>
+        {failure}
       </form>
     );
   }
 
   if (!project.impediment) {
     return canEdit ? (
-      <Button look="plain" className="self-start" onClick={() => setEditing(true)}>
+      <Button look="plain" className="self-start" onClick={edit}>
         {t('projects.panel.impedimentAdd')}
       </Button>
     ) : null;
@@ -410,19 +425,20 @@ function Impediment({ project, canEdit }: { project: ProjectDetail; canEdit: boo
         </p>
         {canEdit ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button size="small" onClick={() => setEditing(true)}>
+            <Button size="small" onClick={edit}>
               {t('projects.panel.impedimentEdit')}
             </Button>
             <Button
               size="small"
               look="quiet"
               disabled={save.isPending}
-              onClick={() => save.mutate({ id: project.id, text: '' })}
+              onClick={() => save.mutate({ id: project.id, text: '', version: project.version })}
             >
               {t('projects.panel.impedimentClear')}
             </Button>
           </div>
         ) : null}
+        {failure ? <div className="mt-2">{failure}</div> : null}
       </div>
     </section>
   );
@@ -432,23 +448,26 @@ function Impediment({ project, canEdit }: { project: ProjectDetail; canEdit: boo
 function StatusControl({ project }: { project: ProjectDetail }) {
   const { t } = useTranslation();
   const change = useProjectStatus();
-  const [pending, setPending] = useState<ProjectStatus | null>(null);
+  // Статус с причиной запоминает версию в момент выбора: пока помощник пишет причину,
+  // карточка успеет перечитаться, и версия с экрана пропустила бы чужую правку.
+  const [pending, setPending] = useState<{ status: ProjectStatus; version: number } | null>(null);
 
   const choose = (status: ProjectStatus) => {
-    if (NEEDS_REASON.has(status)) setPending(status);
-    else change.mutate({ id: project.id, status, reason: null });
+    change.reset();
+    if (NEEDS_REASON.has(status)) setPending({ status, version: project.version });
+    else change.mutate({ id: project.id, status, reason: null, version: project.version });
   };
 
   return (
     <Block title={t('projects.panel.status')}>
       {pending ? (
         <StatusReason
-          status={pending}
+          status={pending.status}
           busy={change.isPending}
           onCancel={() => setPending(null)}
           onSave={(reason) =>
             change.mutate(
-              { id: project.id, status: pending, reason },
+              { id: project.id, status: pending.status, reason, version: pending.version },
               { onSuccess: () => setPending(null) },
             )
           }
@@ -469,6 +488,11 @@ function StatusControl({ project }: { project: ProjectDetail }) {
           ))}
         </div>
       )}
+      {change.isError ? (
+        <div className="mt-3">
+          <Failure detail={describeError(change.error)} />
+        </div>
+      ) : null}
     </Block>
   );
 }

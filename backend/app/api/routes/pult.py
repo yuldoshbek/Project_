@@ -14,13 +14,12 @@ from zoneinfo import ZoneInfo
 from fastapi import Query
 from pydantic import BaseModel
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import SessionDep, SettingsDep, is_demo
 from app.api.security import CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.clock import now_utc
 from app.domain.pult import PeriodKind
 from app.services import pult as service
-from app.settings import Settings
 
 router = transactional_router(tags=["пульт"])
 
@@ -159,12 +158,6 @@ def _moves(moves: service.MovesView) -> DeadlineMoves:
     )
 
 
-def _is_demo(settings: Settings) -> bool:
-    # Вымышленные данные живут везде, кроме рабочего контура (инвариант 11): экран обязан
-    # это сказать, иначе вымышленную строку однажды примут за настоящую.
-    return settings.env != "production"
-
-
 @router.get("/pult", response_model=PultResponse, summary="Пульт: что требует внимания")
 async def read_pult(user: CurrentUser, session: SessionDep, settings: SettingsDep) -> PultResponse:
     view = await service.load(
@@ -172,7 +165,7 @@ async def read_pult(user: CurrentUser, session: SessionDep, settings: SettingsDe
         viewer=user,
         now=now_utc(),
         zone=ZoneInfo(settings.timezone),
-        is_demo=_is_demo(settings),
+        is_demo=is_demo(settings),
     )
     return PultResponse(
         as_of=view.as_of,
@@ -252,7 +245,7 @@ async def read_report(
         zone=ZoneInfo(settings.timezone),
         kind=period,
         offset=offset,
-        is_demo=_is_demo(settings),
+        is_demo=is_demo(settings),
     )
     totals = view.totals
     return ReportResponse(

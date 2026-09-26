@@ -1,9 +1,13 @@
 /**
- * Проекты на живой оболочке — экран на утверждение (вымышленные данные `demo.ts`).
+ * Проекты на живой системе — через настоящий API и базу.
  *
  * Снимки трёх устройств в двух темах, таблица и таймлайн на ноутбуке, карточка проекта с
- * расчётом «что если», перенос плитки на паузу с причиной. Каждый переход страницы
- * начинает вымышленные данные заново — сценарии друг другу не мешают.
+ * расчётом «что если», перенос плитки на паузу с причиной. Нужны вымышленные данные
+ * (`python -m app.demo`): на пустой базе разделу нечего показать.
+ *
+ * Сценарии, которые пишут в базу, возвращают её как было: перенос на паузу снимается
+ * кнопкой «В работе» в карточке. Иначе второй прогон начинался бы с другой картины, и
+ * снимки отчёта расходились бы от прогона к прогону.
  */
 
 import { expect, test, type Page } from '@playwright/test';
@@ -32,6 +36,14 @@ async function openProjects(page: Page, theme: (typeof THEMES)[number] = 'light'
   }, theme);
   await page.goto('/projects');
   await expect(page.getByRole('heading', { name: 'Проекты', level: 1 })).toBeVisible();
+}
+
+/** День через `days` от сегодняшнего по Ташкенту — в формате поля даты. */
+function inDays(days: number): string {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
+  const moment = new Date(`${day}T00:00:00Z`);
+  moment.setUTCDate(moment.getUTCDate() + days);
+  return moment.toISOString().slice(0, 10);
 }
 
 async function noOverflow(page: Page) {
@@ -80,7 +92,8 @@ test('«что если» считает и ничего не записывае
 
   const milestone = panel.getByLabel('Внесение в Кабинет Министров');
   const before = await milestone.inputValue();
-  await milestone.fill('2026-09-28');
+  // Через три дня — внутри порога «горит» (7 дней): расчёт обязан это показать.
+  await milestone.fill(inDays(3));
   await panel.getByRole('button', { name: 'Посчитать' }).click();
   await expect(panel.getByText(/Горит: \d+ → \d+/)).toBeVisible();
   await expect(panel.getByText(/в базе ничего не изменилось/)).toBeVisible();
@@ -113,4 +126,13 @@ test('перенос на паузу — только с причиной', asyn
     .filter({ hasText: code! });
   await expect(paused).toBeVisible();
   await expect(paused.getByText('Причина: Ждём снимки за август')).toBeVisible();
+
+  // Вернуть как было — кнопкой статуса в карточке: это второй путь смены статуса.
+  await paused.getByRole('button').first().click();
+  const panel = page.getByRole('dialog');
+  await panel.getByRole('button', { name: 'В работе' }).click();
+  await page.keyboard.press('Escape');
+  await expect(
+    page.getByRole('region', { name: 'В работе' }).getByRole('article').filter({ hasText: code! }),
+  ).toBeVisible();
 });

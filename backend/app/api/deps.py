@@ -54,3 +54,13 @@ def get_app_settings(request: Request) -> Settings:
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
+
+
+def is_demo(settings: Settings) -> bool:
+    """Показывает ли контур вымышленные данные.
+
+    Они живут везде, кроме рабочего контура (инвариант 11), и экран обязан это сказать:
+    иначе вымышленную строку однажды примут за настоящую. Одна функция на все разделы —
+    пометка не может стоять на Пульте и пропасть в «Проектах».
+    """
+    return settings.env != "production"

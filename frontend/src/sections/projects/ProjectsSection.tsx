@@ -100,7 +100,7 @@ function Projects({ view }: { view: ProjectsView }) {
     const card = view.items.find((each) => each.id === id);
     if (!card || !canEdit) return;
     if (NEEDS_REASON.has(next)) setMove({ card, status: next });
-    else status.mutate({ id, status: next, reason: null });
+    else status.mutate({ id, status: next, reason: null, version: card.version });
   };
 
   const closePanel = useCallback(() => setOpen(null), []);
@@ -196,7 +196,7 @@ function Projects({ view }: { view: ProjectsView }) {
             onCancel={closeMove}
             onSave={(reason) =>
               status.mutate(
-                { id: move.card.id, status: move.status, reason },
+                { id: move.card.id, status: move.status, reason, version: move.card.version },
                 { onSuccess: closeMove },
               )
             }

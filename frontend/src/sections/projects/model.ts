@@ -1,9 +1,9 @@
 /**
  * Проекты — договор данных раздела.
  *
- * Форма будущего ответа API (`/api/v1/projects…`). Раздел строится по тому же правилу, что
- * Пульт: сначала экран на вымышленных данных, заказчик его смотрит, потом API под
- * утверждённый экран (CLAUDE.md, цикл блока). Пока API нет, сервером служит `demo.ts`.
+ * Форма ответа API (`/api/v1/projects…`, `backend/app/api/routes/projects.py`). Экран
+ * утверждён заказчиком 25.09.2026 на вымышленных данных той же формы, и API написан под
+ * него (CLAUDE.md, цикл блока «экран → API»).
  *
  * **Числа считает сервер**: готовность, отставание от плана, ступень лестницы и отклонение,
  * число переносов. Экран их только показывает — так же, как Пульт (инвариант 2).
@@ -77,6 +77,8 @@ export interface ProjectCard {
   /** Вехи на таймлайне: ромб на дате, закрашенный — пройдена. */
   marks: { title: string; due_on: string; is_passed: boolean }[];
   tasks: { done: number; total: number };
+  /** Версия записи: правка по устаревшей получает честный отказ (инвариант 15). */
+  version: number;
 }
 
 export interface MilestoneRow {
@@ -88,6 +90,7 @@ export interface MilestoneRow {
   passed_on: string | null;
   step: Step | null;
   deviation: number;
+  version: number;
 }
 
 export interface ProjectDetail extends ProjectCard {
@@ -122,6 +125,11 @@ export interface WhatIfChange {
   kind: 'project' | 'milestone';
   id: string;
   due_on: string;
+}
+
+/** «Применить»: те же сроки плюс версия записи, которую видел человек. */
+export interface DatesChange extends WhatIfChange {
+  version: number;
 }
 
 export interface WhatIfState {

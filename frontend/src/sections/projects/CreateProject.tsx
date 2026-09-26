@@ -23,6 +23,22 @@ function addDays(day: string, days: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
+}
+
+/**
+ * Сроки вех в предпросмотре — то же правило, что у сервера (`domain/projects.template_dates`):
+ * срок проекта раньше последней вехи шаблона сжимает шаблон под себя, более поздний — не
+ * растягивает. Иначе предпросмотр обещал бы вехи, которых после сохранения не окажется.
+ */
+function templateDates(started: string, due: string, offsets: number[]): string[] {
+  const last = Math.max(0, ...offsets);
+  const span = due ? daysBetween(started, due) : last;
+  if (last <= 0 || span >= last) return offsets.map((offset) => addDays(started, offset));
+  return offsets.map((offset) => addDays(started, Math.floor((offset * span) / last)));
+}
+
 const FIELD =
   'min-h-touch w-full rounded-[var(--radius)] border border-line-strong bg-card px-2 text-[15px] text-ink';
 
@@ -56,6 +72,13 @@ export function CreateProject({
 
   const type = types.find((each) => each.code === typeCode);
   const ready = title.trim() !== '' && type !== undefined && started !== '';
+  const planned = type
+    ? templateDates(
+        started || today,
+        due,
+        type.template.map((step) => step.offset_days),
+      )
+    : [];
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -115,11 +138,11 @@ export function CreateProject({
         <section className="rounded-[var(--radius)] border border-line bg-sunken p-3">
           <h3 className="text-xs font-medium text-ink-muted">{t('projects.form.template')}</h3>
           <ol className="mt-1 flex flex-col gap-0.5 text-sm text-ink">
-            {type.template.map((step) => (
+            {type.template.map((step, index) => (
               <li key={step.title} className="flex justify-between gap-3">
                 <span className="min-w-0">{step.title}</span>
                 <span className="numeric shrink-0 text-ink-muted">
-                  {formatDate(addDays(started || today, step.offset_days))}
+                  {formatDate(planned[index] ?? started)}
                 </span>
               </li>
             ))}
