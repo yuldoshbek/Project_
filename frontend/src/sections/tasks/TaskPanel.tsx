@@ -159,6 +159,7 @@ function Checklist({ task, canEdit }: { task: TaskDetail; canEdit: boolean }) {
                       id: task.id,
                       itemId: item.id,
                       done: event.target.checked,
+                      version: item.version,
                     })
                   }
                   className="size-5 shrink-0 accent-[var(--accent)]"
@@ -178,7 +179,14 @@ function Checklist({ task, canEdit }: { task: TaskDetail; canEdit: boolean }) {
                   size="icon"
                   disabled={checklist.isPending}
                   aria-label={t('tasks.panel.removeItem', { text: item.text })}
-                  onClick={() => checklist.mutate({ kind: 'remove', id: task.id, itemId: item.id })}
+                  onClick={() =>
+                    checklist.mutate({
+                      kind: 'remove',
+                      id: task.id,
+                      itemId: item.id,
+                      version: item.version,
+                    })
+                  }
                 >
                   <X className="size-4" aria-hidden="true" />
                 </Button>

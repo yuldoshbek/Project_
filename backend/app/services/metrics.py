@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -27,6 +28,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.attention import (
+    Attention,
     DueChanges,
     Holder,
     Item,
@@ -35,7 +37,7 @@ from app.domain.attention import (
     with_due_changes,
 )
 from app.domain.attention import holders as holders_of
-from app.domain.dictionaries import ProjectStatus, SettingKey
+from app.domain.dictionaries import ProjectStatus, SettingKey, TaskStatus
 from app.domain.projects import (
     DEFAULT_IMPEDIMENT_STALE_DAYS,
     impediment_is_stale,
@@ -54,6 +56,7 @@ from app.domain.pult import (
 )
 from app.domain.pult import deadline_moves as moves_of
 from app.domain.pult import period_totals as totals_of
+from app.domain.tasks import Horizon, horizon_of
 from app.repos import attention as snapshot
 from app.repos import pult as read_model
 from app.services.dictionaries import load_settings
@@ -191,6 +194,52 @@ def moves_count(entries: Iterable[AuditEntry], *, zone: ZoneInfo) -> int:
         if shift is not None and shift[1] > shift[0]:
             count += 1
     return count
+
+
+def horizon(*, status: TaskStatus, due_on: date | None, today: date) -> Horizon:
+    """«К какому сроку» — группа задачи в списке (раздел «Задачи»)."""
+    return horizon_of(status=status, due_on=due_on, today=today)
+
+
+@dataclass(frozen=True, slots=True)
+class Load:
+    """«Кто перегружен?» (ТЗ 5) — строка на ответственного."""
+
+    person_id: uuid.UUID
+    overdue: int
+    burning: int
+    open: int
+
+
+def task_load(
+    ladder: Ladder, open_tasks: Iterable[tuple[uuid.UUID, uuid.UUID | None]]
+) -> list[Load]:
+    """Просрочки и горящие сроки по ответственным — по строкам той же лестницы.
+
+    `open_tasks` — (задача, ответственный) незакрытых задач, которые стоят в лестнице
+    (`app.repos.attention` отсекает и задачи закрытых проектов). Число просроченного у
+    человека обязано совпадать с числом его просроченных строк в списке — поэтому счёт идёт
+    по строкам лестницы, а не отдельным запросом. Первым — у кого больше просрочено, затем
+    горит, затем больше работы.
+    """
+    step = {row.entity_id: row.attention for row in ladder.rows if row.section == "tasks"}
+    rows: dict[uuid.UUID, list[int]] = {}
+    for task_id, person_id in open_tasks:
+        if person_id is None:
+            continue
+        counts = rows.setdefault(person_id, [0, 0, 0])
+        counts[2] += 1
+        if step.get(task_id) is Attention.OVERDUE:
+            counts[0] += 1
+        elif step.get(task_id) is Attention.BURNING:
+            counts[1] += 1
+    return sorted(
+        (
+            Load(person_id=person_id, overdue=overdue, burning=burning, open=total)
+            for person_id, (overdue, burning, total) in rows.items()
+        ),
+        key=lambda load: (-load.overdue, -load.burning, -load.open),
+    )
 
 
 async def period_totals(

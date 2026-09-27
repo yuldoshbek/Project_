@@ -1,24 +1,30 @@
 /**
- * Данные раздела «Задачи» и действия над ними.
+ * Данные раздела «Задачи» и действия над ними — `/api/v1/tasks…`.
  *
- * Устроено так же, как будет с API: запросы и мутации TanStack Query, после записи
- * перечитываются и задачи, и Пульт, и проекты — у них общие числа (инвариант 2): закрытая
- * задача меняет готовность проекта и строку лестницы. Разбор строки — мутация без записи.
+ * После записи перечитываются задачи, Пульт и проекты — у них общие числа (инвариант 2):
+ * закрытая задача меняет готовность проекта и строку лестницы. Перечитываются и после
+ * отказа: отказ по версии значит, что картина на экране устарела (инвариант 15).
  *
- * Сейчас сервер — `demoTasks`. Когда появится API, меняются тела функций ниже.
+ * Разбор строки — мутация без записи и без перечитывания: он ничего не меняет.
  */
 
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { demoTasks } from './demo';
-import type { NewTask, TaskEdit, TaskStatus } from './model';
+import { request } from '@/shared/api/client';
+
+import type { NewTask, ParsedLine, TaskDetail, TaskEdit, TaskStatus, TasksView } from './model';
+
+const BASE = '/api/v1/tasks';
 
 export function tasksQuery() {
-  return queryOptions({ queryKey: ['tasks'], queryFn: async () => demoTasks.view() });
+  return queryOptions({ queryKey: ['tasks'], queryFn: () => request<TasksView>(BASE) });
 }
 
 export function taskQuery(id: string) {
-  return queryOptions({ queryKey: ['tasks', id], queryFn: async () => demoTasks.detail(id) });
+  return queryOptions({
+    queryKey: ['tasks', id],
+    queryFn: () => request<TaskDetail>(`${BASE}/${id}`),
+  });
 }
 
 export function useTasks() {
@@ -41,13 +47,16 @@ function useRefresh() {
 
 /** Разбор строки: что поняли — тип, срок, ответственный. Ничего не записывает. */
 export function useParse() {
-  return useMutation({ mutationFn: async (text: string) => demoTasks.parse(text) });
+  return useMutation({
+    mutationFn: (text: string) =>
+      request<ParsedLine>(`${BASE}/parse`, { method: 'POST', body: { text } }),
+  });
 }
 
 export function useCreateTask() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: NewTask) => demoTasks.create(input),
+    mutationFn: (input: NewTask) => request<TaskDetail>(BASE, { method: 'POST', body: input }),
     onSettled: refresh,
   });
 }
@@ -55,8 +64,11 @@ export function useCreateTask() {
 export function useTaskStatus() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: { id: string; status: TaskStatus; version: number }) =>
-      demoTasks.setStatus(input.id, input.status, input.version),
+    mutationFn: (input: { id: string; status: TaskStatus; version: number }) =>
+      request<void>(`${BASE}/${input.id}/status`, {
+        method: 'PUT',
+        body: { status: input.status, version: input.version },
+      }),
     onSettled: refresh,
   });
 }
@@ -64,25 +76,38 @@ export function useTaskStatus() {
 export function useEditTask() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: { id: string; edit: TaskEdit }) =>
-      demoTasks.edit(input.id, input.edit),
+    mutationFn: (input: { id: string; edit: TaskEdit }) =>
+      request<void>(`${BASE}/${input.id}`, { method: 'PUT', body: input.edit }),
     onSettled: refresh,
   });
 }
 
+export type ChecklistAction =
+  | { kind: 'add'; id: string; text: string }
+  | { kind: 'toggle'; id: string; itemId: string; done: boolean; version: number }
+  | { kind: 'remove'; id: string; itemId: string; version: number };
+
+async function perform(action: ChecklistAction): Promise<void> {
+  const base = `${BASE}/${action.id}/checklist`;
+  switch (action.kind) {
+    case 'add':
+      await request(base, { method: 'POST', body: { text: action.text } });
+      return;
+    case 'toggle':
+      await request(`${base}/${action.itemId}`, {
+        method: 'PUT',
+        body: { is_done: action.done, version: action.version },
+      });
+      return;
+    case 'remove':
+      await request(`${base}/${action.itemId}`, {
+        method: 'DELETE',
+        query: { version: action.version },
+      });
+  }
+}
+
 export function useChecklist() {
   const refresh = useRefresh();
-  return useMutation({
-    mutationFn: async (
-      input:
-        | { kind: 'add'; id: string; text: string }
-        | { kind: 'toggle'; id: string; itemId: string; done: boolean }
-        | { kind: 'remove'; id: string; itemId: string },
-    ) => {
-      if (input.kind === 'add') demoTasks.addItem(input.id, input.text);
-      else if (input.kind === 'toggle') demoTasks.toggleItem(input.id, input.itemId, input.done);
-      else demoTasks.removeItem(input.id, input.itemId);
-    },
-    onSettled: refresh,
-  });
+  return useMutation({ mutationFn: perform, onSettled: refresh });
 }

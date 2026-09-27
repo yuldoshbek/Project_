@@ -35,6 +35,7 @@ from app.repos.models import (
     Project,
     ProjectOrganization,
     Task,
+    TaskChecklistItem,
 )
 
 PROJECT_TERMINAL = [status.value for status in ProjectStatus if status.is_terminal]
@@ -185,15 +186,29 @@ async def _milestones(session: AsyncSession, awaiting: dict[Key, date]) -> list[
 
 
 async def _tasks(session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date]) -> list[Item]:
+    # Отметка пункта чек-листа — признак жизни задачи (`TaskChecklistItem`): задача, по
+    # которой каждый день закрывают пункты, не молчит, даже если её саму не правили.
+    # GREATEST в PostgreSQL пропускает NULL — задача без чек-листа живёт своими правками.
+    latest_item = (
+        select(
+            TaskChecklistItem.task_id,
+            func.max(
+                func.coalesce(TaskChecklistItem.updated_at, TaskChecklistItem.created_at)
+            ).label("moved"),
+        )
+        .group_by(TaskChecklistItem.task_id)
+        .subquery()
+    )
     rows = await session.execute(
         select(
             Task.id,
             Task.title,
             Task.due_at,
             Task.assignee_person_id,
-            func.coalesce(Task.updated_at, Task.created_at),
+            func.greatest(func.coalesce(Task.updated_at, Task.created_at), latest_item.c.moved),
         )
         .outerjoin(Project, Project.id == Task.project_id)
+        .outerjoin(latest_item, latest_item.c.task_id == Task.id)
         .where(
             Task.status.notin_(TASK_TERMINAL),
             # Задачи завершённого или отменённого проекта в лестницу не попадают, как и

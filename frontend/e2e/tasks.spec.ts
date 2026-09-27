@@ -1,9 +1,11 @@
 /**
- * Задачи на живой оболочке — экран на утверждение (вымышленные данные `demo.ts`).
+ * Задачи на живой системе — через настоящий API и базу (`python -m app.demo`).
  *
- * Снимки трёх устройств в двух темах, таблица на ноутбуке, строка с разбором (пример из
- * ТЗ 7), «Кто перегружен?» как фильтр, карточка с чек-листом. Каждый переход страницы
- * начинает вымышленные данные заново — сценарии друг другу не мешают и в базу не пишут.
+ * Снимки трёх устройств в двух темах, таблица на ноутбуке, строка с разбором на сервере
+ * (пример из ТЗ 7), «Кто перегружен?» как фильтр, карточка с чек-листом.
+ *
+ * Сценарии, которые пишут, возвращают картину: заведённая задача отменяется (удаления у
+ * деловых записей нет — журнал помнит всё), отмеченный пункт чек-листа снимается.
  */
 
 import { expect, test, type Page } from '@playwright/test';
@@ -64,12 +66,25 @@ test('строка с разбором: пример из ТЗ 7', async ({ page
   ).toBeVisible();
   const form = page.locator('form').filter({ has: line });
   await expect(form.getByRole('combobox').first()).toHaveValue('review_and_endorse');
-  await expect(form.getByRole('combobox').nth(1)).toHaveValue('p-karimov');
+  // Идентификаторы людей в базе — свои; проверяем то, что видит человек: имя.
+  await expect(form.getByRole('combobox').nth(1).locator('option:checked')).toHaveText(
+    'Каримов А.',
+  );
   await page.screenshot({ path: `${REPORT_DIR}/tasks-capture-laptop-light.png` });
 
   await form.getByRole('button', { name: 'Добавить' }).click();
-  await expect(page.getByText(/Задача заведена: TSK-2026-/)).toBeVisible();
-  await expect(page.getByText('Рассмотрение проекта постановления Минэкологии')).toBeVisible();
+  await expect(page.getByText(/Задача заведена: TSK-/)).toBeVisible();
+  const created = page
+    .getByRole('button', { name: /Рассмотрение проекта постановления Минэкологии/ })
+    .first();
+  await expect(created).toBeVisible();
+
+  // Вернуть картину: отменённая задача уходит в свёрнутые «готовые и отменённые».
+  await created.click();
+  const panel = page.getByRole('dialog');
+  await panel.getByRole('button', { name: 'Отменена' }).click();
+  await expect(panel.getByText('Отменена').first()).toBeVisible();
+  await page.keyboard.press('Escape');
 });
 
 test('таблица и «Кто перегружен?» на ноутбуке', async ({ page }) => {
@@ -88,10 +103,19 @@ test('карточка задачи на телефоне: чек-лист ка�
   await page.setViewportSize({ width: 390, height: 844 });
   await openTasks(page);
 
-  await page.getByText('Выезд на полигон в Джизаке').click();
+  await page.getByText('Выезд на полигон в Джизаке').first().click();
   const panel = page.getByRole('dialog');
-  await panel.getByRole('checkbox', { name: 'Приборы калибровки' }).check();
+  const item = panel.getByRole('checkbox', { name: 'Приборы калибровки' });
+  // Флажок меняется ответом сервера, а не щелчком: ждём его, а не мгновенной смены.
+  // Отмеченный прошлым прерванным прогоном пункт — не повод отмечать его снова.
+  if (!(await item.isChecked())) await item.click();
+  await expect(item).toBeChecked();
   await expect(panel.getByText('чек-лист 2/3')).toBeVisible();
   await noOverflow(page);
   await page.screenshot({ path: `${REPORT_DIR}/tasks-card-phone-light.png` });
+
+  // Вернуть как было.
+  await item.click();
+  await expect(item).not.toBeChecked();
+  await expect(panel.getByText('чек-лист 1/3')).toBeVisible();
 });

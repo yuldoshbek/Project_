@@ -1,4 +1,5 @@
-"""Вымышленные данные в базе дают то, что заказчик утвердил на экранах Пульта и «Проектов».
+"""Вымышленные данные в базе дают то, что заказчик утвердил на экранах Пульта, «Проектов» и
+«Задач».
 
 Экран утверждали по вымышленному серверу во фронтенде, а превью показывает сервер. Если
 демо в базе разойдётся с утверждённым, заказчик увидит на превью не тот экран, что
@@ -27,11 +28,13 @@ from app.domain.pult import MILESTONES, PROJECTS, AuditEntry, due_shift
 from app.repos import attention as snapshot
 from app.repos.models import (
     AuditLog,
+    LeaderQuestion,
     Milestone,
     Organization,
     Project,
     ProjectOrganization,
     Task,
+    TaskChecklistItem,
 )
 from app.services import metrics
 
@@ -58,6 +61,60 @@ MILESTONE_STEPS = [
     ("Получение космических снимков", Attention.BURNING, 0),
 ]
 """Вехи в лестнице: три из сценария Пульта, две — из шаблонов (стажировки, паводки)."""
+
+CABINET = "Внесение проекта постановления в Кабинет министров"
+
+TASK_STEPS = [
+    (CABINET, Attention.AWAITING_DECISION, 2),
+    ("Аналитическая справка по засухе для Кабинета министров", Attention.OVERDUE, 3),
+    ("Сведения по поручению ПФ-155 §5.1", Attention.OVERDUE, 1),
+    ("Позвонить в Минфин по смете миссии на следующий год", Attention.BURNING, 0),
+    ("Отбор участников пилота с Минсельхозом", Attention.BURNING, 0),
+    ("Сведения для Администрации Президента по мониторингу водохранилищ", Attention.BURNING, 1),
+    ("Согласование проекта постановления с Минэкологии", Attention.BURNING, 3),
+    ("Выезд на полигон в Джизаке", Attention.BURNING, 4),
+    ("Запрос сведений у хокимиятов о паводках", Attention.BURNING, 5),
+    ("Выгрузка данных в субплатформу", Attention.BURNING, 5),
+    ("Подобрать помещение для учебной лаборатории", Attention.SILENT, 30),
+    ("Список оборудования лаборатории", Attention.SILENT, 30),
+    ("Проект соглашения с Минэкологии", Attention.SILENT, 25),
+    ("Договор с исполнителем аэрофотосъёмки", Attention.SILENT, 21),
+    ("Согласование полётного задания", Attention.SILENT, 21),
+]
+"""Задачи в лестнице Пульта — сроки экрана «Задачи» и тишина молчащих проектов.
+
+Выгрузка в субплатформу горит, а не просрочена, как на экране «Задачи»: её перенос после
+визита — событие Пульта, и он прав (`app.demo`, модуль). Остальные открытые задачи — по
+плану.
+"""
+
+WITHOUT_PROJECT = {
+    "Позвонить в Минфин по смете миссии на следующий год",
+    "Тезисы к совещанию по космическому мониторингу",
+    "Сведения для Администрации Президента по мониторингу водохранилищ",
+    "Сведения по поручению ПФ-155 §5.1",
+}
+
+CHECKLISTS = {
+    "Аналитическая справка по засухе для Кабинета министров": (2, 3),
+    "Сведения по поручению ПФ-155 §5.1": (0, 2),
+    "Согласование проекта постановления с Минэкологии": (3, 4),
+    "Выезд на полигон в Джизаке": (1, 3),
+    "ТЗ на модуль каталога снимков": (1, 5),
+}
+"""Чек-листы экрана «Задачи»: название → (отмечено, всего)."""
+
+STATUSES = {
+    TaskStatus.NEW: {
+        "План работ по группировке на квартал",
+        "Позвонить в Минфин по смете миссии на следующий год",
+        "Тезисы к совещанию по космическому мониторингу",
+        "Опросник для хокимиятов по снежному покрову",
+    },
+    TaskStatus.IN_REVIEW: {"Согласование проекта постановления с Минэкологии"},
+    TaskStatus.CANCELLED: {"Выгрузка в прежний портал"},
+}
+"""Статусы, которые экран «Задачи» задал явно; безымянные задачи — в работе или готовы."""
 
 
 class Loaded:
@@ -146,6 +203,13 @@ class TestProjects:
         assert outside == {"station", "air"}
 
     async def test_tasks_add_up_to_the_screen(self, session: AsyncSession, loaded: Loaded) -> None:
+        """Задачи экрана «Задачи» заняли места безымянных, и готовность не сдвинулась.
+
+        Отменённая в «сделано N из M» не входит — так считает read-модель «Проектов»
+        (`app.repos.projects`). Демо заводит отменённую выгрузку прежнего портала, и проверка
+        считает по тому же правилу: иначе «0 из 2» у отменённого проекта стало бы здесь
+        «0 из 3», хотя на экране осталось прежним.
+        """
         rows = await session.execute(
             select(Task.project_id, Task.status, func.count()).group_by(
                 Task.project_id, Task.status
@@ -155,7 +219,8 @@ class TestProjects:
         total: Counter[str | None] = Counter()
         for project_id, status, count in rows:
             key = loaded.key_of(project_id)
-            total[key] += count
+            if status != TaskStatus.CANCELLED.value:
+                total[key] += count
             if status == TaskStatus.DONE.value:
                 done[key] += count
 
@@ -255,3 +320,94 @@ class TestLadder:
             if row.section == "milestones"
         )
         assert marks == sorted(MILESTONE_STEPS)
+
+    async def test_tasks_on_the_ladder(self, session: AsyncSession, loaded: Loaded) -> None:
+        ladder = await metrics.ladder(session, today=loaded.today, zone=TASHKENT)
+        rows = sorted(
+            (row.title or "", row.attention, row.deviation)
+            for row in ladder.rows
+            if row.section == "tasks"
+        )
+        assert rows == sorted(TASK_STEPS)
+
+    async def test_a_question_on_a_task_awaits_the_leader(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        """Вопрос по задаче ставит её на «ждёт решения» — выше её собственного срока."""
+        task = await session.scalar(select(Task).where(Task.title == CABINET))
+        assert task is not None
+        question = await session.scalar(
+            select(LeaderQuestion).where(
+                LeaderQuestion.target_type == "task", LeaderQuestion.target_id == task.id
+            )
+        )
+        assert question is not None
+        assert question.closed_at is None
+        assert question.text == "Вносить в текущей редакции или дождаться замечаний Минюста?"
+
+        ladder = await metrics.ladder(session, today=loaded.today, zone=TASHKENT)
+        row = next(row for row in ladder.rows if row.entity_id == task.id)
+        assert (row.section, row.attention, row.deviation) == (
+            "tasks",
+            Attention.AWAITING_DECISION,
+            2,
+        )
+
+
+class TestTasks:
+    async def test_tasks_without_a_project(self, session: AsyncSession, loaded: Loaded) -> None:
+        loose = list(await session.scalars(select(Task).where(Task.project_id.is_(None))))
+        assert {task.title for task in loose} == WITHOUT_PROJECT
+        # Метки Ижро экрана не заводятся: поручения приходят привозом в блоке 2 (`app.demo`).
+        assert all(task.ijro_assignment_id is None for task in loose)
+
+    async def test_every_status_with_the_stamps_the_service_would_set(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        tasks = list(await session.scalars(select(Task)))
+        assert {task.status for task in tasks} == {status.value for status in TaskStatus}
+        for status, titles in STATUSES.items():
+            assert {task.title for task in tasks if task.status == status.value} == titles
+        for task in tasks:
+            status = TaskStatus(task.status)
+            assert (task.started_at is None) is (status is TaskStatus.NEW), task.title
+            assert (task.completed_at is not None) is status.is_terminal, task.title
+
+    async def test_closed_on_the_screen_days(self, session: AsyncSession, loaded: Loaded) -> None:
+        """Закрытые с экрана «Задачи»: ТЗ — сегодня, выгрузка — месяц назад, отчёт — сегодня.
+
+        Отчёт по ПФ-155 экран закрывал вчера и без проекта, а база — сегодня после визита:
+        это событие Пульта (`app.demo`, модуль).
+        """
+        closed = {
+            task.title: local_date(task.completed_at, TASHKENT)
+            for task in await session.scalars(
+                select(Task).where(
+                    Task.title.in_(
+                        [
+                            "Разработка ТЗ спутниковой группировки",
+                            "Выгрузка в прежний портал",
+                            "Сведения по поручению ПФ-155 для Администрации Президента",
+                        ]
+                    )
+                )
+            )
+            if task.completed_at is not None
+        }
+        assert closed == {
+            "Разработка ТЗ спутниковой группировки": loaded.today,
+            "Выгрузка в прежний портал": loaded.on(-30),
+            "Сведения по поручению ПФ-155 для Администрации Президента": loaded.today,
+        }
+
+    async def test_checklists_as_on_the_screen(self, session: AsyncSession, loaded: Loaded) -> None:
+        rows = await session.execute(
+            select(
+                Task.title,
+                func.count().filter(TaskChecklistItem.is_done.is_(True)),
+                func.count(),
+            )
+            .join(TaskChecklistItem, TaskChecklistItem.task_id == Task.id)
+            .group_by(Task.title)
+        )
+        assert {title: (done, total) for title, done, total in rows} == CHECKLISTS

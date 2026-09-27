@@ -2,13 +2,32 @@
 
     uv run python -m app.demo
 
-Экраны Пульта и «Проектов» заказчик утвердил на вымышленных данных (25.09.2026). Здесь те
-же люди, проекты, вехи и задачи, но в базе: API считает их тем же кодом, что будет считать
-настоящие, и превью обязано показать то, что утверждали. Проекты повторяют вымышленный
-сервер экрана (`frontend/src/sections/projects/demo.ts` в коммите 96f4ce2) — сроки, статусы,
-вехи, роли Центра, «что мешает», вопросы; строки Пульта сверх того — задачи с их сроками,
-решения руководителя и события «после визита». Критерий блока 0 «в демо — вымышленные
-данные» (перенесён в блок 1) закрывается этим же.
+Экраны Пульта и «Проектов» заказчик утвердил на вымышленных данных 25.09.2026, «Задачи» —
+27.09.2026. Здесь те же люди, проекты, вехи и задачи, но в базе: API считает их тем же
+кодом, что будет считать настоящие, и превью обязано показать то, что утверждали. Проекты
+повторяют вымышленный сервер экрана (`frontend/src/sections/projects/demo.ts` в коммите
+96f4ce2) — сроки, статусы, вехи, роли Центра, «что мешает», вопросы; задачи — вымышленный
+сервер «Задач» (`frontend/src/sections/tasks/demo.ts` в коммите 45c3595) — статусы,
+чек-листы, задачи без проекта, вопрос руководителю по задаче; строки Пульта сверх того —
+задачи с их сроками, решения руководителя и события «после визита». Критерий блока 0
+«в демо — вымышленные данные» (перенесён в блок 1) закрывается этим же.
+
+**Задачи экрана «Задачи» ложатся внутрь «сделано N из M», а не сверх него.** Безымянных
+задач (`WORK_BY_TYPE`) у проекта ровно столько, сколько не хватает до числа экрана
+«Проекты», и названная задача занимает место одной из них: готовность, которую утверждали,
+не сдвигается. С экраном «Задачи» база расходится только там, где место уже занято
+сценарием Пульта или завести запись ещё нельзя:
+
+- выгрузку в субплатформу после визита переносят с −4 на +5, и она горит, а не стоит
+  просроченной после переноса с −6 на −2: перенос после визита — строка «С прошлого
+  визита»;
+- сведения по ПФ-155 для Администрации Президента закрываются после визита внутри засухи,
+  а не лежат без проекта закрытыми вчера: на них держатся «сделано 1 из 3» у засухи и та
+  же строка «С прошлого визита»;
+- метки поручений Ижро не ставятся: поручение — это документ, содержание на узбекской
+  кириллице и привоз, из которого оно пришло, а раздел Ижро с его моделью — блок 2, и
+  модель ещё отстаёт от ТЗ (`docs/audit/AUDIT-2026-09-20.md`). Задачи по поручениям есть —
+  без связи.
 
 **В рабочем контуре не запускается никогда** (инвариант 11): отказ по `ORBITA_ENV`, а не
 по доброй воле того, кто запускает. Повторный запуск ничего не добавляет: если проекты
@@ -31,7 +50,10 @@
   дней без движения. Подтверждение — тоже движение, сервер видит три;
 - открытые задачи молчащих проектов (программа по воздуху, аэрофотосъёмка, лаборатория)
   молчат вместе с ними и встают на Пульт своими строками: тишина проекта — это и есть
-  самая свежая из тишин его задач, развести их нельзя.
+  самая свежая из тишин его задач, развести их нельзя;
+- у задач экрана «Задачи» признак жизни не свежее тишины проекта, хотя тот экран писал
+  иногда меньше: день движения задачи виден на нём только у молчащей, а свежая задача
+  оживила бы проект, и разошёлся бы уже экран «Проекты».
 
 Люди выдуманы; организации — только в роли партнёра по вымышленному проекту и Центр из
 справочников.
@@ -66,6 +88,7 @@ from app.repos.models import (
     ProjectTypeRef,
     Region,
     Task,
+    TaskChecklistItem,
     TaskTypeRef,
     User,
 )
@@ -98,7 +121,9 @@ WORK_BY_TYPE: dict[str, tuple[str, ...]] = {
         "Заключение юридического отдела",
     ),
     "platform": (
-        "Приёмка модуля каталога снимков",
+        # Не «приёмка модуля каталога»: у геопортала она была бы сделана, а техническое
+        # задание на тот же модуль с экрана «Задачи» — ещё в работе.
+        "Опрос подразделений о требованиях",
         "Нагрузочное испытание",
         "Инструкция пользователя",
         "Перенос данных из прежнего портала",
@@ -115,12 +140,14 @@ WORK_BY_TYPE: dict[str, tuple[str, ...]] = {
         "Рассылка проекта на отзыв",
         "Сводка отзывов",
     ),
+    # Без «программы занятий» и дел лаборатории: программу стажёров экран «Задачи» держит
+    # открытой, а задачи лаборатории названы в `TASKS`.
     "staff_education": (
         "План стажировок на полугодие",
         "Отбор стажёров",
-        "Программа занятий",
-        "Письмо ректору о помещении",
-        "Список оборудования лаборатории",
+        "Договоры со стажёрами",
+        "Инструктаж по технике безопасности",
+        "Отчёт наставников за квартал",
         "Итоговая аттестация стажёров",
     ),
     "international": (
@@ -137,18 +164,19 @@ WORK_BY_TYPE: dict[str, tuple[str, ...]] = {
         "Сравнение предложений изготовителей",
         "Расчёт орбитальных параметров",
         "Смета миссии на следующий год",
+        "Требования к полезной нагрузке",
     ),
     "higher_authority_order": (
         "Сведения по водохранилищам за квартал",
         "Справка для Администрации Президента",
     ),
 }
-"""Названия задач, которых экран не называл, — по типу проекта.
+"""Названия задач, которых экраны не называли, — по типу проекта.
 
-Экран задавал у проекта «сделано N из M» и называл одну-две задачи; остальные нужны,
-чтобы готовность на сервере сошлась с утверждённой. Данные вымышленные целиком (инвариант
-11), и безымянная «Рабочая задача 17» в карточке проекта или строкой на Пульте выглядела
-бы поломкой, а не примером работы.
+Экран «Проекты» задавал у проекта «сделано N из M», Пульт и «Задачи» назвали часть задач
+(`TASKS`); остальные нужны, чтобы готовность на сервере сошлась с утверждённой. Данные
+вымышленные целиком (инвариант 11), и безымянная «Рабочая задача 17» в карточке проекта
+или строкой на Пульте выглядела бы поломкой, а не примером работы.
 """
 
 
@@ -207,16 +235,29 @@ class P:
 
 @dataclass(frozen=True, slots=True)
 class T:
-    """Задача со сроком и типом — из тех, что стоят строками на Пульте."""
+    """Задача, которую назвал экран, — Пульт или «Задачи». Сроки — в днях от сегодня."""
 
     key: str
     project: str | None
     title: str
-    who: str
-    due: int
+    who: str | None
+    due: int | None
     created: int
+    """Сколько дней назад заведена. Не правленная с тех пор — это и её признак жизни."""
+
     kind: str = "other"
+    status: TaskStatus = TaskStatus.IN_PROGRESS
+    closed: int | None = None
+    """Сколько дней назад закрыта — у готовой и отменённой."""
+
     closed_after_visit: bool = False
+    """До визита в работе, закрывает её `after_visit`."""
+
+    checklist: tuple[tuple[str, bool], ...] = ()
+    question: tuple[str, int] | None = None
+    """Вопрос руководителю по задаче и сколько дней он ждёт."""
+
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,7 +539,8 @@ PROJECTS = [
 
 # Дни создания задач Пульта совпадают с тишиной их проектов на экране: засуха — 10,
 # портал — 8, посевы — 7. Ни одна задача не моложе тишины своего проекта: иначе проект
-# ожил бы, и ступень на сервере разошлась бы с утверждённой.
+# ожил бы, и ступень на сервере разошлась бы с утверждённой. Сроки, статусы и чек-листы —
+# с экрана «Задачи»; где он расходится со сценарием Пульта, прав Пульт (см. модуль).
 TASKS = [
     T(
         "drought-note",
@@ -508,6 +550,11 @@ TASKS = [
         -3,
         10,
         "analytical_note",
+        checklist=(
+            ("Свести данные по NDVI за август", True),
+            ("Карта засушливых районов", True),
+            ("Текст справки на согласование", False),
+        ),
     ),
     T(
         "ijro-report",
@@ -529,6 +576,22 @@ TASKS = [
         "subplatform_upload",
     ),
     T(
+        "catalogue-spec",
+        "portal",
+        "ТЗ на модуль каталога снимков",
+        "tursunov",
+        20,
+        8,
+        "technical_spec",
+        checklist=(
+            ("Требования к поиску", True),
+            ("Форматы выдачи", False),
+            ("Роли пользователей", False),
+            ("Нагрузка", False),
+            ("Согласование с Центром", False),
+        ),
+    ),
+    T(
         "pilot-selection",
         "crops",
         "Отбор участников пилота с Минсельхозом",
@@ -542,11 +605,57 @@ TASKS = [
         "geodata",
         "Согласование проекта постановления с Минэкологии",
         "yusupova",
-        20,
+        3,
         5,
         "approval",
+        status=TaskStatus.IN_REVIEW,
+        checklist=(
+            ("Отправить проект письмом", True),
+            ("Получить замечания", True),
+            ("Свести замечания в таблицу", True),
+            ("Повторное согласование", False),
+        ),
     ),
-    T("mission-plan", "mission", "План работ по группировке на квартал", "karimov", 30, 3),
+    # Заведена три дня назад, когда подтверждали «что мешает»: моложе — и постановление
+    # ожило бы на сервере ещё сильнее, чем уже ожило (см. модуль). Вопрос по задаче ставит
+    # на верхнюю ступень и её, отдельной строкой от вопроса по проекту: ступень у каждой
+    # записи своя (`app.repos.attention`).
+    T(
+        "cabinet-submission",
+        "geodata",
+        "Внесение проекта постановления в Кабинет министров",
+        "yusupova",
+        6,
+        3,
+        "cabinet_submission",
+        question=("Вносить в текущей редакции или дождаться замечаний Минюста?", 2),
+        description=(
+            "Вносим после согласования с Минэкологии; руководитель решает, в какой редакции."
+        ),
+    ),
+    T(
+        "mission-plan",
+        "mission",
+        "План работ по группировке на квартал",
+        "karimov",
+        30,
+        3,
+        status=TaskStatus.NEW,
+    ),
+    # Закрыта сегодня, но до визита: закрытие после него встало бы строкой в «С прошлого
+    # визита», которого утверждённый Пульт не показывал. Миссию это не оживляет сверх
+    # экрана — после визита она и так движется: пройдена веха «Разработка ТЗ».
+    T(
+        "mission-spec",
+        "mission",
+        "Разработка ТЗ спутниковой группировки",
+        "karimov",
+        0,
+        15,
+        "technical_spec",
+        status=TaskStatus.DONE,
+        closed=0,
+    ),
     T(
         "standard-review",
         "standard",
@@ -557,11 +666,38 @@ TASKS = [
         "review_and_endorse",
     ),
     T(
+        "interns-programme",
+        "interns",
+        "Программа занятий для стажёров",
+        "abdullaeva",
+        45,
+        6,
+    ),
+    # Ответственного нет: обязательно у задачи только название (ТЗ 7), и экран «Задачи»
+    # показывал, как выглядит задача, исполнителя которой ещё не назначили.
+    T(
+        "station-translation",
+        "station",
+        "Перевод технической документации станции",
+        None,
+        None,
+        9,
+    ),
+    T(
+        "aerial-contract",
+        "aerial",
+        "Договор с исполнителем аэрофотосъёмки",
+        "tursunov",
+        18,
+        21,
+        "approval",
+    ),
+    T(
         "khokimiyat-request",
         "floods",
         "Запрос сведений у хокимиятов о паводках",
         "rakhimov",
-        30,
+        5,
         15,
         "request_or_survey",
     ),
@@ -570,11 +706,99 @@ TASKS = [
         "floods",
         "Сводка по паводкам за сентябрь",
         "rakhimov",
-        20,
+        12,
         2,
         "analytical_note",
     ),
-    T("jizzakh-visit", "calibration", "Выезд на полигон в Джизаке", "karimov", 10, 5, "site_visit"),
+    T(
+        "jizzakh-visit",
+        "calibration",
+        "Выезд на полигон в Джизаке",
+        "karimov",
+        4,
+        5,
+        "site_visit",
+        checklist=(
+            ("Транспорт", True),
+            ("Приборы калибровки", False),
+            ("Письмо в хокимият", False),
+        ),
+    ),
+    T(
+        "snow-survey",
+        "snow",
+        "Опросник для хокимиятов по снежному покрову",
+        "rakhimov",
+        40,
+        12,
+        "request_or_survey",
+        status=TaskStatus.NEW,
+    ),
+    # Обе задачи лаборатории названы: безымянные взялись бы из дел стажировок того же типа
+    # и встали бы на Пульт строками про стажёров у проекта про помещение.
+    T(
+        "lab-room",
+        "lab",
+        "Подобрать помещение для учебной лаборатории",
+        "abdullaeva",
+        None,
+        30,
+    ),
+    T("lab-equipment", "lab", "Список оборудования лаборатории", "abdullaeva", None, 30),
+    # Отменённая в «сделано N из M» не входит (`app.repos.projects`): отменённому проекту
+    # она добавляет строку в списке закрытых, а его готовность не трогает.
+    T(
+        "legacy-upload",
+        "legacy",
+        "Выгрузка в прежний портал",
+        "tursunov",
+        -20,
+        90,
+        "subplatform_upload",
+        status=TaskStatus.CANCELLED,
+        closed=30,
+    ),
+    # Без проекта — половина работы аппарата (`app.repos.models.tasks`).
+    T(
+        "minfin-call",
+        None,
+        "Позвонить в Минфин по смете миссии на следующий год",
+        "karimov",
+        0,
+        1,
+        status=TaskStatus.NEW,
+    ),
+    T(
+        "meeting-theses",
+        None,
+        "Тезисы к совещанию по космическому мониторингу",
+        "karimov",
+        None,
+        3,
+        status=TaskStatus.NEW,
+    ),
+    T(
+        "reservoirs-report",
+        None,
+        "Сведения для Администрации Президента по мониторингу водохранилищ",
+        "yusupova",
+        1,
+        2,
+        "ijro_report",
+    ),
+    T(
+        "ijro-overdue",
+        None,
+        "Сведения по поручению ПФ-155 §5.1",
+        "rakhimov",
+        -1,
+        6,
+        "ijro_report",
+        checklist=(
+            ("Запросить данные у Центра", False),
+            ("Подготовить проект ответа", False),
+        ),
+    ),
 ]
 
 NEW_PROJECT = "Пилот с Минздравом: мониторинг вспышек"
@@ -641,6 +865,25 @@ def _marks_of(spec: P, template: list[Step]) -> list[tuple[int, M]]:
 def _moment(day: date, zone: ZoneInfo, hours: int = 18) -> datetime:
     """Срок задачи — конец рабочего дня по Ташкенту, хранится в UTC (инвариант 8)."""
     return datetime.combine(day, time(hours), zone).astimezone(UTC)
+
+
+def _stamps(
+    status: TaskStatus, *, created: datetime, closed: datetime | None = None
+) -> dict[str, object]:
+    """Статус и отметки времени — те, что поставил бы сервис переходами (`app.services.tasks`).
+
+    Начало работы есть у всего, что из «новой» ушло; закрытие — у готовой и отменённой, и
+    закрытие же — последняя правка задачи. Задача без отметок там, где сервис их ставит,
+    показала бы на превью статистику, которой у настоящих данных не бывает.
+    """
+    assert (closed is not None) is status.is_terminal, status
+    return {
+        "status": status.value,
+        "created_at": created,
+        "started_at": None if status is TaskStatus.NEW else created,
+        "completed_at": closed,
+        "updated_at": closed,
+    }
 
 
 async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) -> dict[str, int]:
@@ -750,26 +993,35 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         return task
 
     for work in TASKS:
-        due = _moment(on(work.due), zone)
+        due = _moment(on(work.due), zone) if work.due is not None else None
         add_task(
             work.key,
             title=work.title,
+            description=work.description,
             task_type_id=task_types.get(work.kind),
             project_id=projects[work.project].id if work.project else None,
-            assignee_person_id=people[work.who].id,
-            status=TaskStatus.IN_PROGRESS.value,
+            assignee_person_id=people[work.who].id if work.who else None,
             due_at=due,
             original_due_at=due,
-            created_at=ago(work.created),
+            **_stamps(
+                work.status,
+                created=ago(work.created),
+                closed=ago(work.closed) if work.closed is not None else None,
+            ),
         )
 
     # Задачи без имени — ровно столько, чтобы «сделано N из M» сошлось с экраном после
     # визита. Сроков у них нет: срок дал бы строку «горит» или «просрочено», а строки Пульта
     # со сроками заданы выше. Движение — не свежее тишины проекта, поэтому у молчащего
-    # проекта они молчат вместе с ним (см. модуль).
+    # проекта они молчат вместе с ним (см. модуль). Отменённая названная задача места
+    # безымянной не занимает: в «сделано N из M» она не входит.
     for spec in PROJECTS:
-        own = [work for work in TASKS if work.project == spec.key]
-        closed = sum(work.closed_after_visit for work in own)
+        own = [
+            work
+            for work in TASKS
+            if work.project == spec.key and work.status is not TaskStatus.CANCELLED
+        ]
+        closed = sum(work.closed_after_visit or work.status is TaskStatus.DONE for work in own)
         done, total = spec.tasks
         extra_done = done - closed
         extra_open = total - done - (len(own) - closed)
@@ -787,20 +1039,35 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
                 add_task(
                     f"{spec.key}-done-{index}",
                     **common,
-                    status=TaskStatus.DONE.value,
-                    completed_at=ago(closed_days),
-                    created_at=ago(min(born[spec.key], closed_days + 14)),
-                    updated_at=ago(closed_days),
+                    **_stamps(
+                        TaskStatus.DONE,
+                        created=ago(min(born[spec.key], closed_days + 14)),
+                        closed=ago(closed_days),
+                    ),
                 )
             else:
                 add_task(
                     f"{spec.key}-open-{index}",
                     **common,
-                    status=TaskStatus.IN_PROGRESS.value,
-                    created_at=ago(spec.life),
+                    **_stamps(TaskStatus.IN_PROGRESS, created=ago(spec.life)),
                 )
     session.add_all(tasks.values())
     await session.flush()
+
+    # Пункты заведены вместе с задачей и с тех пор не правились: отметка пункта — признак
+    # жизни задачи (`TaskChecklistItem`), и пункт свежее задачи оживил бы её мимо экрана.
+    # Порядок — с единицы, как у пунктов, добавленных с экрана (`app.repos.tasks`).
+    session.add_all(
+        TaskChecklistItem(
+            task_id=tasks[work.key].id,
+            text=text,
+            is_done=is_done,
+            sort_order=order,
+            created_at=ago(work.created),
+        )
+        for work in TASKS
+        for order, (text, is_done) in enumerate(work.checklist, start=1)
+    )
 
     leader = await session.scalar(select(User).where(User.role == "leader"))
     decided_by = leader.id if leader else None
@@ -814,6 +1081,16 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         )
         for spec in PROJECTS
         if spec.question
+    )
+    session.add_all(
+        LeaderQuestion(
+            target_type="task",
+            target_id=tasks[work.key].id,
+            text=work.question[0],
+            created_at=ago(work.question[1]),
+        )
+        for work in TASKS
+        if work.question
     )
     session.add_all(
         [
@@ -862,7 +1139,12 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
     # Всё, что заведено выше, было «до прошлого визита».
     await session.execute(update(User).values(last_visit_at=datetime.now(UTC)))
     await session.flush()
-    return {"projects": len(projects), "milestones": len(milestones), "tasks": len(tasks)}
+    return {
+        "projects": len(projects),
+        "milestones": len(milestones),
+        "tasks": len(tasks),
+        "checklist_items": sum(len(work.checklist) for work in TASKS),
+    }
 
 
 async def _project(session: AsyncSession, title: str) -> Project:
