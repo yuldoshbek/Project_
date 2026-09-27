@@ -64,13 +64,17 @@ export function useProject(id: string | null) {
   return useQuery({ ...projectQuery(id ?? ''), enabled: id !== null });
 }
 
-/** После записи: и список, и карточки, и Пульт — одни числа везде. */
+/**
+ * После записи: и список, и карточки, и Пульт, и «Программы» — одни числа везде: программа
+ * — тот же проект, и её срок, вехи и готовность правятся здесь.
+ */
 function useRefresh() {
   const client = useQueryClient();
   return () =>
     Promise.all([
       client.invalidateQueries({ queryKey: ['projects'] }),
       client.invalidateQueries({ queryKey: ['pult'] }),
+      client.invalidateQueries({ queryKey: ['programs'] }),
     ]);
 }
 
