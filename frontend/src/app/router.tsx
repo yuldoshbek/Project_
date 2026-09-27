@@ -24,6 +24,7 @@ import { ManagementSection } from '@/sections/management/ManagementSection';
 import { ProjectsSection } from '@/sections/projects/ProjectsSection';
 import { PultSection } from '@/sections/pult/PultSection';
 import { SoonSection } from '@/sections/SoonSection';
+import { TasksSection } from '@/sections/tasks/TasksSection';
 import { RenderFailure } from '@/shared/ui/Boundary';
 
 const rootRoute = createRootRoute({ component: App });
@@ -39,9 +40,11 @@ const sectionRoutes: AnyRoute[] = SECTIONS.map((section) =>
           ? PultSection
           : section.id === 'projects'
             ? ProjectsSection
-            : function Section() {
-                return <SoonSection section={section} />;
-              },
+            : section.id === 'tasks'
+              ? TasksSection
+              : function Section() {
+                  return <SoonSection section={section} />;
+                },
   }),
 );
 

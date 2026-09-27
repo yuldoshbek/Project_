@@ -19,7 +19,7 @@ import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/Button';
 import { Failure } from '@/shared/ui/States';
 
-import { Block } from './Block';
+import { Block } from '@/shared/ui/Block';
 import type { OrganizationKind, OrganizationRef, OrganizationRole, ProjectDetail } from './model';
 import {
   useCreateOrganization,

@@ -29,7 +29,7 @@ import {
   type ProjectDetail,
   type ProjectStatus,
 } from './model';
-import { Block } from './Block';
+import { Block } from '@/shared/ui/Block';
 import { DetailsBlock } from './DetailsBlock';
 import { OrganizationsBlock } from './OrganizationsBlock';
 import { StatusReason } from './StatusReason';

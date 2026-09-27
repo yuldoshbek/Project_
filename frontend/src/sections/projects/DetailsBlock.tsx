@@ -18,7 +18,7 @@ import { dictionariesQuery } from '@/shared/api/queries';
 import { Button } from '@/shared/ui/Button';
 import { Failure } from '@/shared/ui/States';
 
-import { Block } from './Block';
+import { Block } from '@/shared/ui/Block';
 import type { ProjectDetail } from './model';
 import { useProjects, useSaveDetails } from './useProjects';
 
