@@ -14,7 +14,6 @@ import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { describeError } from '@/shared/api/client';
-import type { DictionaryEntry } from '@/shared/api/orbita';
 import { dictionariesQuery } from '@/shared/api/queries';
 import { Button } from '@/shared/ui/Button';
 import { Failure } from '@/shared/ui/States';
@@ -33,11 +32,6 @@ interface Form {
   region: string;
   description: string;
   version: number;
-}
-
-/** Код записи справочника по названию, которое показывает карточка. */
-function codeOf(entries: readonly DictionaryEntry[], name: string | null): string {
-  return entries.find((entry) => entry.name.ru === name)?.code ?? '';
 }
 
 export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; canEdit: boolean }) {
@@ -59,8 +53,8 @@ export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; can
     setForm({
       title: project.title,
       responsible: project.responsible?.id ?? '',
-      direction: codeOf(directions, project.direction),
-      region: codeOf(regions, project.region),
+      direction: project.direction?.code ?? '',
+      region: project.region?.code ?? '',
       description: project.description ?? '',
       version: project.version,
     });
@@ -69,11 +63,9 @@ export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; can
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!form || !form.title.trim()) return;
-    const nameOf = (entries: DictionaryEntry[], code: string) =>
-      entries.find((entry) => entry.code === code)?.name.ru ?? null;
     save.mutate(
       {
-        project,
+        id: project.id,
         details: {
           title: form.title,
           responsible_id: form.responsible || null,
@@ -81,11 +73,6 @@ export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; can
           region_code: form.region || null,
           description: form.description || null,
           version: form.version,
-        },
-        names: {
-          responsible: people.find((person) => person.id === form.responsible) ?? null,
-          direction: nameOf(directions, form.direction),
-          region: nameOf(regions, form.region),
         },
       },
       { onSuccess: () => setForm(null) },
@@ -173,15 +160,14 @@ export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; can
             </Button>
           </div>
           {save.isError ? <Failure detail={describeError(save.error)} /> : null}
-          <p className="text-xs text-ink-muted">{t('projects.orgs.draftNote')}</p>
         </form>
       </Block>
     );
   }
 
   const rows: { label: string; value: string | null }[] = [
-    { label: t('projects.details.direction'), value: project.direction },
-    { label: t('projects.details.region'), value: project.region },
+    { label: t('projects.details.direction'), value: project.direction?.name ?? null },
+    { label: t('projects.details.region'), value: project.region?.name ?? null },
     { label: t('projects.details.description'), value: project.description },
   ];
 

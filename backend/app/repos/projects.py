@@ -89,7 +89,9 @@ class ProjectRow:
     version: int
     description: str | None
     direction: Names | None
+    direction_code: str | None
     region: Names | None
+    region_code: str | None
     subprojects: int = 0
     marks: list[MarkRow] = field(default_factory=list)
     done_tasks: int = 0
@@ -120,6 +122,7 @@ class OrganizationRow:
     name: str
     role: str
     is_center: bool
+    version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,7 +190,9 @@ async def projects(
             version=project.version,
             description=project.description,
             direction=Names.of(direction) if direction else None,
+            direction_code=direction.code if direction else None,
             region=Names.of(region) if region else None,
+            region_code=region.code if region else None,
         )
     if not found:
         return []
@@ -385,14 +390,15 @@ async def organizations(session: AsyncSession, project_id: uuid.UUID) -> list[Or
             func.coalesce(Organization.short_name, Organization.name),
             ProjectOrganization.role,
             Organization.is_founded_by_agency,
+            ProjectOrganization.version,
         )
         .join(Organization, Organization.id == ProjectOrganization.organization_id)
         .where(ProjectOrganization.project_id == project_id)
         .order_by(Organization.is_founded_by_agency.desc(), Organization.name)
     )
     return [
-        OrganizationRow(id=org_id, name=name, role=role, is_center=is_center)
-        for org_id, name, role, is_center in rows
+        OrganizationRow(id=org_id, name=name, role=role, is_center=is_center, version=version)
+        for org_id, name, role, is_center, version in rows
     ]
 
 
@@ -430,3 +436,38 @@ async def milestones_of(
         select(Milestone).where(Milestone.project_id == project_id, Milestone.id.in_(list(ids)))
     )
     return {mark.id: mark for mark in rows}
+
+
+async def direction_by_code(session: AsyncSession, code: str) -> Direction | None:
+    """Направление по коду — и выключенное: у старого проекта оно остаётся своим."""
+    found: Direction | None = await session.scalar(select(Direction).where(Direction.code == code))
+    return found
+
+
+async def region_by_code(session: AsyncSession, code: str) -> Region | None:
+    found: Region | None = await session.scalar(select(Region).where(Region.code == code))
+    return found
+
+
+async def membership(
+    session: AsyncSession, project_id: uuid.UUID, organization_id: uuid.UUID
+) -> ProjectOrganization | None:
+    """Роль организации в проекте — объектом: правка мимо ORM обходит журнал и версию."""
+    found: ProjectOrganization | None = await session.scalar(
+        select(ProjectOrganization).where(
+            ProjectOrganization.project_id == project_id,
+            ProjectOrganization.organization_id == organization_id,
+        )
+    )
+    return found
+
+
+async def lead_agency_of(session: AsyncSession, project_id: uuid.UUID) -> uuid.UUID | None:
+    """Кто головное ведомство проекта; `None` — его нет."""
+    found: uuid.UUID | None = await session.scalar(
+        select(ProjectOrganization.organization_id).where(
+            ProjectOrganization.project_id == project_id,
+            ProjectOrganization.role == OrganizationRole.LEAD_AGENCY.value,
+        )
+    )
+    return found

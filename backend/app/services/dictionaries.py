@@ -13,10 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.dictionaries import SettingKey
+from app.domain.dictionaries import OrganizationKind, SettingKey, validate_organization_name
+from app.domain.errors import ConflictError
 from app.repos.models import (
     Direction,
     Organization,
@@ -104,6 +105,27 @@ async def list_organizations(
             Organization.name.ilike(pattern) | Organization.short_name.ilike(pattern)
         )
     return list(await session.scalars(statement))
+
+
+async def create_organization(
+    session: AsyncSession, *, name: str, kind: OrganizationKind
+) -> Organization:
+    """Новая организация из карточки проекта — название и вид (ТЗ 3.4).
+
+    Совпадение названия без учёта регистра — отказ, а не вторая запись: «Министерство
+    экологии» и «министерство экологии» — одна организация, и роли в проектах разошлись бы
+    по двум строкам (`Organization.name` — ключ).
+    """
+    value = validate_organization_name(name)
+    taken = await session.scalar(
+        select(Organization.id).where(func.lower(Organization.name) == value.lower())
+    )
+    if taken is not None:
+        raise ConflictError("Организация с таким названием уже есть", detail=value)
+    organization = Organization(name=value, kind=kind.value)
+    session.add(organization)
+    await session.flush()
+    return organization
 
 
 async def load_settings(session: AsyncSession) -> dict[str, Any]:

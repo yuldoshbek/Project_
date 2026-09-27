@@ -16,7 +16,7 @@ from datetime import date, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import status
+from fastapi import Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import SessionDep, SettingsDep, is_demo
@@ -24,7 +24,11 @@ from app.api.security import Assistant, CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.clock import local_date, now_utc
 from app.domain.dictionaries import OrganizationRole, ProjectStatus
-from app.domain.projects import IMPEDIMENT_MAX_LENGTH, TITLE_MAX_LENGTH
+from app.domain.projects import (
+    DESCRIPTION_MAX_LENGTH,
+    IMPEDIMENT_MAX_LENGTH,
+    TITLE_MAX_LENGTH,
+)
 from app.services import projects as service
 
 router = transactional_router(tags=["проекты"])
@@ -125,6 +129,12 @@ class Organization(BaseModel):
     name: str
     role: OrganizationRole
     is_center: bool
+    version: int
+
+
+class DictionaryRef(BaseModel):
+    code: str
+    name: str
 
 
 class MilestoneRow(BaseModel):
@@ -160,8 +170,8 @@ class LastDecision(BaseModel):
 
 class ProjectDetail(ProjectCard):
     description: str | None
-    direction: str | None
-    region: str | None
+    direction: DictionaryRef | None
+    region: DictionaryRef | None
     organizations: list[Organization]
     milestone_list: list[MilestoneRow]
     subproject_list: list[ProjectCard]
@@ -226,11 +236,21 @@ def _detail(view: service.DetailView) -> ProjectDetail:
     return ProjectDetail(
         **_card_fields(view.card),
         description=view.description,
-        direction=view.direction,
-        region=view.region,
+        direction=(
+            DictionaryRef(code=view.direction.code, name=view.direction.name)
+            if view.direction
+            else None
+        ),
+        region=(
+            DictionaryRef(code=view.region.code, name=view.region.name) if view.region else None
+        ),
         organizations=[
             Organization(
-                id=org.id, name=org.name, role=OrganizationRole(org.role), is_center=org.is_center
+                id=org.id,
+                name=org.name,
+                role=OrganizationRole(org.role),
+                is_center=org.is_center,
+                version=org.version,
             )
             for org in view.organizations
         ],
@@ -512,4 +532,79 @@ async def update_dates(
             )
             for change in body.changes
         ],
+    )
+
+
+class DetailsRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=TITLE_MAX_LENGTH)
+    responsible_id: uuid.UUID | None = None
+    direction_code: str | None = Field(default=None, max_length=50)
+    region_code: str | None = Field(default=None, max_length=50)
+    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    version: int
+
+
+@router.put(
+    "/projects/{project_id}/details",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Сведения проекта: название, ответственный, направление, регион, описание",
+)
+async def update_details(
+    project_id: uuid.UUID, body: DetailsRequest, user: Assistant, session: SessionDep
+) -> None:
+    await service.save_details(
+        session,
+        project_id=project_id,
+        data=service.Details(
+            title=body.title,
+            responsible_id=body.responsible_id,
+            direction_code=body.direction_code,
+            region_code=body.region_code,
+            description=body.description,
+            version=body.version,
+        ),
+    )
+
+
+class MembershipRequest(BaseModel):
+    role: OrganizationRole
+    version: int | None = None
+    """Версия роли, которую видел человек; нет — организацию добавляют."""
+
+
+@router.put(
+    "/projects/{project_id}/organizations/{organization_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Организация в проекте: добавить или сменить роль",
+)
+async def update_membership(
+    project_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    body: MembershipRequest,
+    user: Assistant,
+    session: SessionDep,
+) -> None:
+    await service.set_organization(
+        session,
+        project_id=project_id,
+        organization_id=organization_id,
+        role=body.role,
+        version=body.version,
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/organizations/{organization_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Убрать организацию из проекта",
+)
+async def delete_membership(
+    project_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    user: Assistant,
+    session: SessionDep,
+    version: int = Query(description="Версия роли, которую видел человек"),
+) -> None:
+    await service.remove_organization(
+        session, project_id=project_id, organization_id=organization_id, version=version
     )

@@ -6,16 +6,12 @@
  * что на экране устаревшая картина, и правку надо делать по свежей (инвариант 15).
  *
  * «Что если» — тоже мутация, но ничего не перечитывает: он ничего не записал.
- *
- * Правка организаций и сведений — на утверждении экрана: пока API нет, она ложится во
- * временный слой `draft.ts` поверх ответа сервера.
  */
 
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { request } from '@/shared/api/client';
 
-import { draft, withCreated, withDraft, withDraftCard } from './draft';
 import type {
   DatesChange,
   NewOrganization,
@@ -26,7 +22,6 @@ import type {
   ProjectDetail,
   ProjectStatus,
   ProjectsView,
-  Ref,
   WhatIfChange,
   WhatIfResult,
 } from './model';
@@ -36,17 +31,14 @@ const BASE = '/api/v1/projects';
 export function projectsQuery() {
   return queryOptions({
     queryKey: ['projects'],
-    queryFn: async () => {
-      const view = await request<ProjectsView>(BASE);
-      return { ...view, items: view.items.map(withDraftCard) };
-    },
+    queryFn: () => request<ProjectsView>(BASE),
   });
 }
 
 export function projectQuery(id: string) {
   return queryOptions({
     queryKey: ['projects', id],
-    queryFn: async () => withDraft(await request<ProjectDetail>(`${BASE}/${id}`)),
+    queryFn: () => request<ProjectDetail>(`${BASE}/${id}`),
   });
 }
 
@@ -54,7 +46,7 @@ export function projectQuery(id: string) {
 export function organizationsQuery() {
   return queryOptions({
     queryKey: ['organizations'],
-    queryFn: async () => withCreated(await request<OrganizationRef[]>('/api/v1/organizations')),
+    queryFn: () => request<OrganizationRef[]>('/api/v1/organizations'),
     staleTime: 5 * 60_000,
     refetchInterval: false,
   });
@@ -147,24 +139,29 @@ export function useApplyWhatIf() {
 export function useSaveDetails() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: {
-      project: ProjectDetail;
-      details: ProjectDetails;
-      names: { responsible: Ref | null; direction: string | null; region: string | null };
-    }) => draft.saveDetails(input.project, input.details, input.names),
+    mutationFn: (input: { id: string; details: ProjectDetails }) =>
+      request<void>(`${BASE}/${input.id}/details`, { method: 'PUT', body: input.details }),
     onSettled: refresh,
   });
 }
 
-/** Добавить организацию в проект или сменить её роль. */
+/**
+ * Добавить организацию в проект или сменить её роль. `version: null` — добавление:
+ * организации в проекте ещё нет.
+ */
 export function useSetOrganization() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: {
-      project: ProjectDetail;
-      organization: OrganizationRef;
+    mutationFn: (input: {
+      projectId: string;
+      organizationId: string;
       role: OrganizationRole;
-    }) => draft.setOrganization(input.project, input.organization, input.role),
+      version: number | null;
+    }) =>
+      request<void>(`${BASE}/${input.projectId}/organizations/${input.organizationId}`, {
+        method: 'PUT',
+        body: { role: input.role, version: input.version },
+      }),
     onSettled: refresh,
   });
 }
@@ -172,8 +169,11 @@ export function useSetOrganization() {
 export function useRemoveOrganization() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: { project: ProjectDetail; organizationId: string }) =>
-      draft.removeOrganization(input.project, input.organizationId),
+    mutationFn: (input: { projectId: string; organizationId: string; version: number }) =>
+      request<void>(`${BASE}/${input.projectId}/organizations/${input.organizationId}`, {
+        method: 'DELETE',
+        query: { version: input.version },
+      }),
     onSettled: refresh,
   });
 }
@@ -182,7 +182,8 @@ export function useRemoveOrganization() {
 export function useCreateOrganization() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (input: NewOrganization) => draft.createOrganization(input),
+    mutationFn: (input: NewOrganization) =>
+      request<OrganizationRef>('/api/v1/organizations', { method: 'POST', body: input }),
     onSettled: () => client.invalidateQueries({ queryKey: ['organizations'] }),
   });
 }

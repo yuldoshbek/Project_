@@ -9,14 +9,13 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUser } from '@/shared/api/orbita';
 import { localDay } from '@/shared/time';
 import { setViewport } from '@/test-setup';
 
-import { draft } from './draft';
-import type { OrganizationRef, ProjectCard, WhatIfResult } from './model';
+import type { OrganizationRef, ProjectCard, ProjectDetail, WhatIfResult } from './model';
 import { ProjectsSection } from './ProjectsSection';
 import { ITEMS, card, detail, view } from './test-data';
 
@@ -99,30 +98,122 @@ interface ServeOptions {
   milestone?: { version: number };
 }
 
+type Membership = ProjectDetail['organizations'][number];
+
+/**
+ * Подменить сеть. «Сервер» помнит роли организаций и сведения проектов — ровно столько,
+ * чтобы экран после записи перечитал то, что записал. Возвращает список запросов: тест
+ * проверяет, что именно ушло на сервер.
+ */
 function serve(role: 'leader' | 'assistant', { stale = false, milestone }: ServeOptions = {}) {
   const calls: { method: string; path: string; body: unknown }[] = [];
   const created: ProjectCard[] = [];
+  const catalog: OrganizationRef[] = [...ORGANIZATIONS];
+  const memberships = new Map<string, Membership[]>();
+  const details = new Map<string, Partial<ProjectDetail>>();
+
+  /** Плитка с учётом записанного: роль Центра и чужое головное ведомство. */
+  const cardOf = (base: ProjectCard): ProjectCard => {
+    const orgs = memberships.get(base.id);
+    const saved = details.get(base.id);
+    return {
+      ...base,
+      ...(saved?.title ? { title: saved.title } : {}),
+      ...(orgs
+        ? {
+            center_role: orgs.find((org) => org.is_center)?.role ?? null,
+            lead_outside: orgs.some((org) => !org.is_center && org.role === 'lead_agency'),
+          }
+        : {}),
+    };
+  };
+  const nameOf = (entries: typeof DICTIONARIES.directions, code: string | null) => {
+    const found = entries.find((each) => each.code === code);
+    return found ? { code: found.code, name: found.name.ru } : null;
+  };
+
   vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method, path, body });
+    const [bare = path] = path.split('?');
+    const membership = /^\/api\/v1\/projects\/([^/]+)\/organizations\/([^/]+)$/.exec(bare);
 
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
-    if (path === '/api/v1/organizations') return Promise.resolve(reply(200, ORGANIZATIONS));
     if (path === '/api/v1/dictionaries') return Promise.resolve(reply(200, DICTIONARIES));
-    if (method === 'GET' && path === BASE) return Promise.resolve(reply(200, view()));
+    if (bare === '/api/v1/organizations' && method === 'GET') {
+      return Promise.resolve(reply(200, catalog));
+    }
+    if (bare === '/api/v1/organizations' && method === 'POST') {
+      const fresh: OrganizationRef = {
+        id: `o-new-${catalog.length}`,
+        name: body.name,
+        short_name: null,
+        kind: body.kind,
+        is_founded_by_agency: false,
+      };
+      catalog.push(fresh);
+      return Promise.resolve(reply(201, fresh));
+    }
+    if (method === 'GET' && path === BASE) {
+      return Promise.resolve(reply(200, view([...ITEMS, ...created].map(cardOf))));
+    }
     if (method === 'POST' && path === BASE) {
       const fresh = card({ id: 'pr-new', code: 'PRJ-2026-022', title: body.title });
       created.push(fresh);
       return Promise.resolve(reply(201, detail(fresh)));
     }
+    if (membership && method === 'PUT' && !stale) {
+      const [, projectId = '', organizationId = ''] = membership;
+      const org = catalog.find((each) => each.id === organizationId)!;
+      const list = [...(memberships.get(projectId) ?? [])];
+      const existing = list.find((each) => each.id === organizationId);
+      if (existing) {
+        existing.role = body.role;
+        existing.version += 1;
+      } else {
+        const next = {
+          id: org.id,
+          name: org.short_name ?? org.name,
+          role: body.role,
+          is_center: org.is_founded_by_agency,
+          version: 1,
+        };
+        if (next.is_center) list.unshift(next);
+        else list.push(next);
+      }
+      memberships.set(projectId, list);
+      return Promise.resolve(reply(204));
+    }
+    if (membership && method === 'DELETE') {
+      const [, projectId = '', organizationId = ''] = membership;
+      memberships.set(
+        projectId,
+        (memberships.get(projectId) ?? []).filter((each) => each.id !== organizationId),
+      );
+      return Promise.resolve(reply(204));
+    }
+    if (method === 'PUT' && bare.endsWith('/details') && !stale) {
+      const projectId = bare.slice(BASE.length + 1, -'/details'.length);
+      details.set(projectId, {
+        title: body.title,
+        description: body.description,
+        direction: nameOf(DICTIONARIES.directions, body.direction_code),
+        region: nameOf(DICTIONARIES.regions, body.region_code),
+      });
+      return Promise.resolve(reply(204));
+    }
     if (method === 'GET' && path.startsWith(`${BASE}/`)) {
       const id = path.slice(BASE.length + 1);
       const found = [...ITEMS, ...created].find((each) => each.id === id) ?? card({ id });
-      const body = detail(found);
-      if (milestone) body.milestone_list[0]!.version = milestone.version;
-      return Promise.resolve(reply(200, body));
+      const answer: ProjectDetail = {
+        ...detail(cardOf(found)),
+        ...details.get(id),
+        organizations: memberships.get(id) ?? [],
+      };
+      if (milestone) answer.milestone_list[0]!.version = milestone.version;
+      return Promise.resolve(reply(200, answer));
     }
     if (method === 'POST' && path.endsWith('/what-if')) return Promise.resolve(reply(200, WHAT_IF));
     if (method === 'PUT' && stale) {
@@ -154,7 +245,6 @@ function drop(column: HTMLElement, id: string) {
 /** Клиент запросов последнего рендера — чтобы изобразить опрос карточки. */
 let rendered: QueryClient;
 
-beforeEach(() => draft.reset());
 afterEach(() => vi.restoreAllMocks());
 
 describe('Проекты', () => {
@@ -348,8 +438,8 @@ describe('Проекты', () => {
     expect(await within(panel).findByText(new RegExp(STALE))).toBeInTheDocument();
   });
 
-  it('Центр — одним касанием; роль видна и на доске', async () => {
-    serve('assistant');
+  it('Центр — одним касанием; роль видна и на доске; смена и удаление — с версией', async () => {
+    const calls = serve('assistant');
     renderProjects();
 
     fireEvent.click(
@@ -369,10 +459,38 @@ describe('Проекты', () => {
       .getByText('Постановление о порядке обмена геоданными')
       .closest('article')!;
     await waitFor(() => expect(within(tile).getByText('Центр — исполнитель')).toBeInTheDocument());
+    expect(calls.find((call) => call.method === 'PUT')).toEqual({
+      method: 'PUT',
+      path: `${BASE}/pr-geodata/organizations/o-center`,
+      body: { role: 'executor', version: null },
+    });
+
+    fireEvent.change(
+      within(organizations).getByRole('combobox', { name: 'Роль: Центр космического мониторинга' }),
+      { target: { value: 'co_executor' } },
+    );
+    await waitFor(() =>
+      expect(calls.filter((call) => call.method === 'PUT').at(-1)?.body).toEqual({
+        role: 'co_executor',
+        version: 1,
+      }),
+    );
+
+    fireEvent.click(
+      await within(organizations).findByRole('button', {
+        name: 'Убрать: Центр космического мониторинга',
+      }),
+    );
+    await waitFor(() =>
+      expect(calls.find((call) => call.method === 'DELETE')?.path).toBe(
+        `${BASE}/pr-geodata/organizations/o-center?version=2`,
+      ),
+    );
+    expect(await within(organizations).findByText('Организации не указаны')).toBeInTheDocument();
   });
 
   it('новая организация — название, вид и роль; головное ведомство одно', async () => {
-    serve('assistant');
+    const calls = serve('assistant');
     renderProjects();
 
     fireEvent.click(
@@ -416,10 +534,20 @@ describe('Проекты', () => {
         name: 'Роль: Министерство здравоохранения',
       }),
     ).toHaveValue('customer');
+    expect(
+      calls.find((call) => call.method === 'POST' && call.path === '/api/v1/organizations')?.body,
+    ).toEqual({
+      name: 'Министерство здравоохранения',
+      kind: 'ministry',
+    });
+    expect(calls.filter((call) => call.method === 'PUT').map((call) => call.body)).toEqual([
+      { role: 'lead_agency', version: null },
+      { role: 'customer', version: null },
+    ]);
   });
 
   it('сведения — направление и регион из справочников', async () => {
-    serve('assistant');
+    const calls = serve('assistant');
     renderProjects();
 
     fireEvent.click(
@@ -449,6 +577,18 @@ describe('Проекты', () => {
     expect(
       within(details).getByText('Порядок обмена данными между ведомствами'),
     ).toBeInTheDocument();
+    expect(calls.find((call) => call.path.endsWith('/details'))).toEqual({
+      method: 'PUT',
+      path: `${BASE}/pr-geodata/details`,
+      body: {
+        title: 'Постановление о порядке обмена геоданными',
+        responsible_id: 'p-yusupova',
+        direction_code: 'monitoring',
+        region_code: 'tashkent_city',
+        description: 'Порядок обмена данными между ведомствами',
+        version: 4,
+      },
+    });
   });
 
   it('руководитель видит организации и сведения без правки', async () => {

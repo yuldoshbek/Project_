@@ -93,11 +93,24 @@ export interface MilestoneRow {
   version: number;
 }
 
+/** Запись справочника в карточке: код — для правки, название — для показа. */
+export interface DictionaryRef {
+  code: string;
+  name: string;
+}
+
 export interface ProjectDetail extends ProjectCard {
   description: string | null;
-  direction: string | null;
-  region: string | null;
-  organizations: { id: string; name: string; role: OrganizationRole; is_center: boolean }[];
+  direction: DictionaryRef | null;
+  region: DictionaryRef | null;
+  organizations: {
+    id: string;
+    name: string;
+    role: OrganizationRole;
+    is_center: boolean;
+    /** Версия роли: смена и удаление — по версии, которую видел человек. */
+    version: number;
+  }[];
   milestone_list: MilestoneRow[];
   subproject_list: ProjectCard[];
   task_list: {

@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from datetime import date, timedelta
 
-from app.domain.dictionaries import ProjectStatus
+from app.domain.dictionaries import OrganizationRole, ProjectStatus
 from app.domain.errors import RuleViolationError
 
 MIN_READINESS = 0
@@ -22,6 +22,10 @@ MAX_READINESS = 100
 
 TITLE_MAX_LENGTH = 300
 """Как у столбца `projects.title`: длиннее база не примет, и лучше сказать об этом словами."""
+
+DESCRIPTION_MAX_LENGTH = 5000
+"""Описание проекта — несколько абзацев. Длиннее — это уже документ, а документы живут
+вложениями, а не полем карточки."""
 
 IMPEDIMENT_MAX_LENGTH = 500
 """«Что мешает» — одна строка (ТЗ 3.1). Пятьсот знаков — два абзаца: длиннее — это уже
@@ -217,6 +221,33 @@ def validate_program(*, is_multiyear: bool, parent_is_multiyear: bool | None) ->
             "Программа не может входить в другую программу",
             detail="вложенность в ORBITA одноступенчатая: программа → подпроект",
         )
+
+
+def clean_description(text: str | None) -> str | None:
+    """Описание после правки: пустое — описания нет."""
+    value = (text or "").strip()
+    validate_text(value, what="Описание")
+    if len(value) > DESCRIPTION_MAX_LENGTH:
+        raise RuleViolationError(f"Описание длиннее {DESCRIPTION_MAX_LENGTH} символов")
+    return value or None
+
+
+def validate_membership(*, role: OrganizationRole, is_center: bool, lead_taken: bool) -> None:
+    """Роль организации в проекте (ТЗ 3.1).
+
+    Головное ведомство у проекта одно: на нём держится «зависит от чужих» (ТЗ 4), и две
+    строки с этой ролью сделали бы непонятным, чьё молчание держит проект. Центр головным
+    ведомством не бывает — он не ведомство, а учреждённая агентством компания (CONTEXT).
+    """
+    if role is not OrganizationRole.LEAD_AGENCY:
+        return
+    if is_center:
+        raise RuleViolationError(
+            "Центр не бывает головным ведомством",
+            detail="Центр — учреждённая агентством компания, а не ведомство",
+        )
+    if lead_taken:
+        raise RuleViolationError("Головное ведомство в проекте уже есть — оно одно")
 
 
 def clean_impediment(text: str) -> str | None:

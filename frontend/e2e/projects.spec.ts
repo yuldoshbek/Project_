@@ -137,8 +137,9 @@ test('перенос на паузу — только с причиной', asyn
   ).toBeVisible();
 });
 
-// Карточка с организациями — экран на утверждение: правка ложится во временный слой
-// вкладки (`draft.ts`), база не меняется.
+// Карточка с организациями — через настоящий API. Роль Центра, поставленная сценарием,
+// в конце снимается крестиком: база возвращается как была, и второй прогон начинается с
+// той же картины.
 for (const size of [
   { name: 'laptop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
@@ -166,5 +167,20 @@ for (const size of [
     await organizations.scrollIntoViewIfNeeded();
     await noOverflow(page);
     await page.screenshot({ path: `${REPORT_DIR}/projects-card-orgs-${size.name}-light.png` });
+
+    // Роль записана в базу: после перезагрузки она на месте.
+    await page.reload();
+    await page
+      .getByRole('button', { name: /Совместная программа наблюдения/ })
+      .first()
+      .click();
+    const again = page.getByRole('dialog').locator('section').filter({ hasText: 'Кто заказчик' });
+    await expect(
+      again.getByRole('combobox', { name: /Роль: Центр космического мониторинга/ }),
+    ).toHaveValue('executor');
+
+    // Вернуть как было.
+    await again.getByRole('button', { name: /Убрать: Центр космического мониторинга/ }).click();
+    await expect(again.getByRole('button', { name: 'исполнитель', exact: true })).toBeVisible();
   });
 }

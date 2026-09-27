@@ -25,6 +25,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,14 +33,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.attention import LADDER, Attention, Ladder, Row
 from app.domain.clock import local_date
 from app.domain.decisions import DecisionTarget
-from app.domain.dictionaries import ProjectStatus, localized_name
-from app.domain.errors import ConflictError, NotFoundError, RuleViolationError, check_version
+from app.domain.dictionaries import OrganizationRole, ProjectStatus, localized_name
+from app.domain.errors import (
+    STALE_VERSION_MESSAGE,
+    ConflictError,
+    NotFoundError,
+    RuleViolationError,
+    StaleVersionError,
+    check_version,
+)
 from app.domain.projects import (
+    clean_description,
     clean_impediment,
     default_due_on,
     template_dates,
     validate_dates,
     validate_horizon,
+    validate_membership,
     validate_nesting,
     validate_program,
     validate_status_reason,
@@ -47,7 +57,7 @@ from app.domain.projects import (
 )
 from app.repos import projects as read_model
 from app.repos import pult as pult_model
-from app.repos.models import Milestone, Project, User
+from app.repos.models import Milestone, Organization, Project, ProjectOrganization, User
 from app.repos.projects import Names, ProjectRow
 from app.services import metrics
 from app.services.codes import add_with_code, next_code
@@ -175,6 +185,13 @@ class OrganizationView:
     name: str
     role: str
     is_center: bool
+    version: int
+
+
+@dataclass(frozen=True, slots=True)
+class DictionaryRef:
+    code: str
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,8 +221,8 @@ class TaskView:
 class DetailView:
     card: CardView
     description: str | None
-    direction: str | None
-    region: str | None
+    direction: DictionaryRef | None
+    region: DictionaryRef | None
     organizations: list[OrganizationView]
     milestones: list[MilestoneView]
     subprojects: list[CardView]
@@ -434,10 +451,24 @@ async def detail(
     return DetailView(
         card=_card(row, context),
         description=row.description,
-        direction=_name(row.direction, locale),
-        region=_name(row.region, locale),
+        direction=(
+            DictionaryRef(code=row.direction_code, name=_name(row.direction, locale) or "")
+            if row.direction_code
+            else None
+        ),
+        region=(
+            DictionaryRef(code=row.region_code, name=_name(row.region, locale) or "")
+            if row.region_code
+            else None
+        ),
         organizations=[
-            OrganizationView(id=org.id, name=org.name, role=org.role, is_center=org.is_center)
+            OrganizationView(
+                id=org.id,
+                name=org.name,
+                role=org.role,
+                is_center=org.is_center,
+                version=org.version,
+            )
             for org in organizations
         ],
         milestones=[
@@ -756,4 +787,143 @@ async def apply_dates(
         targets.append((target, change.due_on))
     for target, due_on in targets:
         target.due_on = due_on
+    await session.flush()
+
+
+# --------------------------------------------------------------------------------------
+# Карточка: сведения и организации
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Details:
+    title: str
+    responsible_id: uuid.UUID | None
+    direction_code: str | None
+    region_code: str | None
+    description: str | None
+    version: int
+
+
+async def _dictionary_id(
+    session: AsyncSession,
+    code: str | None,
+    *,
+    current: uuid.UUID | None,
+    find: Any,
+    what: str,
+) -> uuid.UUID | None:
+    """Запись справочника по коду. Выключенную можно оставить, но нельзя выбрать заново.
+
+    Выключенное направление остаётся у старых проектов своим (ТЗ 3.9): сохранение других
+    сведений не должно требовать его заменить. А выбрать его для проекта заново нельзя —
+    для того и выключали.
+    """
+    if not code:
+        return None
+    entry = await find(session, code)
+    if entry is None or (not entry.is_active and entry.id != current):
+        raise RuleViolationError(f"Такого значения нет среди действующих: {what}", detail=code)
+    identifier: uuid.UUID = entry.id
+    return identifier
+
+
+async def save_details(session: AsyncSession, *, project_id: uuid.UUID, data: Details) -> None:
+    """Сведения проекта: название, ответственный, направление, регион, описание (ТЗ 3.1).
+
+    Ответственный проверяется, только если его сменили: уволенный сотрудник, всё ещё
+    записанный за проектом, не должен мешать поправить описание — его смену помощник
+    сделает отдельно и осознанно.
+    """
+    project = await _project(session, project_id)
+    check_version(expected=data.version, actual=project.version)
+
+    title = validate_title(data.title)
+    if (
+        data.responsible_id is not None
+        and data.responsible_id != project.responsible_person_id
+        and not await read_model.person_is_active(session, data.responsible_id)
+    ):
+        raise NotFoundError("Ответственный не найден среди действующих сотрудников")
+    direction_id = await _dictionary_id(
+        session,
+        data.direction_code,
+        current=project.direction_id,
+        find=read_model.direction_by_code,
+        what="направление",
+    )
+    region_id = await _dictionary_id(
+        session,
+        data.region_code,
+        current=project.region_id,
+        find=read_model.region_by_code,
+        what="регион",
+    )
+
+    project.title = title
+    project.responsible_person_id = data.responsible_id
+    project.direction_id = direction_id
+    project.region_id = region_id
+    project.description = clean_description(data.description)
+    await session.flush()
+
+
+async def set_organization(
+    session: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    role: OrganizationRole,
+    version: int | None,
+) -> None:
+    """Добавить организацию в проект или сменить её роль (ТЗ 3.1).
+
+    `version = None` — добавление: организации в проекте ещё нет. Если она там уже есть,
+    её добавил кто-то другой, пока человек смотрел на старую карточку, — отказ по версии,
+    а не молчаливая смена чужой роли (инвариант 15). И наоборот: смена роли у организации,
+    которую тем временем убрали, — тот же отказ.
+    """
+    await _project(session, project_id)
+    organization = await session.get(Organization, organization_id)
+    if organization is None:
+        raise NotFoundError("Организация не найдена: её могли удалить из справочника")
+
+    member = await read_model.membership(session, project_id, organization_id)
+    if member is None:
+        if version is not None:
+            raise StaleVersionError(STALE_VERSION_MESSAGE)
+        if not organization.is_active:
+            raise RuleViolationError("Организация выключена в справочнике")
+    else:
+        if version is None:
+            raise StaleVersionError(STALE_VERSION_MESSAGE)
+        check_version(expected=version, actual=member.version)
+
+    lead = await read_model.lead_agency_of(session, project_id)
+    validate_membership(
+        role=role,
+        is_center=organization.is_founded_by_agency,
+        lead_taken=lead is not None and lead != organization_id,
+    )
+
+    if member is None:
+        session.add(
+            ProjectOrganization(
+                project_id=project_id, organization_id=organization_id, role=role.value
+            )
+        )
+    else:
+        member.role = role.value
+    await session.flush()
+
+
+async def remove_organization(
+    session: AsyncSession, *, project_id: uuid.UUID, organization_id: uuid.UUID, version: int
+) -> None:
+    """Убрать организацию из проекта — удалением объекта: журнал запомнит, кто и когда."""
+    member = await read_model.membership(session, project_id, organization_id)
+    if member is None:
+        raise NotFoundError("Этой организации в проекте уже нет")
+    check_version(expected=version, actual=member.version)
+    await session.delete(member)
     await session.flush()

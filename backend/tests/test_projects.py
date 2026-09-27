@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.attention import Attention
@@ -25,6 +25,7 @@ from app.domain.clock import local_date, now_utc
 from app.domain.dictionaries import OrganizationKind, OrganizationRole, ProjectStatus, TaskStatus
 from app.repos.models import (
     AuditLog,
+    Direction,
     LeaderDecision,
     LeaderQuestion,
     Organization,
@@ -32,6 +33,7 @@ from app.repos.models import (
     ProjectOrganization,
     ProjectTypeMilestone,
     ProjectTypeRef,
+    Region,
 )
 from app.services import metrics
 from app.services.codes import add_with_code
@@ -794,5 +796,287 @@ class TestApplyDates:
                     }
                 ]
             },
+        )
+        assert response.status_code == 403
+
+
+async def direction(session: AsyncSession, *, active: bool = True) -> Direction:
+    found = await session.scalar(select(Direction).order_by(Direction.sort_order).limit(1))
+    assert found is not None, "в сидах нет направлений"
+    found.is_active = active
+    await session.flush()
+    return found
+
+
+async def region(session: AsyncSession) -> Region:
+    found = await session.scalar(select(Region).order_by(Region.sort_order).limit(1))
+    assert found is not None, "в сидах нет регионов"
+    return found
+
+
+class TestDetails:
+    async def test_saves_everything_the_card_edits(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        project = await make_project(session, due_on=on(60))
+        person = await make_person(session, "Новый ответственный")
+        where = await direction(session)
+        place = await region(session)
+
+        response = await assistant_api.put(
+            f"{PROJECTS}/{project.id}/details",
+            json={
+                "title": "  Уточнённое название  ",
+                "responsible_id": str(person.id),
+                "direction_code": where.code,
+                "region_code": place.code,
+                "description": "  Что делаем и зачем  ",
+                "version": project.version,
+            },
+        )
+        assert response.status_code == 204, response.text
+
+        body = (await assistant_api.get(f"{PROJECTS}/{project.id}")).json()
+        assert body["title"] == "Уточнённое название"
+        assert body["responsible"]["id"] == str(person.id)
+        assert body["direction"] == {"code": where.code, "name": where.name_ru}
+        assert body["region"] == {"code": place.code, "name": place.name_ru}
+        assert body["description"] == "Что делаем и зачем"
+
+        journal = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.entity_type == "projects",
+                AuditLog.entity_id == project.id,
+                AuditLog.action == "updated",
+            )
+        )
+        assert journal is not None and "title" in journal.changes
+
+    async def test_clearing(self, assistant_api: AsyncClient, session: AsyncSession) -> None:
+        project = await make_project(session, due_on=on(60))
+        project.description = "было"
+        project.direction_id = (await direction(session)).id
+        await session.flush()
+
+        response = await assistant_api.put(
+            f"{PROJECTS}/{project.id}/details",
+            json={"title": project.title, "description": "   ", "version": project.version},
+        )
+        assert response.status_code == 204
+        body = (await assistant_api.get(f"{PROJECTS}/{project.id}")).json()
+        assert body["description"] is None
+        assert body["direction"] is None
+        assert body["responsible"] is None
+
+    async def test_inactive_direction_stays_but_is_not_chosen_again(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        old = await direction(session, active=False)
+        keeps = await make_project(session, due_on=on(60))
+        keeps.direction_id = old.id
+        fresh = await make_project(session, due_on=on(60))
+        await session.flush()
+        payload = {"direction_code": old.code, "description": "правка"}
+
+        kept = await assistant_api.put(
+            f"{PROJECTS}/{keeps.id}/details",
+            json={**payload, "title": keeps.title, "version": keeps.version},
+        )
+        assert kept.status_code == 204
+        chosen = await assistant_api.put(
+            f"{PROJECTS}/{fresh.id}/details",
+            json={**payload, "title": fresh.title, "version": fresh.version},
+        )
+        assert chosen.status_code == 422
+
+    @pytest.mark.parametrize(
+        ("patch", "status_code"),
+        [
+            ({"title": "  "}, 422),
+            ({"direction_code": "no_such_direction"}, 422),
+            ({"region_code": "no_such_region"}, 422),
+            ({"responsible_id": "00000000-0000-0000-0000-000000000000"}, 404),
+            ({"description": "текст" + chr(0)}, 422),
+        ],
+    )
+    async def test_refusals(
+        self,
+        assistant_api: AsyncClient,
+        session: AsyncSession,
+        patch: dict[str, str],
+        status_code: int,
+    ) -> None:
+        project = await make_project(session, due_on=on(60))
+        response = await assistant_api.put(
+            f"{PROJECTS}/{project.id}/details",
+            json={"title": project.title, "version": project.version, **patch},
+        )
+        assert response.status_code == status_code, response.text
+
+    async def test_stale_version(self, assistant_api: AsyncClient, session: AsyncSession) -> None:
+        project = await make_project(session, due_on=on(60))
+        seen = project.version
+        project.impediment = "правка в соседней вкладке"
+        await session.flush()
+
+        response = await assistant_api.put(
+            f"{PROJECTS}/{project.id}/details",
+            json={"title": "Поверх чужой правки", "version": seen},
+        )
+        assert response.status_code == 409
+        assert response.json()["type"].endswith("stale-data")
+
+    async def test_leader_cannot(self, leader_api: AsyncClient, session: AsyncSession) -> None:
+        project = await make_project(session, due_on=on(60))
+        response = await leader_api.put(
+            f"{PROJECTS}/{project.id}/details",
+            json={"title": "Руководитель правит", "version": project.version},
+        )
+        assert response.status_code == 403
+
+
+class TestOrganizations:
+    async def test_center_in_one_request_and_on_the_board(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        project = await make_project(session, due_on=on(60))
+        ours = await center(session)
+
+        response = await assistant_api.put(
+            f"{PROJECTS}/{project.id}/organizations/{ours.id}", json={"role": "executor"}
+        )
+        assert response.status_code == 204, response.text
+
+        body = (await assistant_api.get(f"{PROJECTS}/{project.id}")).json()
+        assert body["organizations"][0]["id"] == str(ours.id)
+        assert body["organizations"][0]["role"] == "executor"
+        assert body["organizations"][0]["version"] >= 1
+        assert card_of((await assistant_api.get(PROJECTS)).json(), project)["center_role"] == (
+            "executor"
+        )
+
+    async def test_role_change_with_version(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        project = await make_project(session, due_on=on(60))
+        ours = await center(session)
+        url = f"{PROJECTS}/{project.id}/organizations/{ours.id}"
+        await assistant_api.put(url, json={"role": "executor"})
+        version = (await assistant_api.get(f"{PROJECTS}/{project.id}")).json()["organizations"][0][
+            "version"
+        ]
+
+        changed = await assistant_api.put(url, json={"role": "customer", "version": version})
+        assert changed.status_code == 204
+        stale = await assistant_api.put(url, json={"role": "co_executor", "version": version})
+        assert stale.status_code == 409
+        # «Добавить» по организации, которая уже в проекте, — тоже устаревшая картина.
+        again = await assistant_api.put(url, json={"role": "co_executor"})
+        assert again.status_code == 409
+
+    async def test_one_lead_agency_and_never_the_center(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        project = await make_project(session, due_on=on(60))
+        first, second = await partner(session), await partner(session)
+        base = f"{PROJECTS}/{project.id}/organizations"
+
+        assert (
+            await assistant_api.put(f"{base}/{first.id}", json={"role": "lead_agency"})
+        ).status_code == 204
+        assert (
+            await assistant_api.put(f"{base}/{second.id}", json={"role": "lead_agency"})
+        ).status_code == 422
+        assert (
+            await assistant_api.put(
+                f"{base}/{(await center(session)).id}", json={"role": "lead_agency"}
+            )
+        ).status_code == 422
+
+    async def test_outside_lead_makes_silence_blocked_by_others(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Роль, внесённая в карточке, сразу меняет ступень — тем же правилом, что Пульт."""
+        project = await make_project(session, due_on=on(90))
+        await session.execute(
+            update(Project)
+            .where(Project.id == project.id)
+            .values(created_at=now_utc() - timedelta(days=30), updated_at=None)
+        )
+        before = card_of((await assistant_api.get(PROJECTS)).json(), project)
+        assert before["step"] == "silent"
+
+        await assistant_api.put(
+            f"{PROJECTS}/{project.id}/organizations/{(await partner(session)).id}",
+            json={"role": "lead_agency"},
+        )
+        after = card_of((await assistant_api.get(PROJECTS)).json(), project)
+        assert after["step"] == "blocked_by_others"
+        assert after["lead_outside"] is True
+
+    async def test_remove(self, assistant_api: AsyncClient, session: AsyncSession) -> None:
+        project = await make_project(session, due_on=on(60))
+        ours = await center(session)
+        url = f"{PROJECTS}/{project.id}/organizations/{ours.id}"
+        await assistant_api.put(url, json={"role": "executor"})
+        version = (await assistant_api.get(f"{PROJECTS}/{project.id}")).json()["organizations"][0][
+            "version"
+        ]
+
+        assert (await assistant_api.delete(url, params={"version": version + 1})).status_code == 409
+        assert (await assistant_api.delete(url, params={"version": version})).status_code == 204
+        assert (await assistant_api.delete(url, params={"version": version})).status_code == 404
+        body = (await assistant_api.get(f"{PROJECTS}/{project.id}")).json()
+        assert body["organizations"] == []
+
+        deleted = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.entity_type == "project_organizations", AuditLog.action == "deleted"
+            )
+        )
+        assert deleted is not None
+
+    async def test_leader_cannot(self, leader_api: AsyncClient, session: AsyncSession) -> None:
+        project = await make_project(session, due_on=on(60))
+        response = await leader_api.put(
+            f"{PROJECTS}/{project.id}/organizations/{(await center(session)).id}",
+            json={"role": "executor"},
+        )
+        assert response.status_code == 403
+
+
+class TestNewOrganization:
+    async def test_create_and_refuse_a_twin(self, assistant_api: AsyncClient) -> None:
+        created = await assistant_api.post(
+            "/api/v1/organizations",
+            json={"name": "  Министерство здравоохранения  ", "kind": "ministry"},
+        )
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["name"] == "Министерство здравоохранения"
+        assert body["kind"] == "ministry"
+        assert body["is_founded_by_agency"] is False
+
+        twin = await assistant_api.post(
+            "/api/v1/organizations",
+            json={"name": "министерство ЗДРАВООХРАНЕНИЯ", "kind": "agency"},
+        )
+        assert twin.status_code == 409
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"name": "   ", "kind": "ministry"},
+            {"name": "Ведомство" + chr(0), "kind": "agency"},
+            {"name": "Ведомство", "kind": "unknown"},
+        ],
+    )
+    async def test_refusals(self, assistant_api: AsyncClient, payload: dict[str, str]) -> None:
+        response = await assistant_api.post("/api/v1/organizations", json=payload)
+        assert response.status_code == 422, response.text
+
+    async def test_leader_cannot(self, leader_api: AsyncClient) -> None:
+        response = await leader_api.post(
+            "/api/v1/organizations", json={"name": "Ведомство", "kind": "agency"}
         )
         assert response.status_code == 403

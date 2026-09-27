@@ -24,6 +24,11 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from app.domain.errors import RuleViolationError
+
+ORGANIZATION_NAME_MAX_LENGTH = 300
+"""Как у столбца `organizations.name`."""
+
 
 class ProjectStatus(StrEnum):
     """Статусы проекта (ТЗ 3.1). Их ровно четыре.
@@ -130,3 +135,22 @@ def localized_name(locale: str, *, ru: str, uz_cyrl: str, uz_latn: str) -> str:
     """
     chosen = {"uz_cyrl": uz_cyrl, "uz_latn": uz_latn}.get(locale, ru)
     return chosen or ru
+
+
+def validate_organization_name(name: str) -> str:
+    """Название новой организации: без пробелов по краям, непустое, без нулевого символа.
+
+    Название — ключ организации (`Organization.name` уникально): по нему её узнают и
+    помощник, и привоз таблиц Ижро. Поэтому пробелы по краям срезаются здесь, а не
+    остаются второй «той же» организацией.
+    """
+    if "\x00" in name:
+        raise RuleViolationError("В названии организации есть недопустимый символ")
+    value = name.strip()
+    if not value:
+        raise RuleViolationError("Напишите название организации")
+    if len(value) > ORGANIZATION_NAME_MAX_LENGTH:
+        raise RuleViolationError(
+            f"Название организации длиннее {ORGANIZATION_NAME_MAX_LENGTH} символов"
+        )
+    return value

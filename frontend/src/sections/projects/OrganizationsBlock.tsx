@@ -47,8 +47,6 @@ const MATCHES = 6;
 const SELECT =
   'min-h-touch rounded-[var(--radius)] border border-line-strong bg-card px-2 text-sm text-ink';
 
-type Membership = ProjectDetail['organizations'][number];
-
 function normalized(value: string): string {
   return value.trim().toLocaleLowerCase('ru');
 }
@@ -73,18 +71,9 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
   const busy = setOrganization.isPending || remove.isPending || create.isPending;
   const failed = [setOrganization, remove, create].find((mutation) => mutation.isError);
 
-  /** Строка проекта → запись справочника: роль меняется у той же организации. */
-  const refOf = (member: Membership): OrganizationRef =>
-    options.find((org) => org.id === member.id) ?? {
-      id: member.id,
-      name: member.name,
-      short_name: null,
-      kind: 'agency',
-      is_founded_by_agency: member.is_center,
-    };
-
-  const assign = (organization: OrganizationRef, role: OrganizationRole) =>
-    setOrganization.mutate({ project, organization, role });
+  /** Роль — с версией, которую видел человек; у новой организации версии нет. */
+  const assign = (organizationId: string, role: OrganizationRole, version: number | null) =>
+    setOrganization.mutate({ projectId: project.id, organizationId, role, version });
 
   return (
     <Block title={t('projects.orgs.title')} question={t('projects.orgs.question')}>
@@ -119,7 +108,7 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
                     value={member.role}
                     disabled={busy}
                     onChange={(event) =>
-                      assign(refOf(member), event.target.value as OrganizationRole)
+                      assign(member.id, event.target.value as OrganizationRole, member.version)
                     }
                     className={SELECT}
                   >
@@ -141,7 +130,13 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
                     size="icon"
                     disabled={busy}
                     aria-label={t('projects.orgs.remove', { name: member.name })}
-                    onClick={() => remove.mutate({ project, organizationId: member.id })}
+                    onClick={() =>
+                      remove.mutate({
+                        projectId: project.id,
+                        organizationId: member.id,
+                        version: member.version,
+                      })
+                    }
                   >
                     <X className="size-4" aria-hidden="true" />
                   </Button>
@@ -164,7 +159,12 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-sm text-ink">{t('projects.orgs.centerQuick')}</span>
           {CENTER_ROLES.map((role) => (
-            <Button key={role} size="small" disabled={busy} onClick={() => assign(center, role)}>
+            <Button
+              key={role}
+              size="small"
+              disabled={busy}
+              onClick={() => assign(center.id, role, null)}
+            >
               {t(`projects.roles.${role}`)}
             </Button>
           ))}
@@ -180,7 +180,7 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
             busy={busy}
             onAdd={(organization, role) =>
               setOrganization.mutate(
-                { project, organization, role },
+                { projectId: project.id, organizationId: organization.id, role, version: null },
                 { onSuccess: () => setAdding(false) },
               )
             }
@@ -188,7 +188,12 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
               create.mutate(input, {
                 onSuccess: (organization) =>
                   setOrganization.mutate(
-                    { project, organization, role },
+                    {
+                      projectId: project.id,
+                      organizationId: organization.id,
+                      role,
+                      version: null,
+                    },
                     { onSuccess: () => setAdding(false) },
                   ),
               })
@@ -216,10 +221,6 @@ export function OrganizationsBlock({ project, canEdit }: OrganizationsBlockProps
         <div className="mt-3">
           <Failure detail={describeError(failed.error)} />
         </div>
-      ) : null}
-
-      {canEdit ? (
-        <p className="mt-3 text-xs text-ink-muted">{t('projects.orgs.draftNote')}</p>
       ) : null}
     </Block>
   );
