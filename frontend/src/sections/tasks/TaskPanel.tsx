@@ -27,7 +27,7 @@ import { Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
 
 import type { ProjectRef, Ref, TaskDetail, TaskType } from './model';
-import { dueText, projectLabel } from './text';
+import { dueText, originText, projectLabel } from './text';
 import { useChecklist, useEditTask, useTask, useTaskStatus } from './useTasks';
 
 interface TaskPanelProps {
@@ -60,7 +60,7 @@ function Panel({
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
         <p className="numeric text-xs text-ink-muted">
-          {[task.code, task.type?.name, t(`tasks.statuses.${task.status}`)]
+          {[task.code, originText(t, task), task.type?.name, t(`tasks.statuses.${task.status}`)]
             .filter(Boolean)
             .join(' · ')}
         </p>

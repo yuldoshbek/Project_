@@ -80,6 +80,8 @@ export interface TaskCard {
   checklist: { done: number; total: number };
   completed_on: string | null;
   version: number;
+  /** Пометка «просьба руководителя»: задачу завёл Захват из его просьбы (V17). */
+  is_request: boolean;
 }
 
 export interface ChecklistItem {

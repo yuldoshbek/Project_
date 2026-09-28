@@ -77,6 +77,8 @@ class TaskCard(BaseModel):
     checklist: Progress
     completed_on: date | None
     version: int
+    is_request: bool
+    """Пометка «просьба руководителя»: задачу завёл Захват из его просьбы (V17)."""
 
 
 class LoadRow(BaseModel):
@@ -137,6 +139,7 @@ def _card_fields(card: service.CardView) -> dict[str, object]:
         "checklist": Progress(done=card.checklist_done, total=card.checklist_total),
         "completed_on": card.completed_on,
         "version": card.version,
+        "is_request": card.is_request,
     }
 
 

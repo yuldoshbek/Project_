@@ -42,6 +42,7 @@ export function task(overrides: Partial<TaskCard> & Pick<TaskCard, 'id' | 'title
     checklist: { done: 0, total: 0 },
     completed_on: null,
     version: 1,
+    is_request: false,
     ...overrides,
   };
 }
@@ -58,6 +59,8 @@ export const ITEMS: TaskCard[] = [
     step: 'overdue',
     deviation: 3,
     project: { id: 'pr-drought', code: 'PRJ-2026-003', title: 'Цикл мониторинга: засуха-2026' },
+    // Как в вымышленной базе: справку просил руководитель, её завёл Захват.
+    is_request: true,
   }),
   task({
     id: 't-2',

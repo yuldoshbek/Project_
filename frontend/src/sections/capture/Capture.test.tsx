@@ -1,10 +1,11 @@
 /**
- * Захват: тип одним касанием, разбор фразы у задачи, запись — задача настоящим API
- * «Задач», остальное во входящие вымышленного сервера; руководителю — два своих типа; фото
- * названо, когда заработает; недавние показывают, куда ушла запись.
+ * Захват: тип одним касанием, разбор фразы у задачи и просьбы, запись — `POST
+ * /api/v1/captures` только с полями типа; руководителю — два своих типа; фото названо, когда
+ * заработает; недавние показывают, куда ушла запись.
  *
- * Разбор фразы считает сервер (`backend/tests/test_capture.py`); здесь — что экран делает
- * с ответом и что уходит на сервер. Сеть подменена на уровне `fetch`.
+ * Разбор фразы считает сервер (`backend/tests/test_capture.py`), куда уходит запись и кто
+ * что пишет — тоже (`backend/tests/test_captures.py`); здесь — что экран делает с ответом и
+ * что уходит на сервер. Сеть подменена на уровне `fetch`.
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -20,13 +21,12 @@ import {
 import i18next from 'i18next';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { detailOf, task, view } from '@/sections/tasks/test-data';
+import { view } from '@/sections/tasks/test-data';
 import type { CurrentUser } from '@/shared/api/orbita';
 import { setViewport } from '@/test-setup';
 
 import { CaptureForm } from './CaptureForm';
-import { demoCaptures } from './demo';
-import type { Capture } from './model';
+import type { Capture, NewCapture, SavedCapture } from './model';
 import { agoText, metaText } from './text';
 
 const NOW = new Date('2026-09-28T07:00:00Z');
@@ -51,6 +51,27 @@ function reply(status: number, body?: unknown): Response {
   } as unknown as Response;
 }
 
+const EARLIER: Capture[] = [
+  {
+    id: 'cp-1',
+    kind: 'letter',
+    text: 'Минэкологии просит данные мониторинга засухи за август',
+    due_on: '2026-10-10',
+    author: 'assistant',
+    created_at: '2026-09-28T05:00:00Z',
+    destination: 'inbox',
+  },
+  {
+    id: 'cp-2',
+    kind: 'idea',
+    text: 'Спутниковый мониторинг пастбищ',
+    due_on: null,
+    author: 'leader',
+    created_at: '2026-09-27T05:00:00Z',
+    destination: 'inbox',
+  },
+];
+
 interface Call {
   method: string;
   path: string;
@@ -58,12 +79,15 @@ interface Call {
 }
 
 interface Options {
-  /** Ответ на заведение задачи: по умолчанию — заведена. */
-  createTask?: () => Promise<Response>;
+  /** Свой ответ на запись; `null` — ответ по умолчанию. */
+  save?: (body: NewCapture) => Promise<Response> | null;
+  demo?: boolean;
 }
 
+/** Сервер Захвата в памяти: недавние, запись по правилу V17, разбор фразы. */
 function serve(role: 'leader' | 'assistant' = 'assistant', options: Options = {}) {
   const calls: Call[] = [];
+  const recent = [...EARLIER];
   vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
@@ -71,6 +95,11 @@ function serve(role: 'leader' | 'assistant' = 'assistant', options: Options = {}
     calls.push({ method, path, body });
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
     if (method === 'GET' && path === '/api/v1/tasks') return Promise.resolve(reply(200, view()));
+    if (method === 'GET' && path === '/api/v1/captures') {
+      return Promise.resolve(
+        reply(200, { as_of: NOW.toISOString(), recent, is_demo: options.demo ?? false }),
+      );
+    }
     if (method === 'POST' && path === '/api/v1/tasks/parse') {
       const text = String(body.text);
       const friday = text.includes('к пятнице');
@@ -84,14 +113,33 @@ function serve(role: 'leader' | 'assistant' = 'assistant', options: Options = {}
         }),
       );
     }
-    if (method === 'POST' && path === '/api/v1/tasks') {
-      if (options.createTask) return options.createTask();
-      const fresh = task({ id: 't-new', title: body.title, code: 'TSK-2026-0999' });
-      return Promise.resolve(reply(201, detailOf(fresh)));
+    if (method === 'POST' && path === '/api/v1/captures') {
+      const own = options.save?.(body);
+      if (own) return own;
+      const input = body as NewCapture;
+      const toTasks = input.kind === 'task' || input.kind === 'request';
+      const saved: SavedCapture = {
+        id: `cp-new-${calls.length}`,
+        kind: input.kind,
+        text: input.text,
+        due_on: input.due_on ?? null,
+        author: role,
+        created_at: NOW.toISOString(),
+        destination: toTasks ? 'tasks' : 'inbox',
+        task_code: toTasks ? 'TSK-2026-0999' : null,
+      };
+      recent.unshift(saved);
+      return Promise.resolve(reply(201, saved));
     }
     return Promise.resolve(reply(404, { detail: `нет подмены ${path}` }));
   });
   return calls;
+}
+
+function posted(calls: Call[]): unknown[] {
+  return calls
+    .filter((call) => call.method === 'POST' && call.path === '/api/v1/captures')
+    .map((call) => call.body);
 }
 
 function renderCapture() {
@@ -103,10 +151,13 @@ function renderCapture() {
   );
 }
 
+function recentList() {
+  return screen.getByRole('heading', { name: 'Недавние записи' }).closest('section')!;
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  demoCaptures.reset();
   localStorage.clear();
 });
 afterEach(() => {
@@ -139,25 +190,27 @@ describe('Захват', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Задача заведена: TSK-2026-0999 — она в «Задачах».',
     );
-    expect(calls).toContainEqual({
-      method: 'POST',
-      path: '/api/v1/tasks',
-      body: {
-        title: 'справка по паводкам для Кабмина',
-        type_code: 'analytical_note',
+    expect(posted(calls)).toEqual([
+      {
+        kind: 'task',
+        text: 'справка по паводкам для Кабмина',
         due_on: '2026-10-02',
         assignee_id: 'p-karimov',
+        type_code: 'analytical_note',
         project_id: null,
       },
-    });
+    ]);
     // Поле очищено и снова в фокусе: следующее дело — сразу.
     expect(screen.getByRole('textbox', { name: 'Текст записи' })).toHaveValue('');
     expect(screen.getByRole('textbox', { name: 'Текст записи' })).toHaveFocus();
-    const recent = screen.getByRole('heading', { name: 'Недавние записи' }).closest('section')!;
-    expect(within(recent).getByText('справка по паводкам для Кабмина')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(recentList()).getAllByRole('listitem')[0]!).toHaveTextContent(
+        'справка по паводкам для Кабмина',
+      ),
+    );
   });
 
-  it('идея — во входящие, без разбора и без записи в «Задачи»', async () => {
+  it('идея — во входящие, без разбора и без полей', async () => {
     const calls = serve();
     renderCapture();
     fireEvent.click(await screen.findByLabelText('Идея'));
@@ -168,17 +221,18 @@ describe('Захват', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Записать' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Идея во входящих.');
-    // Справочник «Задач» мог загрузиться, пока был выбран тип «Задача»; записи и разбора — нет.
-    expect(calls.filter((call) => call.method === 'POST')).toEqual([]);
+    expect(calls.some((call) => call.path === '/api/v1/tasks/parse')).toBe(false);
+    expect(posted(calls)).toEqual([{ kind: 'idea', text: 'Мониторинг пастбищ для Минсельхоза' }]);
 
-    const recent = screen.getByRole('heading', { name: 'Недавние записи' }).closest('section')!;
-    const first = within(recent).getAllByRole('listitem')[0]!;
-    expect(first).toHaveTextContent('Мониторинг пастбищ для Минсельхоза');
-    expect(first).toHaveTextContent('во входящих до «Идей и карт»');
+    await waitFor(() => {
+      const first = within(recentList()).getAllByRole('listitem')[0]!;
+      expect(first).toHaveTextContent('Мониторинг пастбищ для Минсельхоза');
+      expect(first).toHaveTextContent('во входящих до «Идей и карт»');
+    });
   });
 
   it('у письма один срок — срок ответа', async () => {
-    serve();
+    const calls = serve();
     renderCapture();
     fireEvent.click(await screen.findByLabelText('Письмо'));
     fireEvent.change(screen.getByRole('textbox', { name: 'Текст записи' }), {
@@ -187,14 +241,28 @@ describe('Захват', () => {
     await waitFor(() => expect(screen.getByLabelText('Срок ответа')).toHaveValue('2026-10-10'));
     expect(screen.queryByLabelText('Ответственный')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Записать' }));
-    const recent = screen.getByRole('heading', { name: 'Недавние записи' }).closest('section')!;
-    await waitFor(() =>
-      expect(within(recent).getAllByRole('listitem')[0]!).toHaveTextContent('ответ до 10.10.2026'),
+    expect(await screen.findByRole('status')).toHaveTextContent('Письмо во входящих.');
+    expect(posted(calls)).toEqual([
+      {
+        kind: 'letter',
+        text: 'Минэкологии просит данные, ответ до 10 октября',
+        due_on: '2026-10-10',
+      },
+    ]);
+  });
+
+  it('недавние: кто, когда, срок и куда ушло', async () => {
+    serve();
+    renderCapture();
+    const items = await within(await screen.findByRole('list')).findAllByRole('listitem');
+    expect(items[0]).toHaveTextContent(
+      'Помощник · 2 ч назад · ответ до 10.10.2026 · во входящих до «Взаимодействия»',
     );
+    expect(items[1]).toHaveTextContent('Руководитель · вчера · во входящих до «Идей и карт»');
   });
 
   it('руководитель: два своих типа — просьба и идея; по умолчанию идея', async () => {
-    serve('leader');
+    const calls = serve('leader');
     renderCapture();
     const kinds = await screen.findByRole('group', { name: 'Что это' });
     await waitFor(() =>
@@ -211,8 +279,19 @@ describe('Захват', () => {
       target: { value: 'к пятнице справка по паводкам для Кабмина' },
     });
     expect(await screen.findByLabelText('Кому')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Срок')).toHaveValue('2026-10-02'));
     fireEvent.click(screen.getByRole('button', { name: 'Записать' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Просьба записана');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Просьба записана: TSK-2026-0999 — в «Задачах» с пометкой «просьба руководителя».',
+    );
+    expect(posted(calls)).toEqual([
+      {
+        kind: 'request',
+        text: 'справка по паводкам для Кабмина',
+        due_on: '2026-10-02',
+        assignee_id: null,
+      },
+    ]);
   });
 
   it('тип запоминается: в следующий раз открывается последний', async () => {
@@ -251,9 +330,32 @@ describe('Захват', () => {
     expect(field).toHaveValue('');
   });
 
+  it('Enter до ответа разбора ждёт его: срок и ответственный не теряются', async () => {
+    const calls = serve();
+    renderCapture();
+    const kinds = await screen.findByRole('group', { name: 'Что это' });
+    await waitFor(() => expect(within(kinds).getByLabelText('Задача')).toBeChecked());
+    const field = screen.getByRole('textbox', { name: 'Текст записи' });
+    fireEvent.change(field, { target: { value: 'к пятнице справка по паводкам, Каримов' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Задача заведена');
+    expect(posted(calls)).toEqual([
+      {
+        kind: 'task',
+        text: 'справка по паводкам',
+        due_on: '2026-10-02',
+        assignee_id: 'p-karimov',
+        type_code: 'analytical_note',
+        project_id: null,
+      },
+    ]);
+  });
+
   it('ошибка прошлой записи не остаётся рядом с успехом следующей', async () => {
     serve('assistant', {
-      createTask: () => Promise.resolve(reply(503, { detail: 'сервер недоступен' })),
+      save: (body) =>
+        body.kind === 'task' ? Promise.resolve(reply(503, { detail: 'сервер недоступен' })) : null,
     });
     renderCapture();
     const kinds = await screen.findByRole('group', { name: 'Что это' });
@@ -274,7 +376,7 @@ describe('Захват', () => {
   it('набранное, пока запись шла по сети, не стирается', async () => {
     let answer: ((response: Response) => void) | null = null;
     serve('assistant', {
-      createTask: () =>
+      save: () =>
         new Promise((resolve) => {
           answer = resolve;
         }),
@@ -289,18 +391,33 @@ describe('Захват', () => {
     await waitFor(() => expect(answer).not.toBeNull());
 
     fireEvent.change(field, { target: { value: 'Следующее дело' } });
-    answer!(reply(201, detailOf(task({ id: 't-new', title: 'Позвонить в Минфин' }))));
+    const saved: SavedCapture = {
+      id: 'cp-new',
+      kind: 'task',
+      text: 'Позвонить в Минфин',
+      due_on: null,
+      author: 'assistant',
+      created_at: NOW.toISOString(),
+      destination: 'tasks',
+      task_code: 'TSK-2026-0999',
+    };
+    answer!(reply(201, saved));
     expect(await screen.findByRole('status')).toHaveTextContent('Задача заведена');
     expect(field).toHaveValue('Следующее дело');
   });
 
-  it('экран на вымышленных данных так и помечен — и сказано, что живёт до перезагрузки', async () => {
-    serve();
+  it('вымышленные данные помечены видимой строкой, настоящие — нет', async () => {
+    serve('assistant', { demo: true });
     renderCapture();
     expect(await screen.findByText('Вымышленные данные')).toBeInTheDocument();
-    expect(
-      screen.getByText(/недавние записи выдуманы и живут до перезагрузки/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/записи сохраняются, но в рабочую систему не попадают/)).toBeVisible();
+
+    cleanup();
+    vi.restoreAllMocks();
+    serve();
+    renderCapture();
+    await screen.findByRole('heading', { name: 'Недавние записи' });
+    expect(screen.queryByText('Вымышленные данные')).not.toBeInTheDocument();
   });
 
   it('фото названо честно: кнопка есть и говорит, когда заработает', async () => {
@@ -332,19 +449,22 @@ describe('подписи недавних записей', () => {
     expect(agoText(t, '2026-09-28T02:00:00Z', '2026-09-28T07:00:00Z')).toBe('5 ч назад');
   });
 
-  it('просьба на вымышленных данных — «встанет в «Задачи»», а не «в «Задачах»»', () => {
+  it('задача и просьба — «в «Задачах»», срок мероприятия — просто дата', () => {
     const request: Capture = {
       id: 'cp-1',
       kind: 'request',
       text: 'Справка по паводкам',
-      due_on: null,
+      due_on: '2026-10-02',
       author: 'leader',
       created_at: '2026-09-28T06:00:00Z',
       destination: 'tasks',
     };
     const asOf = '2026-09-28T07:00:00Z';
-    expect(metaText(t, request, asOf, true)).toContain('встанет в «Задачи» после утверждения');
-    expect(metaText(t, request, asOf, false)).toContain('в «Задачах»');
-    expect(metaText(t, { ...request, kind: 'task' }, asOf, true)).toContain('в «Задачах»');
+    expect(metaText(t, request, asOf)).toBe(
+      'Руководитель · 1 ч назад · срок 02.10.2026 · в «Задачах»',
+    );
+    expect(
+      metaText(t, { ...request, kind: 'event', destination: 'inbox', author: 'assistant' }, asOf),
+    ).toBe('Помощник · 1 ч назад · 02.10.2026 · во входящих до «Докладов и мероприятий»');
   });
 });

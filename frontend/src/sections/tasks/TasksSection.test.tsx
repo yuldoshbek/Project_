@@ -114,6 +114,9 @@ describe('Задачи', () => {
     expect(await screen.findByText('Вымышленные данные')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Просрочено' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Без срока' })).toBeInTheDocument();
+    // Происхождение видно на данных (инвариант 6): задача из просьбы руководителя помечена.
+    const note = screen.getByRole('button', { name: /Аналитическая справка по засухе/ });
+    expect(note).toHaveTextContent('просьба руководителя · Рахимов Ш.');
     // Готовые свёрнуты: список дел — про то, что делать.
     expect(screen.queryByText('Разработка ТЗ спутниковой группировки')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Показать готовые и отменённые: 1/ }));

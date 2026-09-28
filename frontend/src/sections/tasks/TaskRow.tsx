@@ -17,7 +17,7 @@ import { formatDate } from '@/shared/time';
 import { Signal } from '@/shared/ui/Signal';
 
 import { TERMINAL, type TaskCard } from './model';
-import { dueText, linkText } from './text';
+import { dueText, linkText, originText } from './text';
 
 interface TaskRowProps {
   task: TaskCard;
@@ -29,7 +29,11 @@ export function TaskRow({ task, onOpen, selected = false }: TaskRowProps) {
   const { t } = useTranslation();
   const closed = TERMINAL.has(task.status);
   const link = linkText(t, task);
-  const meta = [task.assignee?.name ?? t('tasks.card.noAssignee'), link].filter(Boolean);
+  const meta = [
+    originText(t, task),
+    task.assignee?.name ?? t('tasks.card.noAssignee'),
+    link,
+  ].filter(Boolean);
 
   return (
     <li>

@@ -21,6 +21,11 @@ export function dueText(t: TFunction, task: Pick<TaskCard, 'due_on' | 'original_
   return t('tasks.card.due', { date: formatDate(task.due_on) });
 }
 
+/** Откуда задача, если это важно для решения: из просьбы руководителя (V17). */
+export function originText(t: TFunction, task: Pick<TaskCard, 'is_request'>): string | null {
+  return task.is_request ? t('tasks.card.request') : null;
+}
+
 /** К чему относится задача: номер проекта или поручение. Пусто — без привязки. */
 export function linkText(t: TFunction, task: Pick<TaskCard, 'project' | 'ijro'>): string | null {
   if (task.project) return task.project.code;

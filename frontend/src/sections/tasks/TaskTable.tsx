@@ -14,7 +14,7 @@ import { formatDate } from '@/shared/time';
 import { Signal } from '@/shared/ui/Signal';
 
 import type { TaskCard } from './model';
-import { linkText } from './text';
+import { linkText, originText } from './text';
 
 type SortKey = 'code' | 'title' | 'assignee' | 'due_on';
 
@@ -101,7 +101,9 @@ export function TaskTable({ items, onOpen }: { items: TaskCard[]; onOpen: (id: s
                   {task.title}
                 </button>
                 <span className="block text-xs text-ink-muted">
-                  {[task.type?.name, linkText(t, task)].filter(Boolean).join(' · ')}
+                  {[originText(t, task), task.type?.name, linkText(t, task)]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </span>
               </td>
               <td className="px-3 py-2 text-xs text-ink">

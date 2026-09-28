@@ -14,7 +14,18 @@ from datetime import date
 
 import pytest
 
-from app.domain.capture import ParsedLine, parse_line
+from app.domain.capture import (
+    LEADER_KINDS,
+    TEXT_MAX_LENGTH,
+    CaptureKind,
+    ParsedLine,
+    check_author,
+    check_fields,
+    clean_text,
+    parse_line,
+)
+from app.domain.errors import PermissionDeniedError, RuleViolationError
+from app.domain.people import Role
 
 TODAY = date(2026, 9, 25)  # пятница
 
@@ -186,3 +197,56 @@ def test_unknown_type_code_is_not_suggested() -> None:
         "согласовать и внести в Кабмин", today=TODAY, people=PEOPLE, type_codes={"approval"}
     )
     assert (result.type_code, result.matched_type) == ("approval", "согласов")
+
+
+class TestCaptureRules:
+    """Правила записи одной кнопкой (допущение V17) — без базы."""
+
+    def test_task_and_request_become_tasks_the_rest_waits_in_the_inbox(self) -> None:
+        assert {kind for kind in CaptureKind if kind.becomes_task} == {
+            CaptureKind.TASK,
+            CaptureKind.REQUEST,
+        }
+
+    @pytest.mark.parametrize("kind", list(CaptureKind))
+    def test_the_assistant_writes_every_kind(self, kind: CaptureKind) -> None:
+        check_author(kind, Role.ASSISTANT)
+
+    @pytest.mark.parametrize("kind", list(CaptureKind))
+    def test_the_leader_writes_his_request_and_idea(self, kind: CaptureKind) -> None:
+        if kind in LEADER_KINDS:
+            check_author(kind, Role.LEADER)
+        else:
+            with pytest.raises(PermissionDeniedError):
+                check_author(kind, Role.LEADER)
+
+    @pytest.mark.parametrize(
+        ("kind", "fields"),
+        [
+            (CaptureKind.TASK, ["due_on", "assignee_id", "type_code", "project_id"]),
+            (CaptureKind.REQUEST, ["due_on", "assignee_id"]),
+            (CaptureKind.IDEA, []),
+            (CaptureKind.LETTER, ["due_on"]),
+            (CaptureKind.EVENT, ["due_on"]),
+        ],
+    )
+    def test_the_fields_the_screen_shows(self, kind: CaptureKind, fields: list[str]) -> None:
+        check_fields(kind, fields)
+
+    @pytest.mark.parametrize(
+        ("kind", "field"),
+        [
+            (CaptureKind.IDEA, "due_on"),
+            (CaptureKind.LETTER, "project_id"),
+            (CaptureKind.REQUEST, "type_code"),
+        ],
+    )
+    def test_a_field_the_kind_lacks_is_refused(self, kind: CaptureKind, field: str) -> None:
+        with pytest.raises(RuleViolationError):
+            check_fields(kind, [field])
+
+    def test_text(self) -> None:
+        assert clean_text("  Мониторинг пастбищ  ") == "Мониторинг пастбищ"
+        for text in ("   ", "Идея" + chr(0), "и" * (TEXT_MAX_LENGTH + 1)):
+            with pytest.raises(RuleViolationError):
+                clean_text(text)

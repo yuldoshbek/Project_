@@ -7,10 +7,11 @@
  * и тип задачи система понимает из фразы тем же разбором, что и строка «Новая задача»
  * (`domain/capture.py`), — подсказку можно поправить до записи.
  *
- * Куда уходит запись — допущение V17: задача — сразу в «Задачи» настоящим API; просьба
- * руководителя — в «Задачи» с пометкой; идея, письмо и мероприятие — во входящие, пока их
- * разделы не появятся. Фото — с хранилищем файлов в блоке 2 (V18): кнопка на месте и
- * говорит, когда заработает. Руководителю — два типа, свои: просьба и идея (ТЗ 6).
+ * Куда уходит запись — допущение V17: задача — в «Задачи», просьба руководителя — туда же с
+ * пометкой; идея, письмо и мероприятие — во входящие, пока их разделы не появятся. Запись и
+ * задача — одна транзакция сервера (`POST /api/v1/captures`). Фото — с хранилищем файлов в
+ * блоке 2 (V18): кнопка на месте и говорит, когда заработает. Руководителю — два типа,
+ * свои: просьба и идея (ТЗ 6); то же правило держит сервер.
  *
  * Лист не закрывается после записи: после совещания записывают несколько дел подряд, и
  * каждое открытие листа — лишнее касание. Записывает Enter, как у строки «Новая задача»
@@ -19,7 +20,7 @@
  */
 
 import { Camera, Mic, Sparkles } from 'lucide-react';
-import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
@@ -27,7 +28,7 @@ import { useDevice } from '@/app/device';
 import { useCurrentUser } from '@/app/session';
 import { ParsedFields } from '@/sections/tasks/ParsedFields';
 import { useLineParse, type ParsedField } from '@/sections/tasks/useLineParse';
-import { tasksQuery, useCreateTask } from '@/sections/tasks/useTasks';
+import { tasksQuery } from '@/sections/tasks/useTasks';
 import { describeError } from '@/shared/api/client';
 import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/Button';
@@ -35,9 +36,9 @@ import { Signal } from '@/shared/ui/Signal';
 import { Failure } from '@/shared/ui/States';
 
 import { KIND_ICON } from './kinds';
-import { CAPTURE_KINDS, type CaptureKind } from './model';
+import { CAPTURE_KINDS, type CaptureKind, type NewCapture } from './model';
 import { Recent } from './Recent';
-import { useCaptures, useRememberTask, useSaveCapture } from './useCapture';
+import { useCaptures, useSaveCapture } from './useCapture';
 
 const LEADER_KINDS: readonly CaptureKind[] = ['request', 'idea'];
 
@@ -88,22 +89,23 @@ export function CaptureForm() {
   const fields = FIELDS[kind];
   const line = useLineParse(text, fields.length > 0);
   const dictionaries = useQuery({ ...tasksQuery(), enabled: fields.includes('assignee') });
-  const createTask = useCreateTask();
-  const save = useSaveCapture(author);
-  const rememberTask = useRememberTask(author);
+  const save = useSaveCapture();
   const demo = useCaptures().data?.is_demo ?? false;
-  const pending = createTask.isPending || save.isPending;
-  const failure = createTask.error ?? save.error;
   const title = kind === 'task' || kind === 'request' ? line.title : text.trim();
   const labels: Partial<Record<ParsedField, string>> = {};
   if (kind === 'request') labels.assignee = t('capture.fields.to');
   if (kind === 'letter') labels.due = t('capture.fields.answerBy');
   if (kind === 'event') labels.due = t('capture.fields.date');
 
-  // Ошибка прошлой записи не остаётся рядом с успехом следующей другого типа.
+  // Enter, нажатый до ответа разбора, ждёт его: после диктовки Enter жмут сразу, и фраза
+  // ушла бы без срока и ответственного.
+  const [waiting, setWaiting] = useState(false);
+
+  // Ошибка прошлой записи не остаётся рядом с успехом следующей другого типа. Пока запись
+  // в пути, не сбрасывается: сброс вернул бы «Записать» и потерял ответ — запись ушла бы
+  // дважды.
   const forget = () => {
-    createTask.reset();
-    save.reset();
+    if (!save.isPending) save.reset();
   };
 
   const choose = (next: CaptureKind) => {
@@ -127,40 +129,34 @@ export function CaptureForm() {
     field.current?.focus();
   };
 
+  const send = () => {
+    const sent = text;
+    // Только поля, которые у типа есть на экране: лишнее сервер отклонит, а не пропустит.
+    const body: NewCapture = { kind, text: title };
+    if (fields.includes('due')) body.due_on = line.value('due') || null;
+    if (fields.includes('assignee')) body.assignee_id = line.value('assignee') || null;
+    if (fields.includes('type')) body.type_code = line.value('type') || null;
+    if (fields.includes('project')) body.project_id = line.value('project') || null;
+    forget();
+    save.mutate(body, {
+      onSuccess: (capture) => done(t(`capture.saved.${kind}`, { code: capture.task_code }), sent),
+    });
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!title || pending) return;
-    const sent = text;
-    const due = line.value('due') || null;
-    forget();
-    if (kind === 'task') {
-      createTask.mutate(
-        {
-          title,
-          type_code: line.value('type') || null,
-          due_on: due,
-          assignee_id: line.value('assignee') || null,
-          project_id: line.value('project') || null,
-        },
-        {
-          onSuccess: (task) => {
-            rememberTask(task.title, due);
-            done(t('capture.saved.task', { code: task.code }), sent);
-          },
-        },
-      );
-      return;
-    }
-    save.mutate(
-      {
-        kind,
-        text: title,
-        due_on: fields.includes('due') ? due : null,
-        assignee_id: kind === 'request' ? line.value('assignee') || null : null,
-      },
-      { onSuccess: () => done(t(`capture.saved.${kind}`), sent) },
-    );
+    if (!title || save.isPending) return;
+    if (line.settled) send();
+    else setWaiting(true);
   };
+
+  useEffect(() => {
+    if (!waiting || !line.settled) return;
+    setWaiting(false);
+    send();
+    // `send` — новая функция на каждый рендер; ждать надо ответа разбора.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting, line.settled]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Посреди набора иероглифов или подбора слова Enter выбирает вариант, а не записывает.
@@ -177,7 +173,7 @@ export function CaptureForm() {
           {demo ? <Signal state="wait">{t('pult.demo')}</Signal> : null}
         </span>
         <p className="text-sm text-ink-muted">{t('capture.question')}</p>
-        {/* Подсказка видна, а не во всплывающем title: на телефоне наведения нет. */}
+        {/* Видимой строкой, а не всплывающим title: на телефоне наведения нет. */}
         {demo ? <p className="text-xs text-ink-muted">{t('capture.demoHint')}</p> : null}
       </header>
 
@@ -226,6 +222,7 @@ export function CaptureForm() {
             onChange={(event) => {
               setText(event.target.value);
               setSaved(null);
+              setWaiting(false);
               if (!event.target.value.trim()) line.clearManual();
             }}
             onKeyDown={onKeyDown}
@@ -257,7 +254,7 @@ export function CaptureForm() {
 
         <div className="flex flex-col gap-1.5">
           <span className="flex flex-wrap items-center gap-2">
-            <Button type="submit" look="primary" disabled={!title || pending}>
+            <Button type="submit" look="primary" disabled={!title || save.isPending || waiting}>
               {t('capture.save')}
             </Button>
             <Button type="button" disabled aria-describedby={`${ids}-photo`}>
@@ -284,7 +281,7 @@ export function CaptureForm() {
             {saved}
           </p>
         ) : null}
-        {failure ? <Failure detail={describeError(failure)} /> : null}
+        {save.error ? <Failure detail={describeError(save.error)} /> : null}
       </form>
 
       <Recent />

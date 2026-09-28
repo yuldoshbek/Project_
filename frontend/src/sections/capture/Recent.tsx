@@ -14,9 +14,6 @@ import { KIND_ICON } from './kinds';
 import { metaText } from './text';
 import { useCaptures } from './useCapture';
 
-/** Сколько записей показать: больше — это уже раздел, а не подтверждение. */
-const SHOWN = 6;
-
 export function Recent() {
   const { t } = useTranslation();
   const captures = useCaptures();
@@ -28,14 +25,15 @@ export function Recent() {
     );
   }
 
-  const { recent, as_of: asOf, is_demo: demo } = captures.data;
+  // Сколько записей — решает сервер (`services/captures.RECENT_LIMIT`).
+  const { recent, as_of: asOf } = captures.data;
   return (
     <Card title={t('capture.recent.title')} question={t('capture.recent.question')}>
       {recent.length === 0 ? (
         <p className="text-sm text-ink-muted">{t('capture.recent.empty')}</p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {recent.slice(0, SHOWN).map((capture) => {
+          {recent.map((capture) => {
             const Icon = KIND_ICON[capture.kind];
             return (
               <li key={capture.id} className="flex min-w-0 items-start gap-2.5">
@@ -46,7 +44,7 @@ export function Recent() {
                   </span>
                   <span className="text-sm text-ink-strong">{capture.text}</span>
                   <span className="numeric text-xs text-ink-muted">
-                    {metaText(t, capture, asOf, demo)}
+                    {metaText(t, capture, asOf)}
                   </span>
                 </span>
               </li>

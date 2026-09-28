@@ -31,18 +31,16 @@ export function agoText(t: TFunction, createdAt: string, asOf: string): string {
 /**
  * «Помощник · 2 ч назад · срок 10.10.2026 · в «Задачах»» — строка под записью.
  * У мероприятия дата — это дата, а не срок; у письма — срок ответа.
- *
- * `demo` — экран на вымышленных данных: просьба руководителя до API в «Задачи» не попадает,
- * и строка говорит «встанет после утверждения», а не «в «Задачах»», — иначе заказчик идёт в
- * «Задачи» и её там не находит.
  */
-export function metaText(t: TFunction, capture: Capture, asOf: string, demo: boolean): string {
+export function metaText(t: TFunction, capture: Capture, asOf: string): string {
   const parts = [t(`capture.authors.${capture.author}`), agoText(t, capture.created_at, asOf)];
   if (capture.due_on) {
     parts.push(t(`capture.recent.due.${capture.kind}`, { date: formatDate(capture.due_on) }));
   }
-  if (capture.destination === 'inbox') parts.push(t(`capture.recent.inbox.${capture.kind}`));
-  else if (demo && capture.kind === 'request') parts.push(t('capture.recent.requestLater'));
-  else parts.push(t('capture.recent.tasks'));
+  parts.push(
+    capture.destination === 'tasks'
+      ? t('capture.recent.tasks')
+      : t(`capture.recent.inbox.${capture.kind}`),
+  );
   return parts.join(' · ');
 }

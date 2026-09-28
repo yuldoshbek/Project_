@@ -1,5 +1,5 @@
 """Вымышленные данные в базе дают то, что заказчик утвердил на экранах Пульта, «Проектов»,
-«Задач», «Программ» и «Календаря».
+«Задач», «Программ», «Календаря» и «Захвата».
 
 Экран утверждали по вымышленному серверу во фронтенде, а превью показывает сервер. Если
 демо в базе разойдётся с утверждённым, заказчик увидит на превью не тот экран, что
@@ -37,7 +37,8 @@ from app.repos.models import (
     Task,
     TaskChecklistItem,
 )
-from app.services import calendar, metrics, programs
+from app.services import calendar, captures, metrics, programs
+from app.services import tasks as task_service
 
 pytestmark = pytest.mark.infra
 
@@ -545,3 +546,35 @@ class TestCalendar:
             and item.owner.id == loaded.projects["interns"].id
         ]
         assert [(item.kind.value, item.ends_project) for item in interns] == [("milestone", True)]
+
+
+class TestCaptures:
+    async def test_the_captures_of_the_approved_screen(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        view = await captures.load(session, now=loaded.now, zone=TASHKENT, is_demo=True)
+        kinds = [each.kind.value for each in view.recent]
+        assert sorted(kinds) == sorted(spec.kind.value for spec in demo.CAPTURES)
+        # Сначала новые: письмо два часа назад, просьба — когда заведена справка по засухе.
+        assert kinds[0] == "letter" and kinds[-1] == "request"
+        letter = view.recent[0]
+        assert (letter.author.value, letter.due_on, letter.destination) == (
+            "assistant",
+            loaded.on(12),
+            "inbox",
+        )
+
+    async def test_the_request_is_the_drought_note_and_marked_in_tasks(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        view = await captures.load(session, now=loaded.now, zone=TASHKENT, is_demo=True)
+        request = next(each for each in view.recent if each.kind.value == "request")
+        assert request.text == "Аналитическая справка по засухе для Кабинета министров"
+        assert (request.author.value, request.destination) == ("leader", "tasks")
+        assert request.due_on == loaded.on(-3)
+
+        section = await task_service.load(
+            session, now=loaded.now, zone=TASHKENT, locale="ru", is_demo=True
+        )
+        marked = [card.title for card in section.items if card.is_request]
+        assert marked == ["Аналитическая справка по засухе для Кабинета министров"]

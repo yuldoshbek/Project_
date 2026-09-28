@@ -1,4 +1,6 @@
-"""Разбор строки задачи — правила ТЗ 7: тип, срок и ответственный из одной фразы.
+"""Захват (ТЗ 7): разбор строки и правила записи одной кнопкой.
+
+Разбор строки задачи — правила ТЗ 7: тип, срок и ответственный из одной фразы.
 
     «к пятнице рассмотрение проекта постановления Минэкологии, Каримов»
       → тип «Рассмотрение и визирование», срок — ближайшая пятница, ответственный Каримов А.
@@ -25,6 +27,11 @@ import re
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+from enum import StrEnum
+
+from app.domain.errors import PermissionDeniedError, RuleViolationError
+from app.domain.people import Role
+from app.domain.projects import validate_text
 
 # В `re` нет `\p{L}`. «Словесный» символ без цифр и подчёркивания — это буква и ещё
 # числовые знаки вроде «²» и «½». Вплотную к слову в строке задачи они не встречаются, а
@@ -305,3 +312,80 @@ def parse_line(
         matched_due=due[1] if due else None,
         matched_assignee=assignee[1] if assignee else None,
     )
+
+
+# --------------------------------------------------------------------------------------
+# Запись одной кнопкой
+# --------------------------------------------------------------------------------------
+
+
+class CaptureKind(StrEnum):
+    """Тип записи Захвата (ТЗ 7). Порядок — порядок кнопок экрана."""
+
+    TASK = "task"
+    REQUEST = "request"
+    """Просьба руководителя — задача с пометкой происхождения (допущение V17)."""
+
+    IDEA = "idea"
+    LETTER = "letter"
+    EVENT = "event"
+
+    @property
+    def becomes_task(self) -> bool:
+        """Уходит ли запись в «Задачи» (V17). Идея, письмо и мероприятие ждут во входящих
+        своих разделов: письмо и мероприятие — блок 2, идея — блок 3."""
+        return self in (CaptureKind.TASK, CaptureKind.REQUEST)
+
+
+LEADER_KINDS = frozenset({CaptureKind.REQUEST, CaptureKind.IDEA})
+"""Что руководитель записывает сам: свою просьбу и свою идею (ТЗ 6 «записать идею», V17).
+
+Второе исключение из правила «данные вносит помощник» после решения руководителя
+(`app.api.security`): исключения видны в коде поимённо, а не послаблением общего правила.
+"""
+
+TEXT_MAX_LENGTH = 1000
+"""Запись входящих — одна-две фразы, как строка разбора (`api.routes.tasks.PARSE_MAX_LENGTH`).
+Длиннее — это уже документ, и место ему в разделе, а не во входящих."""
+
+# Какие поля, кроме текста, принимает тип, — те, что экран показывает под фразой: у
+# задачи четыре, у просьбы срок и «кому», у письма срок ответа, у мероприятия дата.
+_FIELDS: dict[CaptureKind, frozenset[str]] = {
+    CaptureKind.TASK: frozenset({"due_on", "assignee_id", "type_code", "project_id"}),
+    CaptureKind.REQUEST: frozenset({"due_on", "assignee_id"}),
+    CaptureKind.IDEA: frozenset(),
+    CaptureKind.LETTER: frozenset({"due_on"}),
+    CaptureKind.EVENT: frozenset({"due_on"}),
+}
+
+
+def check_author(kind: CaptureKind, role: Role) -> None:
+    """Руководитель записывает только свои два типа (`LEADER_KINDS`)."""
+    if role is Role.LEADER and kind not in LEADER_KINDS:
+        raise PermissionDeniedError(
+            "Руководитель записывает просьбу и идею; остальное вносит помощник"
+        )
+
+
+def check_fields(kind: CaptureKind, given: Collection[str]) -> None:
+    """Поле, которого у типа нет, — отказ, а не молчаливый пропуск.
+
+    Срок у идеи или проект у письма значат, что экран прислал не то, что показывал, — а
+    молча выброшенное поле человек считал бы записанным.
+    """
+    extra = sorted(set(given) - _FIELDS[kind])
+    if extra:
+        raise RuleViolationError(
+            "У этого типа записи нет таких полей", detail=f"{kind.value}: {', '.join(extra)}"
+        )
+
+
+def clean_text(text: str) -> str:
+    """Текст записи входящих — без пробелов по краям; пустой и слишком длинный — отказ."""
+    validate_text(text, what="Текст записи")
+    value = text.strip()
+    if not value:
+        raise RuleViolationError("Напишите, что записать")
+    if len(value) > TEXT_MAX_LENGTH:
+        raise RuleViolationError(f"Запись длиннее {TEXT_MAX_LENGTH} символов")
+    return value

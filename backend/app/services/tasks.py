@@ -77,6 +77,7 @@ class CardView:
     checklist_total: int
     completed_on: date | None
     version: int
+    is_request: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +186,7 @@ def _card(
         checklist_total=row.checklist_total,
         completed_on=local_date(row.completed_at, zone) if row.completed_at else None,
         version=row.version,
+        is_request=row.is_request,
     )
 
 

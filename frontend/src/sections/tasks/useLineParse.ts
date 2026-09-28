@@ -43,6 +43,12 @@ export function useLineParse(text: string, enabled = true) {
 
   return {
     parsed,
+    /**
+     * Разбор этой фразы закончен — пришёл или не удался. Пока нет, запись подождёт: после
+     * диктовки Enter нажимают сразу, и фраза ушла бы без срока и ответственного.
+     */
+    settled:
+      !enabled || !text.trim() || parsed !== null || (parse.isError && parse.variables === text),
     /** Название без распознанных кусков — или сама фраза, пока разбора нет. */
     title: parsed?.title ?? text.trim(),
     value,

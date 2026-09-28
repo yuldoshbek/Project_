@@ -88,6 +88,11 @@ demo.ts` в коммите cbcc380) — те же пять правил. Сро�
 только в списке циклов. Год начала «от прошлого», как на экране, с 15 ноября давал бы дату в
 горизонте.
 
+**Записи экрана «Захват»** (утверждён 28.09.2026, `frontend/src/sections/capture/demo.ts` в
+коммите 93b8c34) — те же пять. Задача и просьба — ссылками на задачи демо: звонок в Минфин и
+справка по засухе, ставшая просьбой руководителя, — поэтому текст, срок и время записи у них
+от задач, а не с экрана.
+
 Люди выдуманы; организации — только в роли партнёра по вымышленному проекту и Центр из
 справочников.
 """
@@ -104,12 +109,14 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.capture import CaptureKind
 from app.domain.clock import local_date
 from app.domain.cycles import CycleRule, horizon
 from app.domain.decisions import DecisionKind, DecisionState
 from app.domain.dictionaries import OrganizationKind, OrganizationRole, ProjectStatus, TaskStatus
 from app.repos.database import dispose_database, init_database, session_scope
 from app.repos.models import (
+    Capture,
     Direction,
     LeaderDecision,
     LeaderQuestion,
@@ -1113,6 +1120,50 @@ NEW_PROJECT = "Пилот с Минздравом: мониторинг вспы
 
 
 @dataclass(frozen=True, slots=True)
+class K:
+    """Запись экрана «Захват». Задача и просьба — ссылкой на задачу демо: текст, срок и время
+    записи — её, иначе «Недавние записи» разошлись бы с «Задачами»."""
+
+    kind: CaptureKind
+    author: str
+    text: str = ""
+    hours_ago: int = 0
+    due: int | None = None
+    """Срок — дней от сегодня; у письма — срок ответа, у мероприятия — дата."""
+
+    task: str | None = None
+    """Ключ задачи из `TASKS`."""
+
+
+CAPTURES = [
+    K(
+        CaptureKind.LETTER,
+        "assistant",
+        "Минэкологии просит данные мониторинга засухи за август",
+        hours_ago=2,
+        due=12,
+    ),
+    K(CaptureKind.TASK, "assistant", task="minfin-call"),
+    K(
+        CaptureKind.IDEA,
+        "leader",
+        "Спутниковый мониторинг пастбищ — предложить Минсельхозу пилот на весну",
+        hours_ago=26,
+    ),
+    K(
+        CaptureKind.EVENT,
+        "assistant",
+        "Международная конференция по ДЗЗ в Самарканде — выступление агентства",
+        hours_ago=75,
+        due=47,
+    ),
+    # Просьба — уже знакомая справка по засухе: новая задача сдвинула бы числа Пульта и
+    # «Задач», утверждённые раньше Захвата.
+    K(CaptureKind.REQUEST, "leader", task="drought-note"),
+]
+
+
+@dataclass(frozen=True, slots=True)
 class C:
     """Годовой цикл экрана «Календарь». Год начала — лет от текущего."""
 
@@ -1573,6 +1624,28 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         for spec in CYCLES
     )
 
+    users = dict((await session.execute(select(User.role, User.id))).tuples().all())
+    captures = []
+    for note in CAPTURES:
+        linked = tasks[note.task] if note.task else None
+        if linked is not None:
+            text, created = linked.title, linked.created_at
+            due_on = local_date(linked.due_at, zone) if linked.due_at else None
+        else:
+            text, created = note.text, now - timedelta(hours=note.hours_ago)
+            due_on = on(note.due) if note.due is not None else None
+        captures.append(
+            Capture(
+                kind=note.kind.value,
+                text=text,
+                due_on=due_on,
+                author_id=users[note.author],
+                task_id=linked.id if linked else None,
+                created_at=created,
+            )
+        )
+    session.add_all(captures)
+
     # Всё, что заведено выше, было «до прошлого визита».
     await session.execute(update(User).values(last_visit_at=datetime.now(UTC)))
     await session.flush()
@@ -1582,6 +1655,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         "tasks": len(tasks),
         "checklist_items": sum(len(work.checklist) for work in TASKS),
         "cycles": len(CYCLES),
+        "captures": len(CAPTURES),
     }
 
 

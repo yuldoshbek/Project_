@@ -7,6 +7,7 @@
 
 from app.repos.models.access import AccessLink, Session
 from app.repos.models.audit import Auditable, AuditLog
+from app.repos.models.captures import Capture
 from app.repos.models.checklists import TaskChecklistItem
 from app.repos.models.comments import Comment
 from app.repos.models.cycles import YearlyCycle
@@ -40,6 +41,7 @@ __all__ = [
     "AccessLink",
     "AuditLog",
     "Auditable",
+    "Capture",
     "Comment",
     "Direction",
     "IjroAssignment",

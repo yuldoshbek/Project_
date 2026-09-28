@@ -20,10 +20,12 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.audit import AuditAction
+from app.domain.capture import CaptureKind
 from app.domain.dictionaries import ProjectStatus
 from app.domain.pult import TASKS, AuditEntry
 from app.repos.models import (
     AuditLog,
+    Capture,
     IjroAssignment,
     Person,
     Project,
@@ -60,6 +62,9 @@ class TaskRow:
     created_at: datetime
     description: str | None
     version: int
+    is_request: bool
+    """Задача из просьбы руководителя: её завёл Захват (`app.repos.models.captures`)."""
+
     checklist_done: int = 0
     checklist_total: int = 0
     due_changes: list[AuditEntry] = field(default_factory=list)
@@ -81,6 +86,11 @@ async def tasks(
     session: AsyncSession, *, ids: Collection[uuid.UUID] | None = None
 ) -> list[TaskRow]:
     """Задачи раздела — открытые и закрытые, со связями, чек-листом и переносами."""
+    requested = (
+        select(Capture.id)
+        .where(Capture.task_id == Task.id, Capture.kind == CaptureKind.REQUEST.value)
+        .exists()
+    )
     statement = (
         select(
             Task,
@@ -90,6 +100,7 @@ async def tasks(
             Project.title,
             Project.status_code,
             IjroAssignment.code,
+            requested,
         )
         .outerjoin(TaskTypeRef, TaskTypeRef.id == Task.task_type_id)
         .outerjoin(Person, Person.id == Task.assignee_person_id)
@@ -100,7 +111,16 @@ async def tasks(
 
     found: dict[uuid.UUID, TaskRow] = {}
     rows = await session.execute(statement)
-    for task, kind, person, project_code, project_title, project_status, ijro_code in rows:
+    for (
+        task,
+        kind,
+        person,
+        project_code,
+        project_title,
+        project_status,
+        ijro_code,
+        is_request,
+    ) in rows:
         found[task.id] = TaskRow(
             id=task.id,
             code=task.code,
@@ -122,6 +142,7 @@ async def tasks(
             created_at=task.created_at,
             description=task.description,
             version=task.version,
+            is_request=bool(is_request),
         )
     if not found:
         return []
