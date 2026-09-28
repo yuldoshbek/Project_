@@ -146,10 +146,7 @@ class TestReading:
             started_on=project.started_on,
             due_on=project.due_on,
             today=today(),
-            passed_milestones=1,
-            total_milestones=2,
-            done_tasks=1,
-            total_tasks=2,
+            work=metrics.Work(passed_milestones=1, total_milestones=2, done_tasks=1, total_tasks=2),
         )
         assert card["readiness"] == expected.readiness == 50
         assert card["lag_days"] == expected.lag_days
@@ -660,10 +657,7 @@ class TestWhatIf:
             started_on=project.started_on,
             due_on=on(-1),
             today=today(),
-            passed_milestones=0,
-            total_milestones=0,
-            done_tasks=0,
-            total_tasks=0,
+            work=metrics.Work(),
         ).lag_days
         assert body["project"]["after"] == {
             "step": "overdue",

@@ -1,5 +1,5 @@
-"""Вымышленные данные в базе дают то, что заказчик утвердил на экранах Пульта, «Проектов» и
-«Задач».
+"""Вымышленные данные в базе дают то, что заказчик утвердил на экранах Пульта, «Проектов»,
+«Задач» и «Программ».
 
 Экран утверждали по вымышленному серверу во фронтенде, а превью показывает сервер. Если
 демо в базе разойдётся с утверждённым, заказчик увидит на превью не тот экран, что
@@ -36,7 +36,7 @@ from app.repos.models import (
     Task,
     TaskChecklistItem,
 )
-from app.services import metrics
+from app.services import metrics, programs
 
 pytestmark = pytest.mark.infra
 
@@ -50,8 +50,10 @@ STEPS = {
     "air": (Attention.BLOCKED_BY_OTHERS, 25),
     "aerial": (Attention.SILENT, 21),
     "lab": (Attention.SILENT, 30),
+    "infrastructure": (Attention.SILENT, 16),
+    "insurance": (Attention.SILENT, 20),
 }
-"""Ступени проектов на утверждённом экране; остальные незавершённые идут по плану."""
+"""Ступени проектов на утверждённых экранах; остальные незавершённые идут по плану."""
 
 MILESTONE_STEPS = [
     ("Согласование ТЗ на спутниковую группировку", Attention.AWAITING_DECISION, 6),
@@ -59,8 +61,22 @@ MILESTONE_STEPS = [
     ("Внесение стандарта в агентство «Узстандарт»", Attention.BURNING, 2),
     ("Итоги и отчёт", Attention.BURNING, 6),
     ("Получение космических снимков", Attention.BURNING, 0),
+    ("Площадка станции приёма в Самарканде", Attention.OVERDUE, 8),
+    ("Смета конгресса на следующий год внесена в Кабмин", Attention.AWAITING_DECISION, 1),
 ]
-"""Вехи в лестнице: три из сценария Пульта, две — из шаблонов (стажировки, паводки)."""
+"""Вехи в лестнице: три из сценария Пульта, две — из шаблонов (стажировки, паводки), две —
+с экрана «Программы»."""
+
+PROGRAMS = {
+    "mission": {"calibration", "insurance"},
+    "iac": {"venue", "science", "volunteers"},
+    "infrastructure": {"portal", "station"},
+    "staff": {"interns", "lab"},
+    "catalogue": set(),
+    "strategy": set(),
+    "digital": set(),
+}
+"""Программы экрана «Программы» и их подпроекты."""
 
 CABINET = "Внесение проекта постановления в Кабинет министров"
 
@@ -137,7 +153,9 @@ async def loaded(session: AsyncSession) -> Loaded:
     now = now_utc()
     await demo.before_visit(session, now=now, zone=TASHKENT)
     await demo.after_visit(session, now=now, zone=TASHKENT)
-    keys = {spec.title: spec.key for spec in demo.PROJECTS} | {demo.NEW_PROJECT: "new"}
+    today = local_date(now, TASHKENT)
+    keys = {demo.title_of(spec, today): spec.key for spec in demo.PROJECTS}
+    keys |= {demo.NEW_PROJECT: "new"}
     projects = {keys[each.title]: each for each in await session.scalars(select(Project))}
     return Loaded(now, projects)
 
@@ -146,7 +164,8 @@ class TestProjects:
     async def test_the_approved_projects_and_the_one_created_after_the_visit(
         self, session: AsyncSession, loaded: Loaded
     ) -> None:
-        assert await session.scalar(select(func.count()).select_from(Project)) == 22
+        total = len(demo.PROJECTS) + 1
+        assert await session.scalar(select(func.count()).select_from(Project)) == total
         year = loaded.today.year
         for number, spec in enumerate(demo.PROJECTS, start=1):
             project = loaded.projects[spec.key]
@@ -157,7 +176,7 @@ class TestProjects:
             # обязаны найтись — иначе срез по ним на превью окажется пустым.
             assert (project.direction_id is not None) is (spec.direction is not None), spec.key
             assert (project.region_id is not None) is (spec.region is not None), spec.key
-        assert loaded.projects["new"].code == f"PRJ-{year}-022"
+        assert loaded.projects["new"].code == f"PRJ-{year}-{total:03d}"
 
     async def test_paused_finished_and_cancelled_keep_their_reasons(self, loaded: Loaded) -> None:
         expected = {
@@ -173,10 +192,67 @@ class TestProjects:
             if status.requires_reason:
                 assert reason
 
-    async def test_calibration_is_a_subproject_of_the_programme(self, loaded: Loaded) -> None:
-        mission = loaded.projects["mission"]
-        assert mission.is_multiyear
-        assert loaded.projects["calibration"].parent_project_id == mission.id
+    async def test_programmes_and_their_subprojects(self, loaded: Loaded) -> None:
+        programs = {key for key, each in loaded.projects.items() if each.is_multiyear}
+        assert programs == set(PROGRAMS)
+        for key, children in PROGRAMS.items():
+            parent = loaded.projects[key].id
+            found = {
+                child for child, each in loaded.projects.items() if each.parent_project_id == parent
+            }
+            assert found == children, key
+
+    async def test_yearly_reports_are_named_by_year(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        titles = set(
+            await session.scalars(
+                select(Milestone.title).where(
+                    Milestone.project_id == loaded.projects["strategy"].id,
+                    Milestone.title.like("Отчёт об исполнении за %"),
+                )
+            )
+        )
+        # Сроки — 15 февраля пяти лет подряд, начиная с текущего: отчёт за прошлый год и
+        # четыре следующих, в какой бы день ни загрузили демо.
+        first = loaded.today.year - 1
+        assert titles == {f"Отчёт об исполнении за {first + shift} год" for shift in range(5)}
+
+    async def test_programme_titles_follow_their_dates(self, loaded: Loaded) -> None:
+        for key in ("infrastructure", "staff", "catalogue", "digital"):
+            project = loaded.projects[key]
+            years = f"{project.started_on.year}–{project.due_on.year}"
+            assert project.title.endswith(years), project.title
+        assert loaded.projects["iac"].title.startswith(f"IAC-{loaded.projects['iac'].due_on.year}")
+        strategy = loaded.projects["strategy"]
+        assert f"до {strategy.due_on.year} года" in strategy.title
+
+    async def test_programmes_answer_as_on_the_screen(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        """«Успеваем?» — все три ответа, как на экране: не успевает, успевает, мало данных."""
+        view = await programs.load(
+            session, now=loaded.now, zone=TASHKENT, locale="ru", is_demo=True
+        )
+        by_key = {loaded.key_of(item.id): item for item in view.items}
+        verdicts = {
+            key: item.pace.verdict.value if item.pace else None for key, item in by_key.items()
+        }
+        assert verdicts == {
+            "catalogue": "behind",
+            "iac": "on_track",
+            "infrastructure": "on_track",
+            "staff": "on_track",
+            "mission": "little_data",
+            "strategy": "little_data",
+            "digital": None,
+        }
+        # Запас над порогом «мало данных»: ответ не пропадает через неделю после загрузки.
+        for key in ("catalogue", "iac", "infrastructure", "staff"):
+            pace = by_key[key].pace
+            assert pace is not None
+            assert pace.closed_tasks >= pace.min_closed_tasks + 2, key
+        assert by_key["infrastructure"].original_due_on != by_key["infrastructure"].due_on
 
     async def test_center_roles_and_outside_lead(
         self, session: AsyncSession, loaded: Loaded

@@ -10,7 +10,7 @@
  */
 
 import { AlertTriangle, Building2, CircleHelp, Layers } from 'lucide-react';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { STEP_SIGNAL } from '@/sections/pult/model';
@@ -37,32 +37,54 @@ import { dueText, lagText } from './text';
 import { useImpediment, useProject, useProjectStatus } from './useProjects';
 import { WhatIf } from './WhatIf';
 
+/**
+ * С какого блока открыть карточку. «Программы» ведут сюда из «успеваем?»: перенести дату —
+ * на «что если», урезать объём — на вехи; лист сразу показывает то, ради чего открыт.
+ */
+export type PanelFocus = 'whatif' | 'milestones';
+
+/** Отступ блока при прокрутке к нему — под шапкой листа с кнопкой «закрыть» и вырезом. */
+const FOCUS_OFFSET = 'scroll-mt-[calc(env(safe-area-inset-top)+3.5rem)]';
+
 interface ProjectPanelProps {
   id: string;
   canEdit: boolean;
   onOpen: (id: string) => void;
+  focus?: PanelFocus | undefined;
 }
 
-export function ProjectPanel({ id, canEdit, onOpen }: ProjectPanelProps) {
+export function ProjectPanel({ id, canEdit, onOpen, focus }: ProjectPanelProps) {
   const project = useProject(id);
   if (project.isPending) return <Loading />;
   if (project.isError) {
     return <Failure detail={describeError(project.error)} onRetry={() => void project.refetch()} />;
   }
-  return <Panel project={project.data} canEdit={canEdit} onOpen={onOpen} />;
+  return <Panel project={project.data} canEdit={canEdit} onOpen={onOpen} focus={focus} />;
 }
 
 function Panel({
   project,
   canEdit,
   onOpen,
+  focus,
 }: {
   project: ProjectDetail;
   canEdit: boolean;
   onOpen: (id: string) => void;
+  focus: PanelFocus | undefined;
 }) {
   const { t } = useTranslation();
   const terminal = TERMINAL.has(project.status);
+  const milestones = useRef<HTMLDivElement>(null);
+  const whatIf = useRef<HTMLDivElement>(null);
+
+  // Только при открытии: опрос раз в 15 с перерисовывает лист, и прокрутка не должна
+  // уводить человека обратно, пока он читает другой блок.
+  useEffect(() => {
+    const target = focus === 'whatif' ? whatIf.current : focus ? milestones.current : null;
+    target?.scrollIntoView?.({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при открытии листа
+  }, []);
 
   return (
     <>
@@ -124,41 +146,49 @@ function Panel({
 
       <Impediment project={project} canEdit={canEdit && !terminal} />
 
-      <Block
-        title={t('projects.panel.milestones')}
-        question={t('projects.panel.milestonesQuestion')}
-      >
-        <ol className="flex flex-col divide-y divide-line">
-          {project.milestone_list.map((mark) => (
-            <li key={mark.id} className="flex items-start gap-3 py-2">
-              <span
-                className={cn(
-                  'mt-1.5 size-2.5 shrink-0 rotate-45 border-2 border-ink-strong',
-                  mark.is_passed ? 'bg-ink-strong' : 'bg-card',
-                )}
-                aria-hidden="true"
-              />
-              <div className="min-w-0 flex-1">
-                <p className={cn('text-sm', mark.is_passed ? 'text-ink-muted' : 'text-ink-strong')}>
-                  {mark.title}
-                </p>
-                <p className="numeric text-xs text-ink-muted">
-                  {mark.is_passed && mark.passed_on
-                    ? t('projects.panel.passed', { date: formatDate(mark.passed_on) })
-                    : dueText(t, mark)}
-                </p>
-              </div>
-              {mark.step ? (
-                <Signal state={STEP_SIGNAL[mark.step]}>
-                  {deviationText(t, { step: mark.step, deviation: mark.deviation })}
-                </Signal>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      </Block>
+      <div ref={milestones} className={FOCUS_OFFSET}>
+        <Block
+          title={t('projects.panel.milestones')}
+          question={t('projects.panel.milestonesQuestion')}
+        >
+          <ol className="flex flex-col divide-y divide-line">
+            {project.milestone_list.map((mark) => (
+              <li key={mark.id} className="flex items-start gap-3 py-2">
+                <span
+                  className={cn(
+                    'mt-1.5 size-2.5 shrink-0 rotate-45 border-2 border-ink-strong',
+                    mark.is_passed ? 'bg-ink-strong' : 'bg-card',
+                  )}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={cn('text-sm', mark.is_passed ? 'text-ink-muted' : 'text-ink-strong')}
+                  >
+                    {mark.title}
+                  </p>
+                  <p className="numeric text-xs text-ink-muted">
+                    {mark.is_passed && mark.passed_on
+                      ? t('projects.panel.passed', { date: formatDate(mark.passed_on) })
+                      : dueText(t, mark)}
+                  </p>
+                </div>
+                {mark.step ? (
+                  <Signal state={STEP_SIGNAL[mark.step]}>
+                    {deviationText(t, { step: mark.step, deviation: mark.deviation })}
+                  </Signal>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </Block>
+      </div>
 
-      {!terminal ? <WhatIf project={project} canApply={canEdit} /> : null}
+      {!terminal ? (
+        <div ref={whatIf} className={FOCUS_OFFSET}>
+          <WhatIf project={project} canApply={canEdit} />
+        </div>
+      ) : null}
 
       {canEdit ? <StatusControl project={project} /> : null}
 
@@ -244,7 +274,14 @@ function Facts({ project }: { project: ProjectDetail }) {
     {
       label: t('projects.table.readiness'),
       value: t('projects.table.percent', { value: project.readiness }),
-      hint: t('projects.card.milestones', project.milestones),
+      // У программы процент — вместе с подпроектами (V13), а «вех 1 из 4» — только свои:
+      // без подписи одно число читалось бы как ошибка в другом.
+      hint: [
+        t('projects.card.milestones', project.milestones),
+        project.is_multiyear && project.subprojects > 0 ? t('projects.card.withSubprojects') : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
     },
   ];
   if (!terminal) {

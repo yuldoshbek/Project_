@@ -21,11 +21,12 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -281,6 +282,17 @@ class _Context:
     locale: str
     thresholds: metrics.Thresholds
     steps: dict[Key, Row]
+    children: dict[uuid.UUID, list[ProjectRow]] = field(default_factory=dict)
+    """Подпроекты программ: готовность программы считается вместе с ними (V13)."""
+
+
+def children_of(rows: Sequence[ProjectRow]) -> dict[uuid.UUID, list[ProjectRow]]:
+    """Подпроекты по программам — из строк, которые уже прочитаны."""
+    found: dict[uuid.UUID, list[ProjectRow]] = defaultdict(list)
+    for row in rows:
+        if row.parent_id is not None:
+            found[row.parent_id].append(row)
+    return dict(found)
 
 
 def _card(row: ProjectRow, context: _Context) -> CardView:
@@ -291,10 +303,7 @@ def _card(row: ProjectRow, context: _Context) -> CardView:
         started_on=row.started_on,
         due_on=row.due_on,
         today=context.today,
-        passed_milestones=passed,
-        total_milestones=len(row.marks),
-        done_tasks=row.done_tasks,
-        total_tasks=row.total_tasks,
+        work=metrics.work_of(row, context.children.get(row.id, [])),
     )
     ladder_row = context.steps.get((PROJECTS, row.id))
     upcoming = min(
@@ -360,21 +369,37 @@ def _card(row: ProjectRow, context: _Context) -> CardView:
     )
 
 
-def _ordered(cards: list[CardView], ladder: Ladder) -> list[CardView]:
+class _Orderable(Protocol):
+    @property
+    def id(self) -> uuid.UUID: ...
+
+    @property
+    def code(self) -> str: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def due_on(self) -> date: ...
+
+
+def ordered[T: _Orderable](cards: list[T], ladder: Ladder) -> list[T]:
     """Порядок раздела — порядок лестницы, затем идущее по плану, в конце закрытое.
 
     Строки со ступенью идут ровно так, как на Пульте: порядок задаёт сервер, и два экрана
     не имеют права показать одно и то же в разной очерёдности (ТЗ 4). Внутри остальных
-    групп — по сроку: ближний срок — ближняя забота.
+    групп — по сроку: ближний срок — ближняя забота. Тот же порядок у «Программ». При
+    равном сроке — по номеру: read-модель читает без порядка, и две записи с одной датой
+    иначе менялись бы местами после любой правки.
     """
     position = {row.entity_id: index for index, row in enumerate(ladder.rows)}
 
-    def key(card: CardView) -> tuple[int, int, date]:
+    def key(card: T) -> tuple[int, int, date, str]:
         if card.id in position:
-            return (0, position[card.id], card.due_on)
+            return (0, position[card.id], card.due_on, card.code)
         if ProjectStatus(card.status).is_terminal:
-            return (2, 0, card.due_on)
-        return (1, 0, card.due_on)
+            return (2, 0, card.due_on, card.code)
+        return (1, 0, card.due_on, card.code)
 
     return sorted(cards, key=key)
 
@@ -404,11 +429,12 @@ async def load(
     """Весь раздел одним запросом: плитки, типы с шаблонами, люди для формы."""
     context, ladder = await _context(session, now=now, zone=zone, locale=locale)
     rows = await read_model.projects(session)
+    context.children.update(children_of(rows))
     kinds = await read_model.project_types(session)
     people = await read_model.people(session)
     return ProjectsView(
         as_of=now,
-        items=_ordered([_card(row, context) for row in rows], ladder),
+        items=ordered([_card(row, context) for row in rows], ladder),
         types=[
             TypeView(
                 code=kind.code,
@@ -438,6 +464,7 @@ async def detail(
     row = await _row(session, project_id)
     context, ladder = await _context(session, now=now, zone=zone, locale=locale)
     subprojects = await read_model.projects(session, parent_id=project_id)
+    context.children[project_id] = subprojects
     organizations = await read_model.organizations(session, project_id)
     tasks = await read_model.tasks(session, project_id)
 
@@ -485,7 +512,7 @@ async def detail(
             )
             for mark in row.marks
         ],
-        subprojects=_ordered([_card(sub, context) for sub in subprojects], ladder),
+        subprojects=ordered([_card(sub, context) for sub in subprojects], ladder),
         tasks=[
             TaskView(
                 id=task.id,
@@ -711,7 +738,11 @@ async def what_if(
     rows_before, rows_after = _rows_of(before), _rows_of(after)
 
     status = ProjectStatus(row.status)
-    passed = sum(1 for mark in row.marks if mark.is_passed)
+    # Отставание программы — вместе с подпроектами, как в её карточке (V13).
+    subprojects = (
+        await read_model.projects(session, parent_id=project_id) if row.is_multiyear else []
+    )
+    work = metrics.work_of(row, subprojects)
 
     def state(rows: dict[Key, Row], due_on: date) -> StateView:
         found = rows.get((PROJECTS, row.id))
@@ -720,10 +751,7 @@ async def what_if(
             started_on=row.started_on,
             due_on=due_on,
             today=today,
-            passed_milestones=passed,
-            total_milestones=len(row.marks),
-            done_tasks=row.done_tasks,
-            total_tasks=row.total_tasks,
+            work=work,
         )
         return StateView(
             step=found.attention if found else None,

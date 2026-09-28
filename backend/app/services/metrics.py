@@ -20,9 +20,10 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,8 @@ from app.domain.attention import (
 )
 from app.domain.attention import holders as holders_of
 from app.domain.dictionaries import ProjectStatus, SettingKey, TaskStatus
+from app.domain.programs import Pace, days_left, in_window, window_start
+from app.domain.programs import pace as pace_of
 from app.domain.projects import (
     DEFAULT_IMPEDIMENT_STALE_DAYS,
     impediment_is_stale,
@@ -63,6 +66,7 @@ from app.services.dictionaries import load_settings
 
 DEFAULT_BURN_DAYS = 7
 DEFAULT_QUIET_DAYS = 14
+DEFAULT_MIN_CLOSED_FOR_PACE = 10
 
 MOVES_PERIOD_DAYS = 30
 """«Держим ли мы свои сроки?» — за месяц: короче не видно привычки переносить, длиннее
@@ -79,6 +83,7 @@ class Thresholds:
     burn_days: int
     quiet_days: int
     impediment_stale_days: int = DEFAULT_IMPEDIMENT_STALE_DAYS
+    min_closed_for_pace: int = DEFAULT_MIN_CLOSED_FOR_PACE
 
 
 async def load_thresholds(session: AsyncSession) -> Thresholds:
@@ -89,6 +94,9 @@ async def load_thresholds(session: AsyncSession) -> Thresholds:
         quiet_days=int(stored.get(SettingKey.QUIET_DAYS, DEFAULT_QUIET_DAYS)),
         impediment_stale_days=int(
             stored.get(SettingKey.IMPEDIMENT_STALE_DAYS, DEFAULT_IMPEDIMENT_STALE_DAYS)
+        ),
+        min_closed_for_pace=int(
+            stored.get(SettingKey.MIN_CLOSED_FOR_PACE, DEFAULT_MIN_CLOSED_FOR_PACE)
         ),
     )
 
@@ -101,34 +109,182 @@ class Progress:
     lag_days: int
 
 
+@dataclass(frozen=True, slots=True)
+class Work:
+    """Вехи и задачи, по которым считаются готовность, отставание и «успеваем?»."""
+
+    passed_milestones: int = 0
+    total_milestones: int = 0
+    done_tasks: int = 0
+    total_tasks: int = 0
+
+    @property
+    def closed(self) -> int:
+        return self.passed_milestones + self.done_tasks
+
+    @property
+    def remaining(self) -> int:
+        return self.total_milestones + self.total_tasks - self.closed
+
+    def __add__(self, other: Work) -> Work:
+        return Work(
+            passed_milestones=self.passed_milestones + other.passed_milestones,
+            total_milestones=self.total_milestones + other.total_milestones,
+            done_tasks=self.done_tasks + other.done_tasks,
+            total_tasks=self.total_tasks + other.total_tasks,
+        )
+
+
+class _Mark(Protocol):
+    @property
+    def is_passed(self) -> bool: ...
+
+    @property
+    def passed_on(self) -> date | None: ...
+
+
+class _Counted(Protocol):
+    """Строка проекта из read-модели (`app.repos.projects.ProjectRow`)."""
+
+    @property
+    def id(self) -> uuid.UUID: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def due_on(self) -> date: ...
+
+    @property
+    def marks(self) -> Sequence[_Mark]: ...
+
+    @property
+    def done_tasks(self) -> int: ...
+
+    @property
+    def total_tasks(self) -> int: ...
+
+
+def _own(row: _Counted) -> Work:
+    return Work(
+        passed_milestones=sum(1 for mark in row.marks if mark.is_passed),
+        total_milestones=len(row.marks),
+        done_tasks=row.done_tasks,
+        total_tasks=row.total_tasks,
+    )
+
+
+def work_of(row: _Counted, children: Iterable[_Counted] = ()) -> Work:
+    """Вехи и задачи проекта — у программы вместе с подпроектами (допущение V13).
+
+    Программу передают с её подпроектами: раздел «Программы» отвечает, где мы по программе
+    целиком, а карточка той же записи в «Проектах» обязана показать тот же процент
+    (инвариант 2). Готовность, отставание и «успеваем?» одной карточки считаются по одному
+    набору, иначе «готово 44 %» спорит с «осталось 27».
+
+    Закрытый подпроект своё не держит. Завершённый считается сделанным целиком — как у
+    `project_readiness`: «завершён» — последнее слово помощника. У отменённого остаётся
+    только сделанное: несделанное не сделают, и в знаменателе оно навсегда держало бы
+    программу недоделанной — ровно то, что «урезать объём» и снимает.
+    """
+    total = _own(row)
+    for child in children:
+        counts = _own(child)
+        status = ProjectStatus(child.status)
+        if status is ProjectStatus.DONE:
+            counts = Work(
+                passed_milestones=counts.total_milestones,
+                total_milestones=counts.total_milestones,
+                done_tasks=counts.total_tasks,
+                total_tasks=counts.total_tasks,
+            )
+        elif status is ProjectStatus.CANCELLED:
+            counts = Work(
+                passed_milestones=counts.passed_milestones,
+                total_milestones=counts.passed_milestones,
+                done_tasks=counts.done_tasks,
+                total_tasks=counts.done_tasks,
+            )
+        total += counts
+    return total
+
+
 def progress(
     *,
     status: ProjectStatus,
     started_on: date,
     due_on: date,
     today: date,
-    passed_milestones: int,
-    total_milestones: int,
-    done_tasks: int,
-    total_tasks: int,
+    work: Work,
 ) -> Progress:
     """Готовность и отставание проекта (ТЗ 3.1, 4).
 
-    Отсюда их берут карточка, таблица, таймлайн и «что если»: отставание при другом сроке
-    считается этой же функцией, а не второй формулой рядом с экраном.
+    Отсюда их берут карточка, таблица, таймлайн, «что если» и «Программы»: отставание при
+    другом сроке считается этой же функцией, а не второй формулой рядом с экраном.
     """
     ready = project_readiness(
         status=status,
-        passed_milestones=passed_milestones,
-        total_milestones=total_milestones,
-        done_tasks=done_tasks,
-        total_tasks=total_tasks,
+        passed_milestones=work.passed_milestones,
+        total_milestones=work.total_milestones,
+        done_tasks=work.done_tasks,
+        total_tasks=work.total_tasks,
     )
     return Progress(
         readiness=ready,
         lag_days=project_lag(
             status=status, started_on=started_on, due_on=due_on, today=today, readiness_pct=ready
         ),
+    )
+
+
+def countdown(*, due_on: date, today: date) -> int:
+    """Отсчёт до даты программы — календарные дни по Ташкенту (ТЗ 11)."""
+    return days_left(due_on=due_on, today=today)
+
+
+def pace_window(today: date, zone: ZoneInfo) -> tuple[datetime, datetime]:
+    """Окно темпа моментами: с начала первого дня окна до конца сегодня, по Ташкенту.
+
+    То же правило, что у вех (`domain.programs.in_window`): закрытое строго после последнего
+    дня до окна и не позже сегодня. Задача, закрытая сегодня вечером, — уже темп.
+    """
+    since = datetime.combine(window_start(today) + timedelta(days=1), time(), zone)
+    until = datetime.combine(today + timedelta(days=1), time(), zone)
+    return since, until
+
+
+def program_pace(
+    row: _Counted,
+    children: Sequence[_Counted],
+    *,
+    closed_tasks: Mapping[uuid.UUID, int],
+    today: date,
+    thresholds: Thresholds,
+) -> Pace | None:
+    """«Успеваем ли к дате программы?» (ТЗ 4, 5; допущение V13). У закрытой — не спрашивают.
+
+    Закрыто за окно — задачи программы и всех её подпроектов (`closed_tasks` — по окну
+    `pace_window`) и вехи, пройденные в окне: темп — это работа, сделанная за три месяца,
+    даже если подпроект с тех пор закрыли. Осталось — тот же набор, что у готовности
+    (`work_of`). Порог «мало данных» — справочник (ТЗ 3.9).
+    """
+    if ProjectStatus(row.status).is_terminal:
+        return None
+    works = [row, *children]
+    tasks = sum(closed_tasks.get(work.id, 0) for work in works)
+    marks = sum(
+        1
+        for work in works
+        for mark in work.marks
+        if mark.is_passed and in_window(mark.passed_on, today=today)
+    )
+    return pace_of(
+        today=today,
+        due_on=row.due_on,
+        closed=tasks + marks,
+        closed_tasks=tasks,
+        remaining=work_of(row, children).remaining,
+        min_closed_tasks=thresholds.min_closed_for_pace,
     )
 
 

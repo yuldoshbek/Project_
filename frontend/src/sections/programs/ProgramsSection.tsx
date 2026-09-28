@@ -11,14 +11,17 @@
  *   широкая полоса и пустота (аудит 20.09, В8).
  *
  * Раздел только читает. Программу правят в карточке проекта; касание открывает карточку
- * программы, а её действия ведут туда.
+ * программы, а её действия — «перенести дату», «урезать объём» — открывают карточку проекта
+ * из «Проектов» на нужном блоке: вторая форма правки той же записи разошлась бы с первой.
  */
 
 import { Layers } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
+import { useCurrentUser } from '@/app/session';
+import { ProjectPanel, type PanelFocus } from '@/sections/projects/ProjectPanel';
 import { describeError } from '@/shared/api/client';
 import { cn } from '@/shared/lib/cn';
 import { formatDate, formatDateTime, localDay } from '@/shared/time';
@@ -34,8 +37,12 @@ import { ProgramTile } from './ProgramTile';
 import { usePrograms } from './usePrograms';
 import { YearEndCard } from './YearEndCard';
 
-/** Сколько секунд видна подсказка о действии. */
-const NOTICE_SECONDS = 8;
+/** Действие карточки программы → блок карточки проекта, с которого её открыть. */
+const FOCUS: Record<PanelAction, PanelFocus | undefined> = {
+  move: 'whatif',
+  cut: 'milestones',
+  card: undefined,
+};
 
 export function ProgramsSection() {
   const programs = usePrograms();
@@ -54,24 +61,26 @@ function Programs({ view }: { view: ProgramsView }) {
   const isPhone = device === 'phone';
   const isMonitor = device === 'monitor';
   const today = localDay(view.as_of);
+  const user = useCurrentUser();
+  // Вносит данные помощник, руководитель смотрит и считает «что если» (ТЗ 1).
+  const canEdit = user.data?.role !== 'leader';
 
   const [open, setOpen] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), NOTICE_SECONDS * 1000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
+  const [project, setProject] = useState<{ id: string; focus: PanelFocus | undefined } | null>(
+    null,
+  );
 
   const active = view.items.filter((card) => !TERMINAL.has(card.status));
   const closed = view.items.filter((card) => TERMINAL.has(card.status));
   const opened = view.items.find((card) => card.id === open) ?? null;
   const closePanel = useCallback(() => setOpen(null), []);
+  const closeProject = useCallback(() => setProject(null), []);
 
-  // Действия ведут в карточку проекта: там «что если», вехи и подпроекты. Пока экран на
-  // утверждении, вымышленных программ в «Проектах» нет — экран говорит, что будет.
-  const onAction = (_id: string, action: PanelAction) => setNotice(t(`programs.notice.${action}`));
+  // Карточка проекта сменяет карточку программы, а не ложится вторым листом поверх.
+  const onAction = (id: string, action: PanelAction) => {
+    setOpen(null);
+    setProject({ id, focus: FOCUS[action] });
+  };
 
   const yearEnd = (
     <YearEndCard
@@ -152,17 +161,21 @@ function Programs({ view }: { view: ProgramsView }) {
         </Sheet>
       ) : null}
 
-      {notice ? (
-        <p
-          role="status"
-          className={cn(
-            'fixed inset-x-4 z-50 mx-auto max-w-xl rounded-[var(--radius-lg)] border border-line',
-            'bg-raised px-4 py-3 text-sm text-ink shadow-raised',
-            isPhone ? 'bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]' : 'bottom-6',
-          )}
+      {project ? (
+        <Sheet
+          label={t('sections.projects')}
+          closeLabel={t('projects.panel.close')}
+          onClose={closeProject}
+          wide
         >
-          {notice}
-        </p>
+          <ProjectPanel
+            key={project.id}
+            id={project.id}
+            canEdit={canEdit}
+            focus={project.focus}
+            onOpen={(id) => setProject({ id, focus: undefined })}
+          />
+        </Sheet>
       ) : null}
     </div>
   );
