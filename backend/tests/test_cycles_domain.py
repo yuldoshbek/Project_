@@ -7,7 +7,9 @@ from app.domain.cycles import CycleRule, next_date, occurrences
 TODAY = date(2026, 9, 28)
 
 
-def dates(rule: CycleRule, month: int, day: int, every_years: int = 1, anchor_year: int = 2026):
+def dates(
+    rule: CycleRule, month: int, day: int, every_years: int = 1, anchor_year: int = 2026
+) -> list[date]:
     return occurrences(
         rule=rule,
         month=month,
@@ -51,7 +53,9 @@ def test_missing_day_is_skipped() -> None:
 
 
 def test_next_date_goes_beyond_horizon() -> None:
-    def upcoming(rule: CycleRule, month: int, day: int, every: int = 1, anchor: int = 2026):
+    def upcoming(
+        rule: CycleRule, month: int, day: int, every: int = 1, anchor: int = 2026
+    ) -> date | None:
         return next_date(
             rule=rule, month=month, day=day, every_years=every, anchor_year=anchor, since=TODAY
         )
@@ -65,7 +69,7 @@ def test_next_date_goes_beyond_horizon() -> None:
 
 
 def test_next_date_counts_steps_from_anchor_year() -> None:
-    def upcoming(month: int, day: int, every: int, anchor: int):
+    def upcoming(month: int, day: int, every: int, anchor: int) -> date | None:
         return next_date(
             rule=CycleRule.EVERY_N_YEARS,
             month=month,
