@@ -38,6 +38,9 @@ from app.domain.attention import (
     with_due_changes,
 )
 from app.domain.attention import holders as holders_of
+from app.domain.calendar import CalendarKind, HotDay
+from app.domain.calendar import hot_days as hot_days_of
+from app.domain.calendar import window as hot_window_of
 from app.domain.dictionaries import ProjectStatus, SettingKey, TaskStatus
 from app.domain.programs import Pace, days_left, in_window, window_start
 from app.domain.programs import pace as pace_of
@@ -67,6 +70,8 @@ from app.services.dictionaries import load_settings
 DEFAULT_BURN_DAYS = 7
 DEFAULT_QUIET_DAYS = 14
 DEFAULT_MIN_CLOSED_FOR_PACE = 10
+DEFAULT_HOT_DAY_THRESHOLD = 3
+DEFAULT_HOT_WINDOW_DAYS = 28
 
 MOVES_PERIOD_DAYS = 30
 """«Держим ли мы свои сроки?» — за месяц: короче не видно привычки переносить, длиннее
@@ -84,6 +89,8 @@ class Thresholds:
     quiet_days: int
     impediment_stale_days: int = DEFAULT_IMPEDIMENT_STALE_DAYS
     min_closed_for_pace: int = DEFAULT_MIN_CLOSED_FOR_PACE
+    hot_day_threshold: int = DEFAULT_HOT_DAY_THRESHOLD
+    hot_window_days: int = DEFAULT_HOT_WINDOW_DAYS
 
 
 async def load_thresholds(session: AsyncSession) -> Thresholds:
@@ -98,6 +105,8 @@ async def load_thresholds(session: AsyncSession) -> Thresholds:
         min_closed_for_pace=int(
             stored.get(SettingKey.MIN_CLOSED_FOR_PACE, DEFAULT_MIN_CLOSED_FOR_PACE)
         ),
+        hot_day_threshold=int(stored.get(SettingKey.HOT_DAY_THRESHOLD, DEFAULT_HOT_DAY_THRESHOLD)),
+        hot_window_days=int(stored.get(SettingKey.HOT_WINDOW_DAYS, DEFAULT_HOT_WINDOW_DAYS)),
     )
 
 
@@ -285,6 +294,32 @@ def program_pace(
         closed_tasks=tasks,
         remaining=work_of(row, children).remaining,
         min_closed_tasks=thresholds.min_closed_for_pace,
+    )
+
+
+def hot_window(today: date, thresholds: Thresholds) -> tuple[date, date]:
+    """Окно ответа «где неделя перегружена?» — с сегодняшнего, длина из справочника (V15)."""
+    return hot_window_of(today, thresholds.hot_window_days)
+
+
+def hot_days(
+    open_dates: Iterable[tuple[date, CalendarKind]],
+    *,
+    since: date,
+    until: date,
+    today: date,
+    thresholds: Thresholds,
+) -> list[HotDay]:
+    """Горячие дни с `since` по `until` — порог из справочника (ТЗ 5, V15).
+
+    Прошедшие дни горячими не бывают: несделанное там уже «срок прошёл», и начало
+    поднимается до сегодняшнего здесь, а не у каждого вызова.
+    """
+    return hot_days_of(
+        open_dates,
+        since=max(since, today),
+        until=until,
+        threshold=thresholds.hot_day_threshold,
     )
 
 

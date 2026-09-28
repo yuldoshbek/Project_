@@ -80,6 +80,14 @@
   иногда меньше: день движения задачи виден на нём только у молчащей, а свежая задача
   оживила бы проект, и разошёлся бы уже экран «Проекты».
 
+**Годовые циклы экрана «Календарь»** (утверждён 28.09.2026, `frontend/src/sections/calendar/
+demo.ts` в коммите cbcc380) — те же пять правил. Сроков базы они не повторяют: годовой отчёт
+по Стратегии здесь — вехи 15 февраля, и цикл на тот же день показал бы одно дело дважды.
+Год начала «раз в N лет» — от года загрузки, как на экране. У переаттестации он — первый год,
+чей день позже горизонта: за год вперёд дат у неё нет в любой день загрузки, и она видна
+только в списке циклов. Год начала «от прошлого», как на экране, с 15 ноября давал бы дату в
+горизонте.
+
 Люди выдуманы; организации — только в роли партнёра по вымышленному проекту и Центр из
 справочников.
 """
@@ -97,6 +105,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.clock import local_date
+from app.domain.cycles import CycleRule, horizon
 from app.domain.decisions import DecisionKind, DecisionState
 from app.domain.dictionaries import OrganizationKind, OrganizationRole, ProjectStatus, TaskStatus
 from app.repos.database import dispose_database, init_database, session_scope
@@ -116,6 +125,7 @@ from app.repos.models import (
     TaskChecklistItem,
     TaskTypeRef,
     User,
+    YearlyCycle,
 )
 from app.services import audit as _audit  # noqa: F401 — журнал изменений включается импортом
 from app.settings import get_settings
@@ -1102,6 +1112,66 @@ TASKS = [
 NEW_PROJECT = "Пилот с Минздравом: мониторинг вспышек"
 
 
+@dataclass(frozen=True, slots=True)
+class C:
+    """Годовой цикл экрана «Календарь». Год начала — лет от текущего."""
+
+    title: str
+    rule: CycleRule
+    month: int
+    day: int
+    who: str
+    every_years: int = 1
+    anchor: int = 0
+    after_horizon: bool = False
+    """Год начала — первый, чей день позже горизонта: цикл без дат на год вперёд."""
+
+    project: str | None = None
+
+
+CYCLES = [
+    C(
+        "Сведения в Кабмин по программе космического мониторинга",
+        CycleRule.QUARTERLY,
+        1,
+        5,
+        "rakhimov",
+    ),
+    C("Сводка о снимках, выданных ведомствам", CycleRule.QUARTERLY, 1, 12, "tursunov"),
+    C("Годовой отчёт об исполнении Указа ПФ-155", CycleRule.ANNUAL, 1, 20, "yusupova"),
+    C(
+        "Пересмотр перечня открытых данных ДЗЗ",
+        CycleRule.EVERY_N_YEARS,
+        3,
+        1,
+        "tursunov",
+        every_years=3,
+        anchor=1,
+    ),
+    C(
+        "Переаттестация операторов станции приёма",
+        CycleRule.EVERY_N_YEARS,
+        11,
+        15,
+        "rakhimov",
+        every_years=2,
+        after_horizon=True,
+        project="station",
+    ),
+]
+
+
+def _anchor(spec: C, today: date) -> int:
+    """Год начала цикла демо: лет от текущего — или первый год за горизонтом."""
+    if not spec.after_horizon:
+        return today.year + spec.anchor
+    edge = horizon(today)
+    year = today.year
+    while date(year, spec.month, spec.day) <= edge:
+        year += 1
+    return year
+
+
 async def _codes(
     session: AsyncSession, model: type[ProjectTypeRef] | type[TaskTypeRef]
 ) -> dict[str, uuid.UUID]:
@@ -1487,6 +1557,22 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         ]
     )
 
+    session.add_all(
+        YearlyCycle(
+            title=spec.title,
+            rule=spec.rule.value,
+            month=spec.month,
+            day=spec.day,
+            every_years=spec.every_years,
+            anchor_year=_anchor(spec, today),
+            project_id=projects[spec.project].id if spec.project else None,
+            responsible_person_id=people[spec.who].id,
+            is_active=True,
+            created_at=ago(120),
+        )
+        for spec in CYCLES
+    )
+
     # Всё, что заведено выше, было «до прошлого визита».
     await session.execute(update(User).values(last_visit_at=datetime.now(UTC)))
     await session.flush()
@@ -1495,6 +1581,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         "milestones": len(milestones),
         "tasks": len(tasks),
         "checklist_items": sum(len(work.checklist) for work in TASKS),
+        "cycles": len(CYCLES),
     }
 
 

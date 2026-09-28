@@ -76,6 +76,11 @@ export function usePultAction() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: perform,
-    onSettled: () => client.invalidateQueries({ queryKey: pultQuery().queryKey }),
+    // Решение со сроком встаёт в календарь, вопрос меняет ступень даты — те же числа.
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: pultQuery().queryKey }),
+        client.invalidateQueries({ queryKey: ['calendar'] }),
+      ]),
   });
 }

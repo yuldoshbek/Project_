@@ -514,6 +514,27 @@ SETTINGS: list[Row] = [
         ),
     },
     {
+        "key": SettingKey.HOT_DAY_THRESHOLD.value,
+        "value": 3,
+        "value_type": "count",
+        "min_value": 2,
+        "max_value": 20,
+        "description_ru": (
+            "Сколько незакрытых сроков в один день делают его горячим в Календаре; срок "
+            "проекта в день его же вехи — один срок (ТЗ 5)"
+        ),
+    },
+    {
+        "key": SettingKey.HOT_WINDOW_DAYS.value,
+        "value": 28,
+        "value_type": "days",
+        "min_value": 7,
+        "max_value": 90,
+        "description_ru": (
+            "На сколько дней вперёд Календарь отвечает «где неделя перегружена?» (ТЗ 5)"
+        ),
+    },
+    {
         "key": SettingKey.SUMMARY_AT.value,
         "value": "08:30",
         "value_type": "time",

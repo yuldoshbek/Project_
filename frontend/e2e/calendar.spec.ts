@@ -1,14 +1,14 @@
 /**
- * Календарь — экран на утверждение, вымышленные данные (`sections/calendar/demo.ts`).
+ * Календарь на живой системе — через настоящий API и базу (`python -m app.demo`).
  *
- * Снимки трёх устройств в двух темах; горячий день и годовой цикл на ноутбуке; список дней
- * на телефоне — без горизонтальной прокрутки и с целями нажатия не меньше 44 px, горячий
- * день за концом списка; список годовых циклов.
+ * Снимки трёх устройств в двух темах; горячий день и годовой цикл на ноутбуке; форма цикла
+ * с датами до записи; список дней на телефоне — без горизонтальной прокрутки и с целями
+ * нажатия не меньше 44 px, горячий день за концом списка; список годовых циклов.
  *
- * Вымышленные даты считаются от сегодняшнего дня, а даты циклов — по календарю: какой день
- * горячий и что в нём, зависит от дня запуска. Раздел данных у сервера не спрашивает,
- * поэтому время страницы закреплено; с API проверки станут структурными. Сценарии ничего
- * не пишут: заведённый цикл живёт во вкладке до перезагрузки.
+ * Вымышленные сроки сервер считает от дня загрузки демо, а даты циклов — по календарю,
+ * поэтому проверки — по устройству экрана, а не по числам дня. Горячие дни демо — сегодня,
+ * через 10 и через 20 дней: последний дальше двух недель списка телефона. Сценарии ничего
+ * не пишут: цикл до записи не заводится, отмена не нажимается.
  */
 
 import { expect, test, type Page } from '@playwright/test';
@@ -25,7 +25,8 @@ const THEMES = ['light', 'dim'] as const;
 
 const MIN_TOUCH_TARGET = 44;
 
-const NOW = new Date('2026-09-28T07:00:00Z');
+const ANSWER = /^Горячих дней: \d+$/;
+const DATE = /\d{2}\.\d{2}\.\d{4}/;
 
 let link: string;
 
@@ -34,7 +35,6 @@ test.beforeAll(() => {
 });
 
 async function openCalendar(page: Page, theme: (typeof THEMES)[number] = 'light') {
-  await page.clock.setFixedTime(NOW);
   await page.goto(link);
   await page.evaluate((value) => {
     localStorage.setItem('orbita.theme', value);
@@ -42,7 +42,21 @@ async function openCalendar(page: Page, theme: (typeof THEMES)[number] = 'light'
   }, theme);
   await page.goto('/calendar');
   await expect(page.getByRole('heading', { name: 'Календарь', level: 1 })).toBeVisible();
-  await expect(page.getByText('Горячих дней: 3')).toBeVisible();
+  await expect(page.getByText(ANSWER)).toBeVisible();
+}
+
+/** Кнопки горячих дней в карточке «Где неделя перегружена?» — по порядку дней. */
+function hotButtons(page: Page) {
+  return page
+    .getByRole('heading', { name: 'Где неделя перегружена?' })
+    .locator('xpath=ancestor::section[1]')
+    .getByRole('button');
+}
+
+/** «Вс, 18 октября» — день горячей строки без приписки «· сегодня». */
+async function dayOf(button: ReturnType<typeof hotButtons>): Promise<string> {
+  const text = (await button.locator('span span').first().textContent()) ?? '';
+  return text.split(' · ')[0]!.trim();
 }
 
 async function noOverflow(page: Page) {
@@ -67,15 +81,20 @@ test('горячий день и годовой цикл на ноутбуке',
   await page.setViewportSize({ width: 1440, height: 900 });
   await openCalendar(page);
 
-  await page.getByRole('button', { name: /^Вс, 18 октября/ }).click();
-  await expect(page.getByRole('region', { name: 'Октябрь 2026' })).toBeVisible();
-  await expect(page.getByText(/^Горячий день: 5 сроков/)).toBeVisible();
+  // Последний горячий день окна: сетка уходит на его месяц и выбирает его.
+  const last = hotButtons(page).last();
+  const title = await dayOf(last);
+  await last.click();
+  await expect(page.getByRole('heading', { name: title, level: 2 })).toBeVisible();
+  await expect(page.getByText(/^Горячий день: \d+ срок/)).toBeVisible();
   await page.screenshot({ path: `${REPORT_DIR}/calendar-hot-laptop-light.png` });
 
-  await page.getByRole('button', { name: /^Пн, 5 октября/ }).click();
-  await page.getByRole('button', { name: /Сведения в Кабмин по программе космического/ }).click();
+  await page.getByRole('button', { name: 'Список циклов' }).click();
+  const list = page.getByRole('dialog', { name: 'Годовые циклы' });
+  await list.getByRole('button', { name: /Сведения в Кабмин/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Годовой цикл' });
   await expect(sheet.getByText('ежеквартально, 5-го числа')).toBeVisible();
+  await expect(sheet.getByText(DATE).first()).toBeVisible();
   await page.screenshot({ path: `${REPORT_DIR}/calendar-cycle-laptop-light.png` });
 });
 
@@ -88,7 +107,10 @@ test('новый годовой цикл: даты до записи', async ({ 
   await form.getByLabel('Название').fill('Отчёт по субплатформам');
   await form.getByText('Ежеквартально').click();
   await form.getByLabel('Число').fill('15');
-  await expect(form.getByText(/15\.10\.2026 · 15\.01\.2027/)).toBeVisible();
+  // Кварталы на год вперёд — даты считает сервер. Горизонт включает свой день: если
+  // сегодня 15-е число квартального месяца, дат пять, а не четыре.
+  const quarters = new RegExp(`^${DATE.source}( · ${DATE.source}){3,4}$`);
+  await expect(form.getByText(quarters)).toBeVisible();
   await page.screenshot({ path: `${REPORT_DIR}/calendar-form-laptop-light.png` });
 });
 
@@ -107,14 +129,17 @@ test('телефон: ближайшие дни и цели нажатия', asy
     expect(box.height, `кнопка ${index}`).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET);
   }
 
-  await page.getByRole('button', { name: /^Чт, 8 октября/ }).click();
-  await expect(page.getByRole('region', { name: 'Чт, 8 октября' })).toBeInViewport();
+  const days = hotButtons(page);
+  const second = await dayOf(days.nth(1));
+  await days.nth(1).click();
+  await expect(page.getByRole('region', { name: second })).toBeInViewport();
   await noOverflow(page);
   await page.screenshot({ path: `${REPORT_DIR}/calendar-list-phone-light.png` });
 
-  // 18 октября — за двумя неделями списка: список дорастает до него и прокручивает.
-  await page.getByRole('button', { name: /^Вс, 18 октября/ }).click();
-  await expect(page.getByRole('region', { name: 'Вс, 18 октября' })).toBeInViewport();
+  // Последний горячий день — за двумя неделями списка: список дорастает и прокручивает.
+  const far = await dayOf(days.last());
+  await days.last().click();
+  await expect(page.getByRole('region', { name: far })).toBeInViewport();
 });
 
 test('список годовых циклов на телефоне', async ({ page }) => {
@@ -123,7 +148,8 @@ test('список годовых циклов на телефоне', async ({ 
 
   await page.getByRole('button', { name: 'Список циклов' }).click();
   const list = page.getByRole('dialog', { name: 'Годовые циклы' });
-  await expect(list.getByText('ближайшая — 15.11.2027', { exact: false })).toBeVisible();
+  await expect(list.getByText(/ближайшая — /).first()).toBeVisible();
+  await expect(list.getByRole('button', { name: /Переаттестация операторов/ })).toBeVisible();
   await noOverflow(page);
   await page.screenshot({ path: `${REPORT_DIR}/calendar-cycles-phone-light.png` });
 });

@@ -1,22 +1,35 @@
 /**
- * Данные раздела «Календарь» и действия с годовыми циклами.
+ * Данные раздела «Календарь» и действия с годовыми циклами — `/api/v1/calendar`,
+ * `/api/v1/cycles…`.
  *
- * Устроено так же, как будет с API: запросы и мутации TanStack Query; после записи цикла
- * перечитывается весь календарь. Даты будущего цикла до записи — запрос без записи, как
- * разбор строки у задач.
- *
- * Сейчас сервер — `demoCalendar`. Когда появится API, меняются тела функций ниже.
+ * После записи цикла перечитывается весь календарь; даты проектов, задач и решений
+ * перечитывают их разделы (`useProjects`, `useTasks`, `usePultAction`) — у них общие числа
+ * (инвариант 2). Даты будущего цикла до записи — запрос без записи, как разбор строки у
+ * задач.
  */
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { demoCalendar } from './demo';
-import type { CycleRuleFields, NewCycle } from './model';
+import { request } from '@/shared/api/client';
+
+import type {
+  CalendarView,
+  CycleDetail,
+  CyclePreview,
+  CycleRuleFields,
+  CycleSummary,
+  NewCycle,
+} from './model';
+
+const CYCLES = '/api/v1/cycles';
 
 export function useCalendar(range: { from: string; to: string }) {
   return useQuery({
     queryKey: ['calendar', range.from, range.to],
-    queryFn: async () => demoCalendar.view(range),
+    queryFn: () =>
+      request<CalendarView>(
+        `/api/v1/calendar?${new URLSearchParams({ from: range.from, to: range.to })}`,
+      ),
     // Листание месяцев не мигает пустым экраном: пока грузится следующий, виден прежний.
     placeholderData: keepPreviousData,
   });
@@ -26,14 +39,14 @@ export function useCalendar(range: { from: string; to: string }) {
 export function useCycles() {
   return useQuery({
     queryKey: ['calendar', 'cycles'],
-    queryFn: async () => demoCalendar.list(),
+    queryFn: () => request<CycleSummary[]>(CYCLES),
   });
 }
 
 export function useCycle(id: string) {
   return useQuery({
     queryKey: ['calendar', 'cycle', id],
-    queryFn: async () => demoCalendar.cycle(id),
+    queryFn: () => request<CycleDetail>(`${CYCLES}/${id}`),
   });
 }
 
@@ -55,7 +68,7 @@ export function useCyclePreview(rule: CycleRuleFields | null) {
       rule?.every_years,
       rule?.anchor_year,
     ],
-    queryFn: async () => demoCalendar.preview(rule!),
+    queryFn: () => request<CyclePreview>(`${CYCLES}/preview`, { method: 'POST', body: rule }),
     enabled: rule !== null,
     placeholderData: keepPreviousData,
     refetchInterval: false,
@@ -70,7 +83,7 @@ function useRefresh() {
 export function useCreateCycle() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: NewCycle) => demoCalendar.create(input),
+    mutationFn: (input: NewCycle) => request<CycleDetail>(CYCLES, { method: 'POST', body: input }),
     onSettled: refresh,
   });
 }
@@ -79,8 +92,11 @@ export function useCancelCycle() {
   const client = useQueryClient();
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: { id: string; version: number }) =>
-      demoCalendar.cancel(input.id, input.version),
+    mutationFn: (input: { id: string; version: number }) =>
+      request<void>(`${CYCLES}/${input.id}/cancel`, {
+        method: 'POST',
+        body: { version: input.version },
+      }),
     // Отменённого цикла больше нет: без этого перечитывание спросило бы и его — отказ,
     // повтор через секунду, и лист закрывался бы на секунду позже, после ошибки.
     onSuccess: (_, input) => {

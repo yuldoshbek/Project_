@@ -10,7 +10,9 @@
  *
  * Годовой цикл заводит помощник кнопкой в шапке; там же — список всех циклов. Касание даты
  * цикла открывает его правило и даты на год вперёд. Касание остального открывает карточку
- * записи в её разделе.
+ * записи в её разделе листом поверх календаря: проект (и веха — своим проектом) или задачу.
+ * Решение руководителя открывает свой лист — что решено, кто и к какому сроку исполняет, — а
+ * оттуда карточку того, по чему оно принято.
  */
 
 import { CalendarDays, Plus, Repeat } from 'lucide-react';
@@ -19,6 +21,9 @@ import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
 import { useCurrentUser } from '@/app/session';
+import { ProjectPanel } from '@/sections/projects/ProjectPanel';
+import { TaskPanel } from '@/sections/tasks/TaskPanel';
+import { useTasks } from '@/sections/tasks/useTasks';
 import { describeError } from '@/shared/api/client';
 import { cn } from '@/shared/lib/cn';
 import { formatDateTime, localDay } from '@/shared/time';
@@ -31,6 +36,7 @@ import { CycleForm } from './CycleForm';
 import { CyclePanel } from './CyclePanel';
 import { CyclesList } from './CyclesList';
 import { DayAgenda } from './DayAgenda';
+import { DecisionPanel } from './DecisionPanel';
 import { addDays, addMonths, monthRange } from './grid';
 import { HotDaysCard } from './HotDaysCard';
 import { KINDS, type CalendarItem, type CalendarView, type ItemKind } from './model';
@@ -126,6 +132,8 @@ function Calendar({
   const [listing, setListing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [card, setCard] = useState<{ kind: 'project' | 'task'; id: string } | null>(null);
+  const [decision, setDecision] = useState<CalendarItem | null>(null);
   /** День, к которому прокрутить список телефона, когда он дорисуется. */
   const [target, setTarget] = useState<string | null>(null);
 
@@ -189,14 +197,17 @@ function Calendar({
     setSelected(date);
   };
 
-  // Касание даты: цикл — его лист; остальное — карточка записи в её разделе. Пока экран на
-  // утверждении, вымышленных записей в разделах нет — экран говорит, что будет.
+  // Касание даты: цикл — его лист, решение — свой лист, проект и задача — их карточка.
   const open = (item: CalendarItem) => {
-    if (item.target.kind === 'cycle') setCycle(item.target.id);
-    else setNotice(t(`calendar.notice.${item.target.kind}`));
+    const { kind, id } = item.target;
+    if (kind === 'cycle') setCycle(id);
+    else if (item.kind === 'decision' || kind === 'decision') setDecision(item);
+    else setCard({ kind, id });
   };
 
   const closeCycle = useCallback(() => setCycle(null), []);
+  const closeCard = useCallback(() => setCard(null), []);
+  const closeDecision = useCallback(() => setDecision(null), []);
   const closeList = useCallback(() => setListing(false), []);
   const closeCreate = useCallback(() => setCreating(false), []);
 
@@ -287,6 +298,49 @@ function Calendar({
         </>
       )}
 
+      {decision ? (
+        <Sheet
+          label={t('calendar.decision.label')}
+          closeLabel={t('calendar.decision.close')}
+          onClose={closeDecision}
+        >
+          <DecisionPanel
+            item={decision}
+            onOpen={(target) => {
+              setDecision(null);
+              setCard(target);
+            }}
+          />
+        </Sheet>
+      ) : null}
+
+      {card?.kind === 'project' ? (
+        <Sheet
+          label={t('sections.projects')}
+          closeLabel={t('projects.panel.close')}
+          onClose={closeCard}
+          wide
+        >
+          <ProjectPanel
+            key={card.id}
+            id={card.id}
+            canEdit={canEdit}
+            onOpen={(id) => setCard({ kind: 'project', id })}
+          />
+        </Sheet>
+      ) : null}
+
+      {card?.kind === 'task' ? (
+        <Sheet
+          label={t('sections.tasks')}
+          closeLabel={t('tasks.panel.close')}
+          onClose={closeCard}
+          wide
+        >
+          <TaskCard key={card.id} id={card.id} canEdit={canEdit} />
+        </Sheet>
+      ) : null}
+
       {listing ? (
         <Sheet
           label={t('calendar.cycles.title')}
@@ -353,6 +407,27 @@ function Calendar({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Карточка задачи — та же, что в разделе «Задачи»; её справочники (типы, люди, проекты)
+ * — из ответа того раздела, чтобы правка из календаря шла по тем же правилам.
+ */
+function TaskCard({ id, canEdit }: { id: string; canEdit: boolean }) {
+  const tasks = useTasks();
+  if (tasks.isPending) return <Loading />;
+  if (tasks.isError) {
+    return <Failure detail={describeError(tasks.error)} onRetry={() => void tasks.refetch()} />;
+  }
+  return (
+    <TaskPanel
+      id={id}
+      canEdit={canEdit}
+      types={tasks.data.types}
+      people={tasks.data.people}
+      projects={tasks.data.projects}
+    />
   );
 }
 

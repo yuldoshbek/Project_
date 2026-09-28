@@ -65,8 +65,9 @@ export function useProject(id: string | null) {
 }
 
 /**
- * После записи: и список, и карточки, и Пульт, и «Программы» — одни числа везде: программа
- * — тот же проект, и её срок, вехи и готовность правятся здесь.
+ * После записи: и список, и карточки, и Пульт, и «Программы», и «Календарь» — одни числа
+ * везде: программа — тот же проект, её срок, вехи и готовность правятся здесь, а срок и
+ * вехи стоят в календаре со ступенью Пульта.
  */
 function useRefresh() {
   const client = useQueryClient();
@@ -75,6 +76,7 @@ function useRefresh() {
       client.invalidateQueries({ queryKey: ['projects'] }),
       client.invalidateQueries({ queryKey: ['pult'] }),
       client.invalidateQueries({ queryKey: ['programs'] }),
+      client.invalidateQueries({ queryKey: ['calendar'] }),
     ]);
 }
 

@@ -1,5 +1,5 @@
 """Вымышленные данные в базе дают то, что заказчик утвердил на экранах Пульта, «Проектов»,
-«Задач» и «Программ».
+«Задач», «Программ» и «Календаря».
 
 Экран утверждали по вымышленному серверу во фронтенде, а превью показывает сервер. Если
 демо в базе разойдётся с утверждённым, заказчик увидит на превью не тот экран, что
@@ -23,6 +23,7 @@ from app import demo
 from app.domain.attention import Attention
 from app.domain.audit import AuditAction
 from app.domain.clock import local_date, now_utc
+from app.domain.cycles import occurrences
 from app.domain.dictionaries import OrganizationRole, ProjectStatus, TaskStatus
 from app.domain.pult import MILESTONES, PROJECTS, AuditEntry, due_shift
 from app.repos import attention as snapshot
@@ -36,7 +37,7 @@ from app.repos.models import (
     Task,
     TaskChecklistItem,
 )
-from app.services import metrics, programs
+from app.services import calendar, metrics, programs
 
 pytestmark = pytest.mark.infra
 
@@ -487,3 +488,60 @@ class TestTasks:
             .group_by(Task.title)
         )
         assert {title: (done, total) for title, done, total in rows} == CHECKLISTS
+
+
+class TestCalendar:
+    @pytest.mark.parametrize(
+        "today", [date(2026, 9, 28), date(2026, 11, 14), date(2026, 11, 15), date(2026, 12, 31)]
+    )
+    def test_cycle_without_dates_stays_so_on_any_load_day(self, today: date) -> None:
+        # С 15 ноября горизонт доходит до 15 ноября следующего года: год начала «от прошлого»
+        # дал бы дату в горизонте.
+        spec = next(each for each in demo.CYCLES if each.after_horizon)
+        anchor = demo._anchor(spec, today)
+        dates = occurrences(
+            rule=spec.rule,
+            month=spec.month,
+            day=spec.day,
+            every_years=spec.every_years,
+            anchor_year=anchor,
+            since=today,
+        )
+        assert dates == []
+        assert date(anchor, spec.month, spec.day) > today
+
+    async def test_the_cycles_of_the_approved_screen(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        cycles = await calendar.cycles(session, today=loaded.today)
+        assert {cycle.title for cycle in cycles} == {spec.title for spec in demo.CYCLES}
+        # Переаттестация — год начала за горизонтом: за год вперёд дат нет, видна в списке.
+        operators = next(cycle for cycle in cycles if cycle.title.startswith("Переаттестация"))
+        assert operators.dates == [] and operators.next_date is not None
+        assert operators.owner is not None and operators.owner.id == loaded.projects["station"].id
+
+    async def test_hot_days_and_overdue_as_on_the_approved_screen(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        view = await calendar.load(
+            session,
+            since=loaded.today,
+            until=loaded.on(13),
+            now=loaded.now,
+            zone=TASHKENT,
+            is_demo=True,
+        )
+        # Сегодня, через 10 и через 20 дней — дни сроков базы; даты циклов по календарю в
+        # другой день загрузки могут добавить горячий день, но не убрать эти.
+        hot = [day.date for day in view.hot_ahead]
+        assert {loaded.today, loaded.on(10), loaded.on(20)} <= set(hot)
+        assert len(view.overdue) == 5
+        # Через 6 дней итоговая веха стажировок в день срока проекта — одна строка.
+        interns = [
+            item
+            for item in view.items
+            if item.date == loaded.on(6)
+            and item.owner is not None
+            and item.owner.id == loaded.projects["interns"].id
+        ]
+        assert [(item.kind.value, item.ends_project) for item in interns] == [("milestone", True)]
