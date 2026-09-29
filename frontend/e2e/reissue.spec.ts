@@ -24,7 +24,10 @@ test('перевыпуск гасит прежнюю сессию сразу', a
   const managerPage = await manager.newPage();
   await managerPage.goto(link);
   await managerPage.goto('/management');
+  await managerPage.getByRole('tab', { name: 'Доступ' }).click();
   await managerPage.getByRole('button', { name: 'Перевыпустить ссылку' }).first().click();
+  // Перевыпуск переспрашивает: случайное касание выкинуло бы из системы и того, кто нажал.
+  await managerPage.getByRole('button', { name: 'Перевыпустить', exact: true }).click();
   await expect(
     managerPage.getByText('Ссылка показывается один раз', { exact: false }),
   ).toBeVisible();
