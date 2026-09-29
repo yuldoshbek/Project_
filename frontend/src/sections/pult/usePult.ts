@@ -13,7 +13,11 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/r
 
 import { request } from '@/shared/api/client';
 
+import { deviceSetup, isAppleMobile, readEnvironment } from '@/app/notifications';
+import { managementQuery } from '@/sections/management/useManagement';
+
 import type { DecisionKind, PultView, ReportPeriod, ReportView, TargetType } from './model';
+import { demoDevice, sendAtOf, summaryFrom } from './summary-demo';
 
 export function pultQuery() {
   return queryOptions({
@@ -34,6 +38,45 @@ export function reportQuery(period: ReportPeriod, offset: number) {
 
 export function usePult() {
   return useQuery(pultQuery());
+}
+
+/**
+ * Утренняя сводка. Пока — вымышленный сервер (`summary-demo.ts`): строки Пульта и время из
+ * порога в ответе Управления. С API это станет `request('/api/v1/pult/summary')` под ключом
+ * `['pult', 'summary']` — он перечитается после решения вместе с Пультом.
+ *
+ * Ключ не зависит от `as_of` Пульта: оно новое в каждом ответе, и под новым ключом вкладка
+ * каждые 15 секунд уходила в «загрузку» — строка сворачивалась, черновик вопроса пропадал.
+ */
+export function useSummary(pult: PultView) {
+  return useQuery({
+    ...managementQuery(),
+    select: (management) => summaryFrom(pult, sendAtOf(management)),
+  });
+}
+
+const DEVICE_KEY = ['pult', 'device'];
+
+/** Уведомления на этом устройстве: можно ли их включить и включены ли. */
+export function useThisDevice() {
+  const client = useQueryClient();
+  const state = useQuery({
+    queryKey: DEVICE_KEY,
+    queryFn: async () => {
+      const environment = readEnvironment();
+      return {
+        setup: deviceSetup(environment),
+        apple: isAppleMobile(environment),
+        enabledOn: demoDevice.enabled(),
+      };
+    },
+    refetchInterval: false,
+  });
+  const enable = useMutation({
+    mutationFn: async () => demoDevice.enable(),
+    onSettled: () => client.invalidateQueries({ queryKey: DEVICE_KEY }),
+  });
+  return { state, enable };
 }
 
 export interface Target {

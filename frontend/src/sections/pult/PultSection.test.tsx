@@ -8,13 +8,53 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUser } from '@/shared/api/orbita';
+import { setViewport } from '@/test-setup';
 
 import type { PultRow, PultView, ReportView } from './model';
 import { PultSection } from './PultSection';
+import { demoDevice } from './summary-demo';
+
+/** Что подменяет `pushCapable`: в jsdom ни уведомлений, ни service worker нет. */
+const PUSH_STUBS: [object, string][] = [
+  [window, 'Notification'],
+  [window, 'PushManager'],
+  [navigator, 'serviceWorker'],
+];
+
+/**
+ * Адрес вместо маршрутизатора: вкладка Пульта живёт в `?view=`, и сюда ведёт касание утренней
+ * сводки. Подмена хранит строку поиска и перерисовывает экран, когда её меняют.
+ */
+const route = vi.hoisted(() => {
+  let search: Record<string, unknown> = {};
+  const listeners = new Set<() => void>();
+  return {
+    get: () => search,
+    set: (next: Record<string, unknown>) => {
+      search = next;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+});
+
+vi.mock('@tanstack/react-router', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    useSearch: () => useSyncExternalStore(route.subscribe, route.get),
+    useNavigate: () => (options: { search: Record<string, unknown> }) => {
+      route.set(options.search);
+      return Promise.resolve();
+    },
+  };
+});
 
 const KARIMOV = { id: 'p-karimov', name: 'Каримов А.' };
 const TURSUNOV = { id: 'p-tursunov', name: 'Турсунов Б.' };
@@ -152,15 +192,32 @@ function reply(status: number, body?: unknown): Response {
   } as unknown as Response;
 }
 
-/** Подменить сеть. Возвращает список запросов, чтобы проверить, что ушло на сервер. */
-function serve(role: 'leader' | 'assistant') {
+/**
+ * Подменить сеть. Возвращает список запросов, чтобы проверить, что ушло на сервер.
+ *
+ * `sendAt` — порог «Утренняя сводка» в ответе Управления. `fresh` — как настоящий сервер:
+ * у каждого ответа Пульта своё `as_of`.
+ */
+function serve(
+  role: 'leader' | 'assistant',
+  view: PultView = VIEW,
+  { sendAt = '08:30', fresh = false }: { sendAt?: string; fresh?: boolean } = {},
+) {
   const calls: { method: string; path: string; body: unknown }[] = [];
+  let answered = 0;
   vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
     calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
-    if (path === '/api/v1/pult') return Promise.resolve(reply(200, VIEW));
+    if (path === '/api/v1/pult') {
+      answered += 1;
+      const as_of = fresh ? `2026-09-25T12:00:${String(answered).padStart(2, '0')}Z` : view.as_of;
+      return Promise.resolve(reply(200, { ...view, as_of }));
+    }
+    if (path === '/api/v1/management') {
+      return Promise.resolve(reply(200, { thresholds: [{ key: 'summary_at', value: sendAt }] }));
+    }
     if (path.startsWith('/api/v1/pult/report')) {
       return Promise.resolve(reply(200, report(path.includes('period=month') ? 'month' : 'week')));
     }
@@ -173,14 +230,23 @@ function serve(role: 'leader' | 'assistant') {
 
 function renderPult() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  render(
     <QueryClientProvider client={client}>
       <PultSection />
     </QueryClientProvider>,
   );
+  return client;
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  // Сначала снять экран: сброс адреса ниже перерисовал бы смонтированный Пульт вне `act`.
+  cleanup();
+  vi.restoreAllMocks();
+  // Не `vi.unstubAllGlobals()`: он снял бы и `matchMedia` общей подготовки (`test-setup.ts`).
+  for (const [target, key] of PUSH_STUBS) Reflect.deleteProperty(target, key);
+  route.set({});
+  demoDevice.reset();
+});
 
 describe('Пульт', () => {
   it('говорит, что данные вымышленные, пока это не рабочий контур', async () => {
@@ -285,5 +351,220 @@ describe('Пульт', () => {
 
     expect(await screen.findByText('Отчёт за месяц 01.09.2026 — 30.09.2026')).toBeInTheDocument();
     expect(calls.map((call) => call.path)).toContain('/api/v1/pult/report?period=month&offset=0');
+  });
+});
+
+/** Пульт с одним сроком сегодня: строка «горит» с нулём дней до срока. */
+const WITH_DUE: PultView = {
+  ...VIEW,
+  rows: [
+    ...VIEW.rows,
+    row({
+      section: 'tasks',
+      entity_id: 't-5',
+      target_type: 'task',
+      target_id: 't-5',
+      title: 'Выгрузка данных в субплатформу',
+      step: 'burning',
+      deviation: 0,
+      due_on: '2026-09-25',
+    }),
+    row({
+      section: 'tasks',
+      entity_id: 't-6',
+      target_type: 'task',
+      target_id: 't-6',
+      title: 'Справка к совещанию',
+      step: 'burning',
+      deviation: 3,
+    }),
+  ],
+};
+
+/** Устройство, на котором уведомления можно включить: как Chrome на ноутбуке. */
+function pushCapable(permission: NotificationPermission = 'default') {
+  const values = [{ permission }, function PushManager() {}, {}];
+  PUSH_STUBS.forEach(([target, key], index) =>
+    Object.defineProperty(target, key, { value: values[index], configurable: true }),
+  );
+}
+
+describe('утренняя сводка', () => {
+  it('касание уведомления открывает вкладку: вид на экране блокировки и два пункта', async () => {
+    route.set({ view: 'summary' });
+    serve('leader', WITH_DUE);
+    renderPult();
+
+    expect(await screen.findByRole('tab', { name: 'Сводка' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(
+      await screen.findByText('Ждут решения: 1, дольше всех — «Согласование ТЗ», 6 дн.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Срок сегодня: «Выгрузка данных в субплатформу».')).toBeInTheDocument();
+
+    const awaiting = screen.getByRole('heading', { name: 'Ждут решения' }).closest('section')!;
+    expect(within(awaiting).getByText('Согласование ТЗ')).toBeInTheDocument();
+    expect(awaiting).toHaveTextContent('дольше всех: ждёт 6 дн');
+    const due = screen.getByRole('heading', { name: 'Срок сегодня' }).closest('section')!;
+    expect(within(due).getByText('Выгрузка данных в субплатформу')).toBeInTheDocument();
+    // «Горит» через три дня — не сегодня (V26): его место на Пульте, а не в сводке.
+    expect(screen.queryByText('Справка к совещанию')).not.toBeInTheDocument();
+  });
+
+  it('решение из сводки — то же касание, что на Пульте, с «Отменить»', async () => {
+    route.set({ view: 'summary' });
+    const calls = serve('leader', WITH_DUE);
+    renderPult();
+
+    const awaiting = (await screen.findByRole('heading', { name: 'Ждут решения' })).closest(
+      'section',
+    )!;
+    fireEvent.click(within(awaiting).getByRole('button', { name: 'Утвердить' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Отменить' })).toBeVisible());
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/api/v1/decisions',
+      body: { target_type: 'milestone', target_id: 'm-1', kind: 'approve' },
+    });
+  });
+
+  it('пустая сводка — фразы, а не нули и не «спокойно»', async () => {
+    route.set({ view: 'summary' });
+    // Просроченное в Пульте остаётся, в сводку оно не входит (V26): «спокойно» было бы
+    // неправдой.
+    serve('leader', {
+      ...VIEW,
+      rows: VIEW.rows.filter((each) => each.step !== 'awaiting_decision'),
+    });
+    renderPult();
+
+    // Одна фраза — на экране блокировки, вторая — в пункте под ним.
+    expect(await screen.findAllByText('Решений не ждёт.')).toHaveLength(2);
+    expect(screen.getAllByText('Сроков сегодня нет.')).toHaveLength(2);
+    expect(screen.queryByText(/спокойно/)).not.toBeInTheDocument();
+  });
+
+  it('решение без текста на экране блокировки названо вместе со своим объектом', async () => {
+    route.set({ view: 'summary' });
+    serve('leader', {
+      ...VIEW,
+      rows: [
+        row({
+          section: 'decisions',
+          entity_id: 'd-2',
+          target_type: 'task',
+          target_id: 't-2',
+          title: null,
+          decision_kind: 'hurry',
+          context: 'Справка для Кабмина',
+          step: 'burning',
+          deviation: 0,
+          due_on: '2026-09-25',
+        }),
+      ],
+    });
+    renderPult();
+
+    expect(
+      await screen.findByText('Срок сегодня: «Поторопить: „Справка для Кабмина“».'),
+    ).toBeInTheDocument();
+  });
+
+  it('время сводки — из порога в «Управлении»', async () => {
+    route.set({ view: 'summary' });
+    serve('assistant', VIEW, { sendAt: '09:15' });
+    renderPult();
+
+    const notice = (await screen.findByRole('heading', { name: 'Утренняя сводка' })).closest(
+      'section',
+    )!;
+    expect(await within(notice).findByText('09:15')).toBeInTheDocument();
+    expect(screen.getByText(/сводка в 09:15/)).toBeInTheDocument();
+  });
+
+  it('опрос Пульта не сворачивает строку и не стирает черновик вопроса', async () => {
+    route.set({ view: 'summary' });
+    const calls = serve('assistant', WITH_DUE, { fresh: true });
+    const client = renderPult();
+
+    const due = (await screen.findByRole('heading', { name: 'Срок сегодня' })).closest('section')!;
+    fireEvent.click(within(due).getByRole('button', { name: 'Спросить' }));
+    const draft = within(due).getByLabelText('Что нужно решить руководителю');
+    fireEvent.change(draft, { target: { value: 'Переносим выгрузку?' } });
+
+    const polled = calls.filter((each) => each.path === '/api/v1/pult').length;
+    await act(() => client.invalidateQueries({ queryKey: ['pult'] }));
+    await waitFor(() =>
+      expect(calls.filter((each) => each.path === '/api/v1/pult').length).toBeGreaterThan(polled),
+    );
+
+    expect(within(due).getByLabelText('Что нужно решить руководителю')).toHaveValue(
+      'Переносим выгрузку?',
+    );
+  });
+
+  it('руководитель включает уведомления на этом устройстве', async () => {
+    pushCapable();
+    route.set({ view: 'summary' });
+    serve('leader');
+    renderPult();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Включить уведомления' }));
+
+    const card = screen
+      .getByRole('heading', { name: 'Уведомления на этом устройстве' })
+      .closest('section')!;
+    expect(await within(card).findByText('Включены')).toBeInTheDocument();
+    // В демо касание ничего не подписывает — и экран не обещает, что сводка придёт.
+    expect(card).toHaveTextContent(/в демо: касание ничего не подписало/);
+    expect(card).not.toHaveTextContent(/сводка придёт в/);
+    expect(card).toHaveTextContent(/Уведомлений только два/);
+    expect(screen.getByText(/Доставка и устройство руководителя пока вымышлены/)).toBeVisible();
+    // «Пришла на iPhone» над «включите на этом устройстве» противоречило бы само себе.
+    expect(screen.queryByText(/Пришла|Ещё не время/)).not.toBeInTheDocument();
+  });
+
+  it('запрещённые в настройках — подсказка, а не кнопка', async () => {
+    pushCapable('denied');
+    route.set({ view: 'summary' });
+    serve('leader');
+    renderPult();
+
+    // jsdom — не iPhone: путь через настройки сайта, а не через «Настройки» телефона.
+    expect(
+      await screen.findByText(/Уведомления для ORBITA запрещены в браузере/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Включить уведомления' })).not.toBeInTheDocument();
+  });
+
+  it('помощник видит, дойдёт ли до руководителя, и где меняется время', async () => {
+    route.set({ view: 'summary' });
+    serve('assistant');
+    renderPult();
+
+    const leader = (await screen.findByRole('heading', { name: 'Кому приходит' })).closest(
+      'section',
+    )!;
+    expect(leader).toHaveTextContent(/iPhone руководителя, с/);
+    expect(screen.getByText(/порог «Утренняя сводка» в «Управлении»/)).toBeInTheDocument();
+    expect(screen.getByText(/Пришла|Ещё не время/)).toBeInTheDocument();
+    expect(screen.getByText(/Доставка и устройство руководителя пока вымышлены/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Включить уведомления' })).not.toBeInTheDocument();
+  });
+
+  it('вкладка переключается касанием и остаётся в адресе', async () => {
+    setViewport({ width: 390 });
+    serve('leader');
+    renderPult();
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Сводка' }));
+
+    expect(route.get()).toEqual({ view: 'summary' });
+    expect(await screen.findByRole('heading', { name: 'Утренняя сводка' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Сейчас' }));
+    expect(route.get()).toEqual({});
   });
 });
