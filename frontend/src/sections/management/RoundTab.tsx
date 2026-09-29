@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { sectionPath } from '@/app/sections';
 import { describeError } from '@/shared/api/client';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
@@ -23,6 +24,29 @@ import { Failure } from '@/shared/ui/States';
 
 import { NEEDS_INPUT, type Person, type Round, type RoundAction, type RoundItem } from './model';
 import { useRoundAction } from './useManagement';
+
+/**
+ * Где слово обхода — название статуса. Оно из справочника (V25): статус, переименованный в
+ * «Справочниках», не должен звучать в обходе по-старому. Остальные подписи — глаголы.
+ */
+const STATUS_WORD: Partial<Record<RoundAction, ['task_statuses' | 'project_statuses', string]>> = {
+  task_cancel: ['task_statuses', 'cancelled'],
+  hold: ['project_statuses', 'on_hold'],
+  project_done: ['project_statuses', 'done'],
+};
+
+function useStatusWords() {
+  const tasks = useStatuses('task_statuses');
+  const projects = useStatuses('project_statuses');
+  return {
+    review: tasks.name('in_review'),
+    of: (action: RoundAction): string | undefined => {
+      const word = STATUS_WORD[action];
+      if (!word) return undefined;
+      return (word[0] === 'task_statuses' ? tasks : projects).name(word[1]);
+    },
+  };
+}
 
 /** Что сделано и с чем — подпись говорит, что именно произошло, а не общее «сделано». */
 interface Notice {
@@ -39,6 +63,7 @@ interface RowProps {
 
 function RoundRow({ item, people, compact, onDone }: RowProps) {
   const { t } = useTranslation();
+  const words = useStatusWords();
   const ids = useId();
   const act = useRoundAction();
   const [asking, setAsking] = useState<RoundAction | null>(null);
@@ -46,7 +71,7 @@ function RoundRow({ item, people, compact, onDone }: RowProps) {
 
   const run = (action: RoundAction, input?: string) =>
     act.mutate(
-      { id: item.id, action, ...(input === undefined ? {} : { input }) },
+      { item, action, ...(input === undefined ? {} : { input }) },
       { onSuccess: () => onDone({ action, title: item.title }) },
     );
 
@@ -71,7 +96,7 @@ function RoundRow({ item, people, compact, onDone }: RowProps) {
       </Link>
       <span className="truncate text-xs text-ink-muted">{meta.join(' · ')}</span>
       <p className="text-sm text-ink">
-        {t(`management.round.reasons.${item.reason}`, { days: item.days })}
+        {t(`management.round.reasons.${item.reason}`, { days: item.days, status: words.review })}
       </p>
 
       {asking ? (
@@ -136,7 +161,9 @@ function RoundRow({ item, people, compact, onDone }: RowProps) {
               disabled={act.isPending}
               onClick={() => (NEEDS_INPUT.has(action) ? setAsking(action) : run(action))}
             >
-              {t(`management.round.actions.${action}`)}
+              {action === 'project_done'
+                ? words.of(action)
+                : t(`management.round.actions.${action}`)}
             </Button>
           ))}
         </span>
@@ -157,6 +184,7 @@ export function RoundTab({
   compact: boolean;
 }) {
   const { t } = useTranslation();
+  const words = useStatusWords();
   const [notice, setNotice] = useState<Notice | null>(null);
   const left = round.items.length;
 
@@ -181,7 +209,10 @@ export function RoundTab({
           role="status"
           className="mb-3 rounded-[var(--radius)] bg-calm-soft px-3 py-2 text-sm text-calm-ink"
         >
-          {t(`management.round.notice.${notice.action}`, { title: notice.title })}
+          {t(`management.round.notice.${notice.action}`, {
+            title: notice.title,
+            status: words.of(notice.action),
+          })}
         </p>
       ) : null}
 

@@ -304,6 +304,22 @@ def validate_range(since: date, until: date) -> None:
         raise RuleViolationError(f"Окно календаря — не больше {MAX_RANGE_DAYS} дней")
 
 
+async def open_dates(
+    session: AsyncSession, *, since: date, until: date, today: date, zone: ZoneInfo
+) -> list[tuple[date, CalendarKind]]:
+    """Незакрытые даты дней `[since, until]` — из них `metrics.hot_days` считает горячие дни.
+
+    Те же даты, что у раздела: сроки записей со слиянием срока проекта с вехой (V15) и даты
+    годовых циклов до горизонта. Нужны «Управлению» — предпросмотру порогов горячих дней,
+    который считает тем же кодом и ничего не пишет.
+    """
+    items = _dated(await read_model.dated(session, since=since, until=until, zone=zone), {})
+    items += _cycle_dates(
+        await read_model.cycles(session), since=since, until=min(until, horizon(today))
+    )
+    return [(item.date, item.kind) for item in items if not item.is_done]
+
+
 async def load(
     session: AsyncSession,
     *,

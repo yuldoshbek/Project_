@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 
 import { STEP_SIGNAL } from '@/sections/pult/model';
 import { deviationText } from '@/sections/pult/text';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Signal } from '@/shared/ui/Signal';
@@ -33,6 +34,7 @@ const COLUMNS: { key: string; sort?: SortKey; align?: 'right' }[] = [
 
 export function Table({ items, onOpen }: { items: ProjectCard[]; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('project_statuses');
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean } | null>(null);
 
   const rows = useMemo(() => {
@@ -113,9 +115,7 @@ export function Table({ items, onOpen }: { items: ProjectCard[]; onOpen: (id: st
               <td className="px-3 py-2 text-xs text-ink">
                 {card.responsible?.name ?? t('projects.card.noHolder')}
               </td>
-              <td className="px-3 py-2 text-xs text-ink">
-                {t(`projects.statuses.${card.status}`)}
-              </td>
+              <td className="px-3 py-2 text-xs text-ink">{statuses.name(card.status)}</td>
               <td className="px-3 py-2">
                 {card.step ? (
                   <span className="flex flex-col items-start gap-0.5">

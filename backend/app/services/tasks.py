@@ -27,7 +27,7 @@ from app.domain.checklists import clean_item
 from app.domain.clock import local_date
 from app.domain.decisions import DecisionTarget
 from app.domain.dictionaries import TaskStatus, localized_name
-from app.domain.errors import NotFoundError, RuleViolationError, check_version
+from app.domain.errors import ConflictError, NotFoundError, RuleViolationError, check_version
 from app.domain.projects import clean_description, validate_horizon
 from app.domain.tasks import (
     ALLOWED_TRANSITIONS,
@@ -278,7 +278,8 @@ async def detail(
         ],
         created_on=local_date(row.created_at, zone),
         question=(question.text, local_date(question.created_at, zone)) if question else None,
-        # Порядок — порядок статусов, а не множества: кнопки не должны прыгать.
+        # Порядок устойчивый, по коду, а не множества: кнопки не должны прыгать. Экран
+        # переставляет их в порядке справочника статусов (V25).
         transitions=[
             status for status in TaskStatus if status in ALLOWED_TRANSITIONS[TaskStatus(row.status)]
         ],
@@ -433,6 +434,40 @@ async def set_status(
         task.completed_at = now
     elif current.is_terminal:
         task.completed_at = None
+    await session.flush()
+
+
+async def _open_task(session: AsyncSession, task_id: uuid.UUID, version: int) -> Task:
+    task = await _task(session, task_id)
+    check_version(expected=version, actual=task.version)
+    if TaskStatus(task.status).is_terminal:
+        raise ConflictError("Задача уже закрыта")
+    return task
+
+
+async def shift_due(
+    session: AsyncSession, *, task_id: uuid.UUID, due_on: date, version: int, zone: ZoneInfo
+) -> None:
+    """Новый срок открытой задачи — «перенести на неделю» из обхода «Управления».
+
+    Та же запись срока, что в карточке: конец рабочего дня по Ташкенту, исходный срок не
+    трогается, перенос журнал запомнит как перенос.
+    """
+    task = await _open_task(session, task_id, version)
+    validate_horizon(due_on)
+    task.due_at = due_moment(due_on, zone)
+    if task.original_due_at is None:
+        task.original_due_at = task.due_at
+    await session.flush()
+
+
+async def assign(
+    session: AsyncSession, *, task_id: uuid.UUID, person_id: uuid.UUID, version: int
+) -> None:
+    """Ответственный открытой задачи — из обхода: задача без ответственного ничья."""
+    task = await _open_task(session, task_id, version)
+    await _check_assignee(session, person_id)
+    task.assignee_person_id = person_id
     await session.flush()
 
 

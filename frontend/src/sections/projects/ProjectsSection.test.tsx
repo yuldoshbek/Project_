@@ -87,7 +87,7 @@ const DICTIONARIES = {
   task_types: [],
   directions: [entry('monitoring', 'Космический мониторинг')],
   regions: [entry('tashkent_city', 'город Ташкент')],
-  project_statuses: [],
+  project_statuses: [] as ReturnType<typeof entry>[],
   task_statuses: [],
 };
 
@@ -245,7 +245,10 @@ function drop(column: HTMLElement, id: string) {
 /** Клиент запросов последнего рендера — чтобы изобразить опрос карточки. */
 let rendered: QueryClient;
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  DICTIONARIES.project_statuses = [];
+});
 
 describe('Проекты', () => {
   it('доска по статусам и пометка «вымышленные данные»', async () => {
@@ -258,6 +261,64 @@ describe('Проекты', () => {
     }
     const paused = screen.getByRole('region', { name: 'На паузе' });
     expect(within(paused).getByText('Причина: Сезон съёмки начинается в ноябре')).toBeVisible();
+  });
+
+  it('статусы — из справочника: переименованный и переставленный в «Управлении»', async () => {
+    DICTIONARIES.project_statuses = [
+      { ...entry('in_progress', 'В работе'), sort_order: 20 },
+      { ...entry('on_hold', 'Отложен до решения'), sort_order: 10 },
+      { ...entry('done', 'Завершён'), sort_order: 30 },
+      { ...entry('cancelled', 'Отменён'), sort_order: 40 },
+    ];
+    serve('assistant');
+    renderProjects();
+
+    const names = ['Отложен до решения', 'В работе', 'Завершён', 'Отменён'];
+    await screen.findByRole('region', { name: 'Отложен до решения' });
+    const columns = screen
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-label'))
+      .filter((name): name is string => name !== null && names.includes(name));
+    expect(columns).toEqual(names);
+    expect(screen.queryByRole('region', { name: 'На паузе' })).not.toBeInTheDocument();
+  });
+
+  it('монитор: широкая колонка — «В работе», где бы она ни стояла', async () => {
+    DICTIONARIES.project_statuses = [
+      { ...entry('in_progress', 'В работе'), sort_order: 20 },
+      { ...entry('on_hold', 'На паузе'), sort_order: 10 },
+      { ...entry('done', 'Завершён'), sort_order: 30 },
+      { ...entry('cancelled', 'Отменён'), sort_order: 40 },
+    ];
+    setViewport({ width: 2560 });
+    serve('assistant');
+    renderProjects();
+
+    const working = await screen.findByRole('region', { name: 'В работе' });
+    await waitFor(() =>
+      expect(working.parentElement?.style.gridTemplateColumns).toBe('1fr 2fr 1fr 1fr'),
+    );
+  });
+
+  it('телефон: вкладки статусов — названия и порядок справочника', async () => {
+    DICTIONARIES.project_statuses = [
+      { ...entry('in_progress', 'В работе'), sort_order: 20 },
+      { ...entry('on_hold', 'Отложен до решения'), sort_order: 10 },
+      { ...entry('done', 'Завершён'), sort_order: 30 },
+      { ...entry('cancelled', 'Отменён'), sort_order: 40 },
+    ];
+    setViewport({ width: 390 });
+    serve('assistant');
+    renderProjects();
+
+    await screen.findByRole('tab', { name: /Отложен до решения/ });
+    const tabs = within(screen.getByRole('tablist', { name: 'Статус' })).getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent?.replace(/^\d+/, ''))).toEqual([
+      'Отложен до решения',
+      'В работе',
+      'Завершён',
+      'Отменён',
+    ]);
   });
 
   it('перенос в «На паузе» спрашивает причину и уходит на сервер с версией', async () => {

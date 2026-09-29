@@ -324,7 +324,7 @@ class T:
 
 @dataclass(frozen=True, slots=True)
 class Step:
-    """Веха шаблона типа, как она лежит в справочнике."""
+    """Веха шаблона типа: название и срок — из справочника, порядок — у будущего проекта."""
 
     title: str
     offset: int
@@ -1244,21 +1244,21 @@ async def _templates(session: AsyncSession) -> dict[str, list[Step]]:
     """Шаблоны вех по коду типа — из справочника, а не из `app.seed`.
 
     Справочник правит помощник (ТЗ 3.9), и проект, заведённый демо, обязан получить те же
-    вехи, что получил бы заведённый им самим.
+    вехи, что получил бы заведённый им самим: по сроку от начала и с тем же порядком
+    (`services.projects.create`), а не по порядку строк шаблона — веха, добавленная в
+    шаблон позже, встаёт по своей дате.
     """
     rows = await session.execute(
-        select(
-            ProjectTypeRef.code,
-            ProjectTypeMilestone.name_ru,
-            ProjectTypeMilestone.offset_days,
-            ProjectTypeMilestone.sort_order,
-        )
+        select(ProjectTypeRef.code, ProjectTypeMilestone.name_ru, ProjectTypeMilestone.offset_days)
         .join(ProjectTypeRef, ProjectTypeRef.id == ProjectTypeMilestone.project_type_id)
-        .order_by(ProjectTypeRef.code, ProjectTypeMilestone.sort_order)
+        .order_by(
+            ProjectTypeRef.code, ProjectTypeMilestone.offset_days, ProjectTypeMilestone.sort_order
+        )
     )
     templates: dict[str, list[Step]] = {}
-    for code, title, offset, order in rows:
-        templates.setdefault(code, []).append(Step(title, offset, order))
+    for code, title, offset in rows:
+        steps = templates.setdefault(code, [])
+        steps.append(Step(title, offset, (len(steps) + 1) * 10))
     return templates
 
 

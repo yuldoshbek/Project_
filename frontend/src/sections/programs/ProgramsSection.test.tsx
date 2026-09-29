@@ -9,7 +9,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { card as projectCard, detail as projectDetail } from '@/sections/projects/test-data';
@@ -41,6 +41,9 @@ function reply(status: number, body?: unknown): Response {
   } as unknown as Response;
 }
 
+/** Справочники для названий статусов; `null` — их нет, и названия идут по ключам перевода. */
+let dictionaries: unknown = null;
+
 function serve(role: 'leader' | 'assistant' = 'leader') {
   const paths: string[] = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
@@ -48,6 +51,9 @@ function serve(role: 'leader' | 'assistant' = 'leader') {
     paths.push(path);
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
     if (path === '/api/v1/programs') return Promise.resolve(reply(200, view()));
+    if (path === '/api/v1/dictionaries' && dictionaries) {
+      return Promise.resolve(reply(200, dictionaries));
+    }
     const project = /^\/api\/v1\/projects\/([^/?]+)$/.exec(path);
     if (project) {
       const id = project[1]!;
@@ -69,7 +75,10 @@ function renderPrograms() {
   );
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  dictionaries = null;
+});
 
 describe('Программы', () => {
   it('ноутбук: горизонт лет, «до конца года» и «успеваем?» рядом', async () => {
@@ -177,6 +186,25 @@ describe('Программы', () => {
     expect(screen.queryByText('Цифровизация агентства 2023–2025')).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText('Цифровизация агентства 2023–2025')).toBeInTheDocument();
+  });
+
+  it('статус завершённой — название из справочника (V25)', async () => {
+    const name = { ru: 'Закрыт', uz_cyrl: 'Закрыт', uz_latn: 'Закрыт' };
+    dictionaries = {
+      project_types: [],
+      task_types: [],
+      directions: [],
+      regions: [],
+      project_statuses: [{ id: 'done', code: 'done', name, sort_order: 30, is_active: true }],
+      task_statuses: [],
+    };
+    serve();
+    renderPrograms();
+    fireEvent.click(await screen.findByRole('button', { name: 'Завершённые и отменённые: 1' }));
+
+    const closed = screen.getByRole('button', { name: /Цифровизация агентства 2023–2025/ });
+    await waitFor(() => expect(closed).toHaveTextContent(/Закрыт · /));
+    expect(closed).not.toHaveTextContent('Завершён');
   });
 
   it('телефон: плитки с отсчётом и вехами по годам, без шкалы', async () => {

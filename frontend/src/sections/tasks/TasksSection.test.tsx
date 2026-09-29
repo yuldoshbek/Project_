@@ -48,6 +48,9 @@ const PARSED: ParsedLine = {
   matched: { type: 'справк', due: 'завтра', assignee: 'Рахимову' },
 };
 
+/** Справочники для названий статусов; `null` — их нет, и названия идут по ключам перевода. */
+let dictionaries: unknown = null;
+
 function serve(role: 'leader' | 'assistant') {
   const calls: { method: string; path: string; body: unknown }[] = [];
   const items: TaskCard[] = ITEMS.map((each) => ({ ...each }));
@@ -64,6 +67,9 @@ function serve(role: 'leader' | 'assistant') {
     const item = /^\/api\/v1\/tasks\/([^/]+)\/checklist\/([^/]+)$/.exec(bare);
 
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
+    if (path === '/api/v1/dictionaries' && dictionaries) {
+      return Promise.resolve(reply(200, dictionaries));
+    }
     if (method === 'GET' && path === BASE) return Promise.resolve(reply(200, view(items)));
     if (method === 'POST' && path === `${BASE}/parse`) return Promise.resolve(reply(200, PARSED));
     if (method === 'POST' && path === BASE) {
@@ -104,7 +110,10 @@ function renderTasks() {
   );
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  dictionaries = null;
+});
 
 describe('Задачи', () => {
   it('список по сроку и пометка «вымышленные данные»', async () => {
@@ -210,6 +219,43 @@ describe('Задачи', () => {
           .map((button) => button.textContent),
       ).toEqual(['В работе', 'Готова', 'Отменена']),
     );
+  });
+
+  it('статусы — из справочника: название в строке, порядок кнопок в карточке (V25)', async () => {
+    const status = (code: string, ru: string, order: number) => ({
+      id: code,
+      code,
+      name: { ru, uz_cyrl: ru, uz_latn: ru },
+      sort_order: order,
+      is_active: true,
+    });
+    dictionaries = {
+      project_types: [],
+      task_types: [],
+      directions: [],
+      regions: [],
+      project_statuses: [],
+      task_statuses: [
+        status('new', 'Поставлена', 10),
+        status('in_progress', 'В работе', 20),
+        status('in_review', 'На согласовании', 5),
+        status('done', 'Готова', 40),
+        status('cancelled', 'Отменена', 50),
+      ],
+    };
+    serve('assistant');
+    renderTasks();
+
+    const row = await screen.findByRole('button', { name: /Тезисы к совещанию/ });
+    await waitFor(() => expect(row).toHaveTextContent('Поставлена'));
+    fireEvent.click(screen.getByText('Выезд на полигон в Джизаке'));
+    const panel = await screen.findByRole('dialog');
+    const control = (await within(panel).findByText('Статус')).closest('section')!;
+    expect(
+      within(control)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['На согласовании', 'Поставлена', 'Готова', 'Отменена']);
   });
 
   it('руководитель смотрит: без строки ввода, смены статуса и отметок', async () => {

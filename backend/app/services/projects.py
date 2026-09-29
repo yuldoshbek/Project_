@@ -607,14 +607,16 @@ async def create(
     )
 
     planned_dates = template_dates(started_on=data.started_on, due_on=data.due_on, offsets=offsets)
-    for step, planned in zip(kind.template, planned_dates, strict=True):
+    # Порядок вех — порядок шаблона по сроку (`repos.projects.project_types`), а не номер шага:
+    # шаг, добавленный в шаблон позже, встаёт по своей дате.
+    for index, (step, planned) in enumerate(zip(kind.template, planned_dates, strict=True)):
         session.add(
             Milestone(
                 project_id=project.id,
                 title=_name(step.names, locale) or step.names.ru,
                 due_on=planned,
                 original_due_on=planned,
-                sort_order=step.sort_order,
+                sort_order=(index + 1) * 10,
             )
         )
     await session.flush()
@@ -955,3 +957,44 @@ async def remove_organization(
     check_version(expected=version, actual=member.version)
     await session.delete(member)
     await session.flush()
+
+
+# --------------------------------------------------------------------------------------
+# Вехи из обхода «Управления»
+# --------------------------------------------------------------------------------------
+
+
+async def _open_milestone(session: AsyncSession, milestone_id: uuid.UUID) -> Milestone:
+    """Непройденная веха открытого проекта — только такую отмечают и переносят."""
+    mark = await session.get(Milestone, milestone_id)
+    if mark is None:
+        raise NotFoundError("Веха не найдена: её могли удалить")
+    project = await _project(session, mark.project_id)
+    if ProjectStatus(project.status_code).is_terminal:
+        raise RuleViolationError("Проект завершён или отменён — его вехи не меняются")
+    if mark.is_passed:
+        raise ConflictError("Веха уже пройдена")
+    return mark
+
+
+async def pass_milestone(
+    session: AsyncSession, *, milestone_id: uuid.UUID, version: int, today: date
+) -> None:
+    """Веха пройдена сегодня — срок прошёл, а отметить забыли (обход, V20)."""
+    mark = await _open_milestone(session, milestone_id)
+    check_version(expected=version, actual=mark.version)
+    mark.is_passed = True
+    mark.passed_on = today
+    await session.flush()
+
+
+async def move_milestone(
+    session: AsyncSession, *, milestone_id: uuid.UUID, due_on: date, version: int
+) -> None:
+    """Новый срок вехи — тем же «Применить», что и в «что если»: с журналом и версией."""
+    mark = await _open_milestone(session, milestone_id)
+    await apply_dates(
+        session,
+        project_id=mark.project_id,
+        changes=[DueChange(ChangeKind.MILESTONE, milestone_id, due_on, version)],
+    )

@@ -35,6 +35,7 @@ from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.people import Person, User
 from app.repos.models.projects import Project, ProjectOrganization
+from app.repos.models.round import RoundMark
 from app.repos.models.tasks import Task
 
 __all__ = [
@@ -62,6 +63,7 @@ __all__ = [
     "ProjectTypeMilestone",
     "ProjectTypeRef",
     "Region",
+    "RoundMark",
     "Session",
     "Setting",
     "Task",

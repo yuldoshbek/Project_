@@ -34,6 +34,8 @@ from app.repos.models import (
     Organization,
     Project,
     ProjectOrganization,
+    ProjectTypeMilestone,
+    ProjectTypeRef,
     Task,
     TaskChecklistItem,
 )
@@ -160,6 +162,33 @@ async def loaded(session: AsyncSession) -> Loaded:
     keys |= {demo.NEW_PROJECT: "new"}
     projects = {keys[each.title]: each for each in await session.scalars(select(Project))}
     return Loaded(now, projects)
+
+
+class TestTemplates:
+    async def test_steps_follow_the_offset_as_a_created_project_does(
+        self, session: AsyncSession
+    ) -> None:
+        """Веха, добавленная в шаблон в Управлении, встаёт по сроку, а не в конец списка."""
+        pilot = await session.scalar(
+            select(ProjectTypeRef.id).where(ProjectTypeRef.code == "industry_pilot")
+        )
+        assert pilot is not None
+        session.add(
+            ProjectTypeMilestone(
+                project_type_id=pilot,
+                name_ru="Промежуточный отчёт",
+                name_uz_cyrl="Промежуточный отчёт",
+                name_uz_latn="Промежуточный отчёт",
+                offset_days=60,
+                sort_order=999,
+            )
+        )
+        await session.flush()
+
+        steps = (await demo._templates(session))["industry_pilot"]
+
+        assert [step.offset for step in steps] == [30, 60, 120, 150]
+        assert [step.order for step in steps] == [10, 20, 30, 40]
 
 
 class TestProjects:

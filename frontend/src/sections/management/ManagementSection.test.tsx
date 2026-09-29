@@ -1,5 +1,6 @@
 /**
- * Управление: обход недели, пороги, справочники, доступ — обещания экрана на утверждение.
+ * Управление: обход недели, пороги, справочники, доступ — обещания экрана, утверждённого
+ * заказчиком 29.09.2026.
  *
  * Обход — пункт уходит только действием, меняющим данные; кнопки «всё нормально» нет.
  * Пороги — в границах, с предпросмотром до записи. Справочники — переименовать, порядок,
@@ -7,8 +8,8 @@
  * Доступ — настоящий API блока 0: перевыпуск переспрашивает. Руководитель смотрит пороги и
  * справочники без правки и не запрашивает `/api/access`.
  *
- * Данные раздела — вымышленный сервер `demo.ts`; сеть (сессия, устройства, перевыпуск,
- * состояние) подменена на уровне `fetch`.
+ * Сеть подменена на уровне `fetch`: `/api/v1/management…` отвечает сервер в памяти
+ * (`test-server.ts`) по правилам настоящего, остальное — заготовки.
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -18,10 +19,11 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUser, DeviceSession, Health } from '@/shared/api/orbita';
+import { issuedLinkQuery } from '@/shared/api/queries';
 import { setViewport } from '@/test-setup';
 
-import { demoManagement } from './demo';
 import { ManagementSection } from './ManagementSection';
+import { FakeManagement, handle } from './test-server';
 
 // Маршрутизатор здесь не участвует: название пункта обхода — обычная ссылка.
 vi.mock('@tanstack/react-router', async (original) => ({
@@ -67,14 +69,28 @@ function reply(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+let server = new FakeManagement();
+let sent: { path: string; body: unknown }[] = [];
+/** Справочники для названий статусов; `null` — их нет, и названия идут по ключам перевода. */
+let dictionaries: unknown = null;
+
 function serve(role: 'assistant' | 'leader' = 'assistant') {
   const calls: { method: string; path: string }[] = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
     calls.push({ method, path });
+    const body = init?.body
+      ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+      : undefined;
+    if (body) sent.push({ path, body });
+    const answer = handle(server, method, path, body);
+    if (answer) return Promise.resolve(reply(answer[0], answer[1]));
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
     if (path === '/api/health') return Promise.resolve(reply(200, HEALTH));
+    if (path === '/api/v1/dictionaries' && dictionaries) {
+      return Promise.resolve(reply(200, dictionaries));
+    }
     if (path.startsWith('/api/access/sessions/')) return Promise.resolve(reply(200, [DEVICE]));
     if (method === 'POST' && path.startsWith('/api/access/links/')) {
       return Promise.resolve(
@@ -89,8 +105,10 @@ function serve(role: 'assistant' | 'leader' = 'assistant') {
   return calls;
 }
 
+let client = new QueryClient();
+
 function renderSection() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <ManagementSection />
@@ -109,7 +127,11 @@ function itemOf(title: string): HTMLElement {
   return found;
 }
 
-beforeEach(() => demoManagement.reset());
+beforeEach(() => {
+  server = new FakeManagement();
+  sent = [];
+  dictionaries = null;
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe('обход недели', () => {
@@ -162,6 +184,57 @@ describe('обход недели', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Завершён: Учебная лаборатория ДЗЗ в вузе',
     );
+  });
+
+  it('названия статусов в обходе — из справочника (V25)', async () => {
+    const status = (code: string, ru: string) => ({
+      id: code,
+      code,
+      name: { ru, uz_cyrl: ru, uz_latn: ru },
+      sort_order: 10,
+      is_active: true,
+    });
+    dictionaries = {
+      project_types: [],
+      task_types: [],
+      directions: [],
+      regions: [],
+      project_statuses: [status('done', 'Закрыт')],
+      task_statuses: [status('in_review', 'На согласовании')],
+    };
+    serve();
+    renderSection();
+
+    await screen.findByText('Согласование проекта постановления с Минэкологии');
+    const review = itemOf('Согласование проекта постановления с Минэкологии');
+    expect(await within(review).findByText(/^На согласовании 16 дн/)).toBeInTheDocument();
+    const lab = itemOf('Учебная лаборатория ДЗЗ в вузе');
+    fireEvent.click(within(lab).getByRole('button', { name: 'Закрыт' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Закрыт: Учебная лаборатория ДЗЗ в вузе',
+    );
+  });
+
+  it('действие уходит с причиной, записью и её версией', async () => {
+    serve();
+    renderSection();
+    await screen.findByText('Приёмка опытного образца платформы');
+    fireEvent.click(
+      within(itemOf('Приёмка опытного образца платформы')).getByRole('button', {
+        name: 'Пройдена',
+      }),
+    );
+    await screen.findByRole('status');
+    expect(sent).toContainEqual({
+      path: '/api/v1/management/round',
+      body: {
+        reason: 'milestone_passed',
+        record_kind: 'milestone',
+        record_id: 'r-acceptance',
+        action: 'milestone_passed',
+        version: 1,
+      },
+    });
   });
 
   it('«Записать, что мешает» просит строку, пустую не записывает', async () => {
@@ -259,7 +332,7 @@ describe('пороги', () => {
     fireEvent.click(within(burn()).getByRole('button', { name: 'Больше: Горит' }));
     fireEvent.click(within(burn()).getByRole('button', { name: 'Больше: Горит' }));
     // Второе устройство успело записать своё.
-    demoManagement.setThreshold('burn_days', 8, 1);
+    server.setThreshold('burn_days', 8, 1);
 
     fireEvent.click(within(burn()).getByRole('button', { name: 'Сохранить' }));
     expect(await within(burn()).findByRole('alert')).toHaveTextContent(/Порог изменили.*сейчас 8/);
@@ -338,6 +411,19 @@ describe('справочники', () => {
     );
   });
 
+  it('организации идут по названию — стрелок порядка у них нет', async () => {
+    serve();
+    renderSection();
+    await openTab('Справочники');
+    fireEvent.click(screen.getByRole('button', { name: /^Организации/ }));
+    expect(
+      screen.queryByRole('button', { name: /^Выше: Министерство экологии/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Переименовать: Министерство экологии' }),
+    ).toBeInTheDocument();
+  });
+
   it('недописанное «новое значение» не переезжает в соседний справочник', async () => {
     serve();
     renderSection();
@@ -412,23 +498,75 @@ describe('доступ', () => {
     expect(within(assistant).getByText(/перестанут работать сразу/)).toBeInTheDocument();
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
 
+    const asked = calls.filter((call) => call.path === '/api/me').length;
     fireEvent.click(within(assistant).getByRole('button', { name: 'Перевыпустить' }));
     expect(await within(assistant).findByText(/Ссылка показывается один раз/)).toBeInTheDocument();
     expect(calls).toContainEqual({ method: 'POST', path: '/api/access/links/assistant' });
-    // Дата настоящего перевыпуска остаётся и после смены вкладки.
+    expect(assistant).toHaveTextContent(/Ссылка выпущена 29\.09, 09:00/);
+    // Своя ссылка гасит свою сессию: сразу спрашивается `/api/me`, и на его отказ встаёт экран
+    // «откройте по ссылке» с новой ссылкой (`app/App.test.tsx`); раздел не перечитывается.
     await waitFor(() =>
-      expect(demoManagement.view().links[0]?.issued_at).toBe('2026-09-29T04:00:00Z'),
+      expect(calls.filter((call) => call.path === '/api/me')).toHaveLength(asked + 1),
     );
+    expect(client.getQueryData(issuedLinkQuery('assistant').queryKey)?.url).toBe(
+      'https://orbita.test/api/access/новая',
+    );
+    expect(
+      calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/management'),
+    ).toHaveLength(1);
     expect(screen.getByText(/Загрузка таблиц Ижро — вместе с разделом Ижро/)).toBeInTheDocument();
+  });
+
+  it('ссылка руководителя: остаётся после смены вкладки, раздел перечитывается', async () => {
+    const calls = serve();
+    renderSection();
+    await openTab('Доступ');
+
+    const leader = () => screen.getByRole('heading', { name: 'Руководитель' }).closest('section')!;
+    fireEvent.click(within(leader()).getByRole('button', { name: 'Перевыпустить ссылку' }));
+    const asked = calls.filter((call) => call.path === '/api/me').length;
+    fireEvent.click(within(leader()).getByRole('button', { name: 'Перевыпустить' }));
+    expect(await within(leader()).findByText(/Ссылка показывается один раз/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/management'),
+      ).toHaveLength(2),
+    );
+    expect(calls.filter((call) => call.path === '/api/me')).toHaveLength(asked);
+
+    await openTab('Пороги');
+    await openTab('Доступ');
+    expect(within(leader()).getByText('https://orbita.test/api/access/новая')).toBeInTheDocument();
+    expect(leader()).toHaveTextContent(/Ссылка выпущена 29\.09, 09:00/);
+  });
+});
+
+describe('перевыпуск с другого устройства', () => {
+  it('ссылка из кэша старше выпуска на сервере — не показывается как действующая', async () => {
+    serve();
+    renderSection();
+    client.setQueryData(issuedLinkQuery('leader').queryKey, {
+      url: 'https://orbita.test/api/access/прежняя',
+      issued_at: '2026-01-05T04:00:00Z',
+    });
+    await openTab('Доступ');
+
+    const leader = screen.getByRole('heading', { name: 'Руководитель' }).closest('section')!;
+    await within(leader).findByText('iPhone Safari');
+    expect(within(leader).queryByText('https://orbita.test/api/access/прежняя')).toBeNull();
+    expect(leader).not.toHaveTextContent(/Ссылка выпущена 05\.01/);
+    expect(leader).toHaveTextContent(/Ссылка выпущена/);
   });
 });
 
 describe('последний вход', () => {
   it('виден и без открытых сессий: после перевыпуска или истечения он остаётся', async () => {
     serve();
-    vi.mocked(globalThis.fetch).mockImplementation((input) => {
+    vi.mocked(globalThis.fetch).mockImplementation((input, init) => {
       const path =
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const answer = handle(server, init?.method ?? 'GET', path, undefined);
+      if (answer) return Promise.resolve(reply(answer[0], answer[1]));
       if (path === '/api/me') return Promise.resolve(reply(200, user('assistant')));
       if (path === '/api/health') return Promise.resolve(reply(200, HEALTH));
       if (path.startsWith('/api/access/sessions/')) return Promise.resolve(reply(200, []));

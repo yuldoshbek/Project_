@@ -6,18 +6,30 @@
  * то же самое, что отсутствие сессии, и разводятся они по коду ответа, а не по тексту.
  */
 
+import { useQueryClient } from '@tanstack/react-query';
 import { Outlet } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NeedsLink } from '@/app/NeedsLink';
 import { useCurrentUser } from '@/app/session';
 import { AppShell } from '@/app/shell/AppShell';
 import { ApiError, describeError } from '@/shared/api/client';
+import { issuedLinkQuery } from '@/shared/api/queries';
 import { Failure, Loading } from '@/shared/ui/States';
 
 export function App() {
   const { t } = useTranslation();
   const user = useCurrentUser();
+  const client = useQueryClient();
+  const role = user.data?.role;
+
+  // Сессия снова есть — своя ссылка, выпущенная до неё, больше не новая: следующий отказ
+  // (истечение, перевыпуск с другого устройства) не должен показывать её действующей.
+  // Отказ `dataUpdatedAt` не меняет, поэтому ссылка переживает тот отказ, ради которого лежит.
+  useEffect(() => {
+    if (role) client.removeQueries({ queryKey: issuedLinkQuery(role).queryKey, exact: true });
+  }, [client, role, user.dataUpdatedAt]);
 
   if (user.isPending) {
     return (
@@ -28,7 +40,12 @@ export function App() {
   }
 
   if (user.error instanceof ApiError && user.error.needsLink) {
-    return <NeedsLink onRetry={() => void user.refetch()} />;
+    // Помощник перевыпустил свою ссылку и погасил эту сессию: показать новую ссылку теперь
+    // может только этот экран. Прежний ответ `/api/me` остаётся при отказе — по нему и роль.
+    const fresh = user.data
+      ? client.getQueryData(issuedLinkQuery(user.data.role).queryKey)
+      : undefined;
+    return <NeedsLink fresh={fresh} onRetry={() => void user.refetch()} />;
   }
 
   if (user.isError) {

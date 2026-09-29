@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { STEP_SIGNAL } from '@/sections/pult/model';
 import { deviationText } from '@/sections/pult/text';
 import { describeError } from '@/shared/api/client';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
@@ -74,6 +75,7 @@ function Panel({
   focus: PanelFocus | undefined;
 }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('project_statuses');
   const terminal = TERMINAL.has(project.status);
   const milestones = useRef<HTMLDivElement>(null);
   const whatIf = useRef<HTMLDivElement>(null);
@@ -90,7 +92,7 @@ function Panel({
     <>
       <header className="flex flex-col gap-2">
         <p className="numeric text-xs text-ink-muted">
-          {project.code} · {project.type.name} · {t(`projects.statuses.${project.status}`)}
+          {project.code} · {project.type.name} · {statuses.name(project.status)}
         </p>
         <h2 className="text-xl leading-snug font-semibold text-ink-strong">{project.title}</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -429,6 +431,7 @@ function Impediment({ project, canEdit }: { project: ProjectDetail; canEdit: boo
 /** Статус — кнопками: доска перетаскиванием — ускорение, а это путь для всех. */
 function StatusControl({ project }: { project: ProjectDetail }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('project_statuses');
   const change = useProjectStatus();
   // Статус с причиной запоминает версию в момент выбора: пока помощник пишет причину,
   // карточка успеет перечитаться, и версия с экрана пропустила бы чужую правку.
@@ -456,7 +459,7 @@ function StatusControl({ project }: { project: ProjectDetail }) {
         />
       ) : (
         <div className="flex flex-wrap gap-2">
-          {BOARD_COLUMNS.map((status) => (
+          {statuses.ordered(BOARD_COLUMNS).map((status) => (
             <Button
               key={status}
               size="small"
@@ -465,7 +468,7 @@ function StatusControl({ project }: { project: ProjectDetail }) {
               disabled={change.isPending}
               onClick={() => (status === project.status ? undefined : choose(status))}
             >
-              {t(`projects.statuses.${status}`)}
+              {statuses.name(status)}
             </Button>
           ))}
         </div>

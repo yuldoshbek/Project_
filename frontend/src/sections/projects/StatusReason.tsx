@@ -8,6 +8,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useStatuses } from '@/shared/api/statuses';
 import { Button } from '@/shared/ui/Button';
 
 import type { ProjectStatus } from './model';
@@ -24,6 +25,7 @@ export function StatusReason({ status, title, busy, onSave, onCancel }: StatusRe
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const inputId = useId();
+  const statuses = useStatuses('project_statuses');
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -33,7 +35,7 @@ export function StatusReason({ status, title, busy, onSave, onCancel }: StatusRe
   return (
     <form onSubmit={submit} className="flex flex-col gap-2">
       <p className="text-sm font-semibold text-ink-strong">
-        {t('projects.board.moveTo', { status: t(`projects.statuses.${status}`) })}
+        {t('projects.board.moveTo', { status: statuses.name(status) })}
         {title ? <span className="block font-normal text-ink-muted">{title}</span> : null}
       </p>
       <label htmlFor={inputId} className="text-sm text-ink">

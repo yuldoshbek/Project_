@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.attention import Attention, Ladder, Row
 from app.domain.clock import local_date
 from app.domain.dictionaries import ProjectStatus, localized_name
-from app.domain.programs import Pace, horizon, year_end
+from app.domain.programs import Pace, PaceVerdict, horizon, year_end
 from app.repos import programs as programs_model
 from app.repos import projects as read_model
 from app.repos.projects import MarkRow, ProjectRow
@@ -260,6 +260,42 @@ def _year_end(items: list[ProgramView], today: date) -> list[YearEndView]:
             str(row.milestone.id),
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class PaceInputs:
+    """Из чего считается «успеваем?» программ — одним чтением на любой порог."""
+
+    rows: list[ProjectRow]
+    children: dict[uuid.UUID, list[ProjectRow]]
+    closed_tasks: dict[uuid.UUID, int]
+
+
+async def pace_inputs(session: AsyncSession, *, today: date, zone: ZoneInfo) -> PaceInputs:
+    ids = await programs_model.scope(session)
+    rows = await read_model.projects(session, ids=ids) if ids else []
+    since, until = metrics.pace_window(today, zone)
+    closed = await programs_model.closed_tasks_between(session, ids, since, until)
+    return PaceInputs(rows=rows, children=children_of(rows), closed_tasks=closed)
+
+
+def little_data(inputs: PaceInputs, *, today: date, thresholds: metrics.Thresholds) -> int:
+    """Сколько программ отвечают на «успеваем?» «мало данных» — тем же `metrics.program_pace`,
+    что раздел. Нужно «Управлению»: порог `min_closed_for_pace` и его предпросмотр."""
+    count = 0
+    for row in inputs.rows:
+        if not row.is_multiyear:
+            continue
+        pace = metrics.program_pace(
+            row,
+            inputs.children.get(row.id, []),
+            closed_tasks=inputs.closed_tasks,
+            today=today,
+            thresholds=thresholds,
+        )
+        if pace is not None and pace.verdict is PaceVerdict.LITTLE_DATA:
+            count += 1
+    return count
 
 
 async def load(

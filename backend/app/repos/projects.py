@@ -351,7 +351,9 @@ async def project_types(
     for step in await session.scalars(
         select(ProjectTypeMilestone)
         .where(ProjectTypeMilestone.project_type_id.in_(list(steps)))
-        .order_by(ProjectTypeMilestone.sort_order)
+        # По сроку от начала: шаблон правят в «Управлении», и веха, добавленная позже, должна
+        # встать в новом проекте на своё место по дате, а не в конец.
+        .order_by(ProjectTypeMilestone.offset_days, ProjectTypeMilestone.sort_order)
     ):
         steps[step.project_type_id].append(
             TemplateStep(

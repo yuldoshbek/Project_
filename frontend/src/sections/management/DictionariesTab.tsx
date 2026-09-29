@@ -8,8 +8,10 @@
  * подставится в новый проект этого типа.
  *
  * Набор статусов задан правилами переходов, регионов — ТЗ 3.1: статус переименовывают и
- * переставляют, но не добавляют и не выключают; регион — всё, кроме «добавить». Названия
- * правятся по-русски; узбекские письменности приходят с языками в блоке 3 (V22).
+ * переставляют, но не добавляют и не выключают, и новое название и порядок видны на всех
+ * экранах (V25); регион — всё, кроме «добавить»; организации идут по названию — без «выше» и
+ * «ниже» (`can_move`). Названия правятся по-русски; узбекские письменности приходят с языками
+ * в блоке 3 (V22).
  *
  * Правка идёт с версией, которую видел человек (инвариант 15). Строки не пересоздаются от
  * версии: иначе отказ «значение уже изменили» исчезал бы вместе с черновиком.
@@ -165,34 +167,44 @@ function EntryRow({
           </span>
           {canEdit ? (
             <span className="flex flex-wrap items-center gap-1">
-              <Button
-                look="quiet"
-                size="icon"
-                aria-label={t('management.dictionaries.up', { name: entry.name })}
-                disabled={index === 0 || change.isPending}
-                onClick={() =>
-                  change.mutate({
-                    op: 'move',
-                    kind,
-                    id: entry.id,
-                    step: -1,
-                    version: entry.version,
-                  })
-                }
-              >
-                <ArrowUp className="size-4" aria-hidden="true" />
-              </Button>
-              <Button
-                look="quiet"
-                size="icon"
-                aria-label={t('management.dictionaries.down', { name: entry.name })}
-                disabled={index === group.entries.length - 1 || change.isPending}
-                onClick={() =>
-                  change.mutate({ op: 'move', kind, id: entry.id, step: 1, version: entry.version })
-                }
-              >
-                <ArrowDown className="size-4" aria-hidden="true" />
-              </Button>
+              {group.can_move ? (
+                <>
+                  <Button
+                    look="quiet"
+                    size="icon"
+                    aria-label={t('management.dictionaries.up', { name: entry.name })}
+                    disabled={index === 0 || change.isPending}
+                    onClick={() =>
+                      change.mutate({
+                        op: 'move',
+                        kind,
+                        id: entry.id,
+                        step: -1,
+                        version: entry.version,
+                      })
+                    }
+                  >
+                    <ArrowUp className="size-4" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    look="quiet"
+                    size="icon"
+                    aria-label={t('management.dictionaries.down', { name: entry.name })}
+                    disabled={index === group.entries.length - 1 || change.isPending}
+                    onClick={() =>
+                      change.mutate({
+                        op: 'move',
+                        kind,
+                        id: entry.id,
+                        step: 1,
+                        version: entry.version,
+                      })
+                    }
+                  >
+                    <ArrowDown className="size-4" aria-hidden="true" />
+                  </Button>
+                </>
+              ) : null}
               <Button
                 look="quiet"
                 size="icon"

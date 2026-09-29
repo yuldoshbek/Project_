@@ -21,7 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.decisions import TEXT_MAX_LENGTH, DecisionKind, DecisionState, DecisionTarget
-from app.domain.errors import NotFoundError, PermissionDeniedError, RuleViolationError
+from app.domain.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    RuleViolationError,
+    check_version,
+)
+from app.domain.projects import validate_horizon
 from app.repos import pult as read_model
 from app.repos.models import LeaderDecision, LeaderQuestion, User
 
@@ -161,3 +168,40 @@ async def undo_question(
     if now - question.created_at > UNDO_WINDOW:
         raise RuleViolationError("Отменить можно только сразу после вопроса")
     await session.delete(question)
+
+
+async def _decision(session: AsyncSession, decision_id: uuid.UUID) -> LeaderDecision:
+    decision = await session.get(LeaderDecision, decision_id)
+    if decision is None:
+        raise NotFoundError("Решение не найдено: его могли отменить")
+    return decision
+
+
+async def complete(
+    session: AsyncSession, *, decision_id: uuid.UUID, version: int, today: date
+) -> None:
+    """Решение исполнено — из обхода «Управления» (ТЗ 3.7, допущение V20).
+
+    Отмечает помощник: исполнение видно ему, а не тому, кто решал. Исполненное второй раз
+    не отмечается — это устаревшая картина, а не новое событие.
+    """
+    decision = await _decision(session, decision_id)
+    check_version(expected=version, actual=decision.version)
+    if decision.state == DecisionState.DONE.value:
+        raise ConflictError("Решение уже исполнено")
+    decision.state = DecisionState.DONE.value
+    decision.done_on = today
+    await session.flush()
+
+
+async def move_due(
+    session: AsyncSession, *, decision_id: uuid.UUID, due_on: date, version: int
+) -> None:
+    """Новый срок исполнения решения — «перенести на неделю» в обходе."""
+    decision = await _decision(session, decision_id)
+    check_version(expected=version, actual=decision.version)
+    if decision.state == DecisionState.DONE.value:
+        raise ConflictError("Исполненное решение не переносят")
+    validate_horizon(due_on)
+    decision.due_on = due_on
+    await session.flush()

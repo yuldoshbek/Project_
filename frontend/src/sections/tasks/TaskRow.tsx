@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 
 import { STEP_SIGNAL } from '@/sections/pult/model';
 import { deviationText } from '@/sections/pult/text';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Signal } from '@/shared/ui/Signal';
@@ -28,6 +29,7 @@ interface TaskRowProps {
 export function TaskRow({ task, onOpen, selected = false }: TaskRowProps) {
   const { t } = useTranslation();
   const closed = TERMINAL.has(task.status);
+  const statuses = useStatuses('task_statuses');
   const link = linkText(t, task);
   const meta = [
     originText(t, task),
@@ -59,7 +61,7 @@ export function TaskRow({ task, onOpen, selected = false }: TaskRowProps) {
           ) : null}
           {task.status !== 'in_progress' ? (
             <span className="rounded-[var(--radius-pill)] bg-sunken px-2 py-0.5 text-xs text-ink-muted">
-              {t(`tasks.statuses.${task.status}`)}
+              {statuses.name(task.status)}
             </span>
           ) : null}
           <span className="numeric ml-auto text-xs text-ink-muted">

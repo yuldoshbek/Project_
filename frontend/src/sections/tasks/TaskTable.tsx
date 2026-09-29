@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 
 import { STEP_SIGNAL } from '@/sections/pult/model';
 import { deviationText } from '@/sections/pult/text';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Signal } from '@/shared/ui/Signal';
@@ -38,6 +39,7 @@ function valueOf(task: TaskCard, key: SortKey): string {
 export function TaskTable({ items, onOpen }: { items: TaskCard[]; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean } | null>(null);
+  const statuses = useStatuses('task_statuses');
 
   const rows = useMemo(() => {
     if (!sort) return items;
@@ -109,7 +111,7 @@ export function TaskTable({ items, onOpen }: { items: TaskCard[]; onOpen: (id: s
               <td className="px-3 py-2 text-xs text-ink">
                 {task.assignee?.name ?? t('tasks.card.noAssignee')}
               </td>
-              <td className="px-3 py-2 text-xs text-ink">{t(`tasks.statuses.${task.status}`)}</td>
+              <td className="px-3 py-2 text-xs text-ink">{statuses.name(task.status)}</td>
               <td className="px-3 py-2">
                 {task.step ? (
                   <span className="flex flex-col items-start gap-0.5">

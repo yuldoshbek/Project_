@@ -182,12 +182,10 @@ export function ThresholdsTab({
   thresholds,
   canEdit,
   wide,
-  demo,
 }: {
   thresholds: Threshold[];
   canEdit: boolean;
   wide: boolean;
-  demo: boolean;
 }) {
   const { t } = useTranslation();
   const [saved, setSaved] = useState<string | null>(null);
@@ -195,9 +193,6 @@ export function ThresholdsTab({
   return (
     <Card title={t('management.thresholds.title')} question={t('management.thresholds.question')}>
       <p className="text-xs text-ink-muted">{t('management.thresholds.note')}</p>
-      {demo ? (
-        <p className="mt-1 text-xs text-ink-muted">{t('management.thresholds.demoNote')}</p>
-      ) : null}
       {saved ? (
         <p
           role="status"

@@ -31,7 +31,7 @@ import uuid
 from typing import Any, cast
 
 import structlog
-from sqlalchemy import CursorResult
+from sqlalchemy import CursorResult, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -632,6 +632,23 @@ async def _seed_project_types(session: AsyncSession) -> tuple[int, int]:
     return types_added, milestones_added
 
 
+async def _seed_center(session: AsyncSession) -> int:
+    """Центр — по признаку «учреждена агентством», а не по названию.
+
+    Название организации помощник меняет в «Управлении» (V21). Узнавай наполнение Центр по
+    названию, следующая выкладка после переименования завела бы второй Центр со старым
+    названием, и срез «что держит Центр» разошёлся бы по двум записям. `ON CONFLICT` по
+    названию остаётся — на гонку и на организацию, уже заведённую помощником под этим
+    названием.
+    """
+    founded = await session.scalar(
+        select(Organization.id).where(Organization.is_founded_by_agency.is_(True)).limit(1)
+    )
+    if founded is not None:
+        return 0
+    return await _insert_missing(session, Organization, ORGANIZATIONS, "name")
+
+
 async def seed(session: AsyncSession) -> dict[str, int]:
     """Наполняет справочники. Возвращает число добавленных записей по каждому."""
     types_added, milestones_added = await _seed_project_types(session)
@@ -647,7 +664,7 @@ async def seed(session: AsyncSession) -> dict[str, int]:
         "task_statuses": await _insert_missing(session, TaskStatusRef, TASK_STATUSES, "code"),
         "settings": await _insert_missing(session, Setting, SETTINGS, "key"),
         "users": await _insert_missing(session, User, USERS, "role"),
-        "organizations": await _insert_missing(session, Organization, ORGANIZATIONS, "name"),
+        "organizations": await _seed_center(session),
     }
     await session.flush()
     return added

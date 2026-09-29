@@ -12,6 +12,7 @@
 import { useState, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 
 import { BOARD_COLUMNS, type ProjectCard, type ProjectStatus } from './model';
@@ -31,6 +32,17 @@ interface BoardProps {
 export function Board({ items, onOpen, onMove, wide = false }: BoardProps) {
   const { t } = useTranslation();
   const [over, setOver] = useState<ProjectStatus | null>(null);
+  const statuses = useStatuses('project_statuses');
+  const columns = statuses.ordered(BOARD_COLUMNS);
+  // Широкая — колонка «В работе», где бы она ни стояла: порядок колонок — из справочника, и
+  // помощник меняет его в «Управлении».
+  const template = wide
+    ? {
+        gridTemplateColumns: columns
+          .map((status) => (status === 'in_progress' ? '2fr' : '1fr'))
+          .join(' '),
+      }
+    : undefined;
 
   const drop = (status: ProjectStatus) => (event: DragEvent) => {
     event.preventDefault();
@@ -41,15 +53,13 @@ export function Board({ items, onOpen, onMove, wide = false }: BoardProps) {
   };
 
   return (
-    <div
-      className={cn('grid items-start gap-3', wide ? 'grid-cols-[2fr_1fr_1fr_1fr]' : 'grid-cols-4')}
-    >
-      {BOARD_COLUMNS.map((status) => {
+    <div className="grid grid-cols-4 items-start gap-3" style={template}>
+      {columns.map((status) => {
         const column = items.filter((card) => card.status === status);
         return (
           <section
             key={status}
-            aria-label={t(`projects.statuses.${status}`)}
+            aria-label={statuses.name(status)}
             onDragOver={(event) => {
               event.preventDefault();
               setOver(status);
@@ -63,9 +73,7 @@ export function Board({ items, onOpen, onMove, wide = false }: BoardProps) {
             )}
           >
             <header className="flex items-baseline justify-between px-1 pt-1">
-              <h2 className="text-sm font-semibold text-ink-strong">
-                {t(`projects.statuses.${status}`)}
-              </h2>
+              <h2 className="text-sm font-semibold text-ink-strong">{statuses.name(status)}</h2>
               <span className="numeric text-xs text-ink-muted">{column.length}</span>
             </header>
             {column.length === 0 ? (

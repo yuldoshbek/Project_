@@ -2,11 +2,10 @@
  * Доступ — «кто может войти и как закрыть доступ» (ТЗ 3.8, ADR-0029).
  *
  * Устройства и перевыпуск — настоящий API блока 0: кнопка гасит прежние сессии сразу, и
- * лишняя строка в устройствах означает чужой вход. Дата выпуска и последний вход пока с
- * вымышленного сервера — API раздела отдаст их вместе с устройствами; настоящий перевыпуск
- * вымышленный сервер запоминает. Последний вход не пропадает вместе с сессиями: после
- * перевыпуска или истечения их нет, а вопрос «когда он заходил» остаётся. Перевыпуск
- * переспрашивает: одно случайное касание выкидывает из системы и того, кто нажал.
+ * лишняя строка в устройствах означает чужой вход. Дата выпуска и последний вход — из
+ * `/api/v1/management`: последний вход — по всем сессиям, и погашенным тоже, поэтому после
+ * перевыпуска или истечения он не пропадает, и вопрос «когда он заходил» остаётся.
+ * Перевыпуск переспрашивает: своя ссылка выкидывает из системы и того, кто нажал.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,10 +14,10 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Device } from '@/app/device';
-import { useHealth } from '@/app/session';
+import { useCurrentUser, useHealth } from '@/app/session';
 import { describeError } from '@/shared/api/client';
 import { api, type AccessLink, type Role } from '@/shared/api/orbita';
-import { sessionsQuery } from '@/shared/api/queries';
+import { currentUserQuery, issuedLinkQuery, sessionsQuery } from '@/shared/api/queries';
 import { cn } from '@/shared/lib/cn';
 import { formatDateTime, formatSince } from '@/shared/time';
 import { CardBoundary } from '@/shared/ui/Boundary';
@@ -27,7 +26,6 @@ import { Card } from '@/shared/ui/Card';
 import { Empty, Failure, Loading } from '@/shared/ui/States';
 
 import type { ManagementView } from './model';
-import { useLinkIssued } from './useManagement';
 
 function LinkCard({
   role,
@@ -40,23 +38,39 @@ function LinkCard({
 }) {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const me = useCurrentUser();
   const [asking, setAsking] = useState(false);
-  const [issued, setIssued] = useState<AccessLink | null>(null);
   const [copied, setCopied] = useState(false);
 
   const sessions = useQuery(sessionsQuery(role));
-  const linkIssued = useLinkIssued();
+  // Кэш держит ссылку, выпущенную в этой вкладке. Если сервер знает выпуск новее — перевыпуск с
+  // другого устройства, — эта ссылка уже не работает, и копировать её нельзя.
+  const cached = useQuery(issuedLinkQuery(role)).data;
+  const issued =
+    cached && (issuedAt === null || Date.parse(cached.issued_at) >= Date.parse(issuedAt))
+      ? cached
+      : null;
 
   const reissue = useMutation({
     mutationFn: () => api.reissueLink(role),
-    onSuccess: async (link) => {
-      setIssued(link);
+    onSuccess: async (link: AccessLink) => {
+      client.setQueryData(issuedLinkQuery(role).queryKey, link);
       setCopied(false);
       setAsking(false);
-      linkIssued(role, link.issued_at);
+      if (me.data?.role === role) {
+        // Своя ссылка погасила и эту сессию: оболочка уступает место экрану «откройте по
+        // ссылке», и новую ссылку показывает он (`App`). Сразу, а не на следующем опросе —
+        // иначе экран сменился бы посреди копирования.
+        await client.invalidateQueries({ queryKey: currentUserQuery().queryKey });
+        return;
+      }
       // Сессии гаснут вместе с перевыпуском — список устройств обязан это показать сразу,
       // иначе кнопка выглядит не сработавшей.
-      await client.invalidateQueries({ queryKey: sessionsQuery(role).queryKey });
+      await Promise.all(
+        [sessionsQuery(role).queryKey, ['management']].map((queryKey) =>
+          client.invalidateQueries({ queryKey }),
+        ),
+      );
     },
   });
 

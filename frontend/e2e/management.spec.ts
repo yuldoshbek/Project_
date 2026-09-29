@@ -1,11 +1,11 @@
 /**
- * Управление — экран на утверждение (`sections/management/`): обход, справочники и пороги
- * — вымышленные данные (`demo.ts`), устройства и перевыпуск — настоящий API блока 0.
+ * Управление (`sections/management/`) — экран утверждён 29.09.2026, работает на API
+ * `/api/v1/management`; устройства и перевыпуск — `/api/access/…`.
  *
  * Снимок по умолчанию (обход недели) на трёх устройствах в двух темах снимает
  * `screens.spec.ts`; здесь — остальные вкладки, мини-обход на телефоне, цели нажатия не
  * меньше 44 px, отсутствие горизонтальной прокрутки и взгляд руководителя. Сценарии ничего
- * не пишут в базу: правки живут в вымышленном сервере до перезагрузки, ссылки здесь не
+ * не пишут в базу: действия обхода и пороги здесь открываются и отменяются, ссылки не
  * перевыпускаются (это делает `reissue.spec.ts` со своей ссылкой).
  */
 
@@ -123,16 +123,17 @@ test('телефон: мини-обход в одно касание, вклад
   await open(page, assistant);
 
   await touchTargets(page);
-  const first = page.getByRole('tabpanel').getByRole('listitem').first();
-  const title = await first.getByRole('link').textContent();
-  await first.getByRole('button').first().click();
-  // Подпись — что именно сделано с этим пунктом.
-  await expect(page.getByRole('status')).toContainText(title ?? '');
+  // Действие со строкой открывается прямо в пункте; записывать его здесь нельзя — база
+  // разработки общая, и закрытое решение из демо назад не откроется. Открыли и отменили.
+  const note = page.getByRole('button', { name: 'Записать, что мешает' }).first();
+  await note.click();
+  await expect(page.getByLabel('Что мешает')).toBeFocused();
   await page.screenshot({
     animations: 'disabled',
     path: `${REPORT_DIR}/management-round-phone-light.png`,
   });
   await noOverflow(page);
+  await page.getByRole('button', { name: 'Отмена' }).click();
 
   await tab(page, 'Пороги');
   await touchTargets(page);

@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { STEP_SIGNAL } from '@/sections/pult/model';
 import { deviationText } from '@/sections/pult/text';
 import { describeError } from '@/shared/api/client';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Block } from '@/shared/ui/Block';
@@ -55,12 +56,13 @@ function Panel({
   projects,
 }: Omit<TaskPanelProps, 'id'> & { task: TaskDetail }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('task_statuses');
 
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
         <p className="numeric text-xs text-ink-muted">
-          {[task.code, originText(t, task), task.type?.name, t(`tasks.statuses.${task.status}`)]
+          {[task.code, originText(t, task), task.type?.name, statuses.name(task.status)]
             .filter(Boolean)
             .join(' · ')}
         </p>
@@ -97,21 +99,22 @@ function Panel({
 
 function StatusControl({ task }: { task: TaskDetail }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('task_statuses');
   const change = useTaskStatus();
   return (
     <Block title={t('tasks.panel.status')}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex min-h-touch items-center rounded-[var(--radius)] bg-accent px-3 text-sm font-medium text-ink-inverse md:min-h-9">
-          {t(`tasks.statuses.${task.status}`)}
+          {statuses.name(task.status)}
         </span>
-        {task.transitions.map((status) => (
+        {statuses.ordered(task.transitions).map((status) => (
           <Button
             key={status}
             size="small"
             disabled={change.isPending}
             onClick={() => change.mutate({ id: task.id, status, version: task.version })}
           >
-            {t(`tasks.statuses.${status}`)}
+            {statuses.name(status)}
           </Button>
         ))}
       </div>

@@ -1,19 +1,13 @@
 /**
- * Вымышленный сервер Управления — пока экран не утверждён и API нет.
+ * Сервер Управления в памяти — для тестов экрана.
  *
- * Правило блока: сначала экран на вымышленных данных, заказчик смотрит, потом API под
- * утверждённый экран (CLAUDE.md, цикл блока). Пункты обхода — дела вымышленной базы
- * (`backend/app/demo.py`): те же проекты, задачи и люди. Справочники — из наполнения базы
- * (`backend/app/seed.py`), пороги — со значениями ТЗ и допущений. Изменённое во вкладке
- * живёт до перезагрузки. После утверждения файл удаляется.
- *
- * Пороги здесь управляют обходом так же, как будут на сервере: молчащий проект и задача на
- * проверке стоят в обходе, пока молчат **дольше** порога, «что мешает» — пока запись
- * **старше** своего порога (строгое сравнение — `domain/attention.py`, `domain/projects.py`).
- * Опустили порог — в обходе появились новые пункты, подняли — ушли.
+ * Отвечает на те же пути, что `/api/v1/management…`, по тем же правилам, что сервер
+ * (`backend/app/services/management.py`): очередь обхода подчиняется порогам (строгое
+ * сравнение), правки — по версии (отказ 409), поле без значения — 422. Данные — вымышленная
+ * база и наполнение справочников. Сам сервер проверяют `backend/tests/test_management.py`;
+ * здесь — что экран делает с его ответами.
  */
 
-import type { Role } from '@/shared/api/orbita';
 import { AGENCY_TIMEZONE } from '@/shared/time';
 
 import type {
@@ -45,6 +39,16 @@ function week(now: Date): [string, string] {
   return [dayIn(now, -monday), dayIn(now, 6 - monday)];
 }
 
+const RECORD: Record<RoundItem['reason'], RoundItem['record']['kind']> = {
+  decision_overdue: 'decision',
+  task_overdue: 'task',
+  milestone_passed: 'milestone',
+  task_review: 'task',
+  impediment_stale: 'project',
+  project_silent: 'project',
+  task_unassigned: 'task',
+};
+
 const PEOPLE: Person[] = [
   { id: 'p-karimov', name: 'Каримов А.' },
   { id: 'p-yusupova', name: 'Юсупова Д.' },
@@ -53,7 +57,7 @@ const PEOPLE: Person[] = [
   { id: 'p-abdullaeva', name: 'Абдуллаева Н.' },
 ];
 
-const ROUND: RoundItem[] = [
+const ROUND: Omit<RoundItem, 'record'>[] = [
   {
     id: 'r-hurry',
     reason: 'decision_overdue',
@@ -420,7 +424,7 @@ function fail(message: string): never {
 }
 
 /** Пункт обхода стоит в очереди при текущих порогах — строгое сравнение, как на сервере. */
-function inRound(item: RoundItem, quiet: number, stale: number): boolean {
+function inRound(item: Omit<RoundItem, 'record'>, quiet: number, stale: number): boolean {
   if (item.reason === 'project_silent' || item.reason === 'task_review') return item.days > quiet;
   if (item.reason === 'impediment_stale') return item.days > stale;
   return true;
@@ -430,13 +434,12 @@ function stale(version: number, expected: number): void {
   if (version !== expected) fail('Значение уже изменили: обновите страницу');
 }
 
-export class DemoManagement {
-  private items: RoundItem[] = [];
+export class FakeManagement {
+  private items: Omit<RoundItem, 'record'>[] = [];
   private done = 0;
   private thresholds: Threshold[] = [];
   private groups: DictionaryGroup[] = [];
   private templates: Record<string, TemplateStep[]> = {};
-  private issued: Partial<Record<Role, string>> = {};
   private counter = 0;
 
   constructor(private readonly now: () => Date = () => new Date()) {
@@ -461,6 +464,7 @@ export class DemoManagement {
         entries: SEEDED[kind].map(entry),
         can_add: CAN_ADD.has(kind),
         can_disable: kind !== 'project_statuses' && kind !== 'task_statuses',
+        can_move: true,
       })),
       {
         kind: 'organizations' as const,
@@ -475,6 +479,7 @@ export class DemoManagement {
         })),
         can_add: true,
         can_disable: true,
+        can_move: false,
       },
     ];
     this.templates = Object.fromEntries(
@@ -488,7 +493,6 @@ export class DemoManagement {
         })),
       ]),
     );
-    this.issued = {};
     this.counter = 0;
   }
 
@@ -516,7 +520,10 @@ export class DemoManagement {
         week_to: to,
         items: this.items
           .filter((item) => inRound(item, quiet, staleDays))
-          .map((item) => ({ ...item })),
+          .map((item) => ({
+            ...item,
+            record: { kind: RECORD[item.reason], id: item.id, version: 1 },
+          })),
         done: this.done,
       },
       thresholds: this.thresholds.map((each) => ({ ...each })),
@@ -534,22 +541,17 @@ export class DemoManagement {
       links: [
         {
           role: 'assistant',
-          issued_at: this.issued.assistant ?? `${dayIn(now, -17)}T09:12:00+05:00`,
+          issued_at: `${dayIn(now, -17)}T09:12:00+05:00`,
           last_login_at: `${dayIn(now, 0)}T08:40:00+05:00`,
         },
         {
           role: 'leader',
-          issued_at: this.issued.leader ?? `${dayIn(now, -17)}T09:20:00+05:00`,
+          issued_at: `${dayIn(now, -17)}T09:20:00+05:00`,
           last_login_at: `${dayIn(now, -1)}T21:15:00+05:00`,
         },
       ],
       is_demo: true,
     };
-  }
-
-  /** Настоящий перевыпуск прошёл — дата выпуска на экране его помнит. */
-  linkIssued(role: Role, issuedAt: string): void {
-    this.issued[role] = issuedAt;
   }
 
   /** Действие обхода: данные меняются, пункт уходит, неделя засчитывает его. */
@@ -726,4 +728,90 @@ export class DemoManagement {
   }
 }
 
-export const demoManagement = new DemoManagement();
+type Reply = [status: number, body: unknown];
+
+function problem(error: unknown): Reply {
+  const detail = error instanceof Error ? error.message : String(error);
+  const stale = detail.includes('изменили');
+  return [stale ? 409 : 422, { detail, status: stale ? 409 : 422 }];
+}
+
+/**
+ * Запрос экрана — ответ сервера. `path` — как его строит клиент API, со строкой запроса.
+ */
+export function handle(
+  server: FakeManagement,
+  method: string,
+  path: string,
+  body: Record<string, unknown> | undefined,
+): Reply | null {
+  const [bare = path, search = ''] = path.split('?');
+  if (!bare.startsWith('/api/v1/management')) return null;
+  const rest = bare.slice('/api/v1/management'.length).split('/').filter(Boolean);
+  const input = body ?? {};
+  try {
+    if (method === 'GET' && rest.length === 0) return [200, server.view()];
+    if (method === 'POST' && rest[0] === 'round') {
+      server.act(String(input.record_id), input.action as RoundAction, input.input as string);
+      return [204, undefined];
+    }
+    if (rest[0] === 'thresholds') {
+      const key = rest[1] as ThresholdKey;
+      if (method === 'GET' && rest[2] === 'preview') {
+        const raw = new URLSearchParams(search).get('value') ?? '';
+        const value = /^\d+$/.test(raw) ? Number(raw) : raw;
+        return [200, { affected: server.impact(key, value) }];
+      }
+      server.setThreshold(key, input.value as number | string, Number(input.version));
+      return [204, undefined];
+    }
+    if (rest[0] === 'dictionaries') {
+      const kind = rest[1] as DictionaryKind;
+      if (method === 'POST' && rest.length === 2) {
+        return [
+          201,
+          { id: server.add(kind, String(input.name), input.org_kind as OrganizationKind).id },
+        ];
+      }
+      const id = String(rest[2]);
+      if (method === 'PUT') {
+        server.rename(
+          kind,
+          id,
+          String(input.name),
+          Number(input.version),
+          input.org_kind as OrganizationKind | undefined,
+        );
+      } else if (rest[3] === 'toggle') {
+        server.toggle(kind, id, Number(input.version));
+      } else if (rest[3] === 'move') {
+        server.move(kind, id, input.step as -1 | 1, Number(input.version));
+      }
+      return [204, undefined];
+    }
+    if (rest[0] === 'templates') {
+      const type = String(rest[1]);
+      const step = rest[3];
+      if (method === 'POST') {
+        server.saveStep(type, { name: String(input.name), offset_days: Number(input.offset_days) });
+        return [201, { id: 'new' }];
+      }
+      if (method === 'PUT' && step) {
+        server.saveStep(type, {
+          id: step,
+          name: String(input.name),
+          offset_days: Number(input.offset_days),
+          version: Number(input.version),
+        });
+        return [204, undefined];
+      }
+      if (method === 'DELETE' && step) {
+        server.removeStep(type, step, Number(new URLSearchParams(search).get('version')));
+        return [204, undefined];
+      }
+    }
+    return [404, { detail: `нет пути ${method} ${path}` }];
+  } catch (error) {
+    return problem(error);
+  }
+}

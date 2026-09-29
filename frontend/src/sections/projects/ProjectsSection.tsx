@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useDevice } from '@/app/device';
 import { useCurrentUser } from '@/app/session';
 import { describeError } from '@/shared/api/client';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDateTime, localDay } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
@@ -432,13 +433,14 @@ function StatusChips({
   onPick: (status: ProjectStatus) => void;
 }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('project_statuses');
   return (
     <div
       role="tablist"
       aria-label={t('projects.panel.status')}
       className="grid grid-cols-4 gap-1.5"
     >
-      {BOARD_COLUMNS.map((status) => {
+      {statuses.ordered(BOARD_COLUMNS).map((status) => {
         const count = items.filter((card) => card.status === status).length;
         return (
           <button
@@ -456,7 +458,7 @@ function StatusChips({
               {count}
             </span>
             <span className="w-full truncate text-center text-[11px] tracking-tight text-ink-muted">
-              {t(`projects.statuses.${status}`)}
+              {statuses.name(status)}
             </span>
           </button>
         );

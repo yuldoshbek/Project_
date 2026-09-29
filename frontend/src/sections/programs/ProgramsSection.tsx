@@ -23,6 +23,7 @@ import { useDevice } from '@/app/device';
 import { useCurrentUser } from '@/app/session';
 import { ProjectPanel, type PanelFocus } from '@/sections/projects/ProjectPanel';
 import { describeError } from '@/shared/api/client';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate, formatDateTime, localDay } from '@/shared/time';
 import { Sheet } from '@/shared/ui/Sheet';
@@ -227,6 +228,7 @@ function Header({ view, compact, total }: { view: ProgramsView; compact: boolean
 /** Завершённые и отменённые — свёрнуты: раздел про то, что впереди. */
 function ClosedList({ items, onOpen }: { items: ProgramCard[]; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
+  const statuses = useStatuses('project_statuses');
   const [shown, setShown] = useState(false);
   if (items.length === 0) return null;
 
@@ -254,7 +256,7 @@ function ClosedList({ items, onOpen }: { items: ProgramCard[]; onOpen: (id: stri
                 </span>
                 <span className="numeric shrink-0 text-xs text-ink-muted">
                   {[
-                    t(`projects.statuses.${card.status}`),
+                    statuses.name(card.status),
                     t('programs.closed.endedOn', { date: formatDate(card.due_on) }),
                   ].join(' · ')}
                 </span>

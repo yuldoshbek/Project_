@@ -81,7 +81,7 @@ async def milestone_template(
         await session.scalars(
             select(ProjectTypeMilestone)
             .where(ProjectTypeMilestone.project_type_id == project_type_id)
-            .order_by(ProjectTypeMilestone.sort_order, ProjectTypeMilestone.offset_days)
+            .order_by(ProjectTypeMilestone.offset_days, ProjectTypeMilestone.sort_order)
         )
     )
 

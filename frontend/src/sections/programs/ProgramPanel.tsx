@@ -12,6 +12,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { dueText, lagText } from '@/sections/projects/text';
+import { useStatuses } from '@/shared/api/statuses';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Block } from '@/shared/ui/Block';
@@ -36,6 +37,7 @@ interface ProgramPanelProps {
 export function ProgramPanel({ card, horizon, onAction }: ProgramPanelProps) {
   const { t } = useTranslation();
   const moved = card.original_due_on !== card.due_on;
+  const statuses = useStatuses('project_statuses');
 
   // Вехи подпроектов — рядом со своими, с подписью, чьи они: вопрос «что случится в
   // этом году» — про программу целиком, а не про её верхний уровень.
@@ -50,7 +52,7 @@ export function ProgramPanel({ card, horizon, onAction }: ProgramPanelProps) {
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-1.5">
         <p className="numeric text-xs text-ink-muted">
-          {[card.code, card.type.name, t(`projects.statuses.${card.status}`)].join(' · ')}
+          {[card.code, card.type.name, statuses.name(card.status)].join(' · ')}
         </p>
         <h2 className="text-lg leading-snug font-semibold text-ink-strong">{card.title}</h2>
         <p className="text-sm text-ink">{card.responsible?.name ?? t('programs.panel.noHolder')}</p>
@@ -62,7 +64,7 @@ export function ProgramPanel({ card, horizon, onAction }: ProgramPanelProps) {
             завершённой читалось бы как просрочка. */}
         <p className="numeric text-2xl font-semibold text-ink-strong">
           {TERMINAL.has(card.status)
-            ? t(`projects.statuses.${card.status}`)
+            ? statuses.name(card.status)
             : countdownText(t, card.days_left)}
         </p>
         <p className="numeric text-sm text-ink">

@@ -6,8 +6,8 @@
  * обход недели, руководителю — пороги. Руководитель смотрит справочники и пороги без
  * правки; обход и доступ ведёт помощник (API доступа отвечает руководителю отказом).
  *
- * Экран на вымышленных данных (`demo.ts`) — до утверждения; устройства и перевыпуск
- * ссылок — уже настоящий API блока 0.
+ * Экран утверждён заказчиком 29.09.2026; данные — `/api/v1/management` (`useManagement.ts`),
+ * устройства и перевыпуск ссылок — API блока 0 (`/api/access/…`).
  */
 
 import { Settings } from 'lucide-react';
@@ -119,12 +119,7 @@ function Management({ view }: { view: ManagementView }) {
         {tab === 'round' ? (
           <RoundTab round={view.round} people={view.people} compact={isPhone} />
         ) : tab === 'thresholds' ? (
-          <ThresholdsTab
-            thresholds={view.thresholds}
-            canEdit={canEdit}
-            wide={!isPhone}
-            demo={view.is_demo}
-          />
+          <ThresholdsTab thresholds={view.thresholds} canEdit={canEdit} wide={!isPhone} />
         ) : tab === 'dictionaries' ? (
           <DictionariesTab
             groups={view.dictionaries}

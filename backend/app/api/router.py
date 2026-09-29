@@ -7,8 +7,8 @@
 сначала экран, заказчик его утверждает, потом API под утверждённый экран (CLAUDE.md, цикл
 блока). Прежние сорок эндпоинтов были написаны раньше экранов, не получили ни одного
 потребителя и ушли вместе со старой схемой (docs/audit/AUDIT-2026-09-20.md). Сейчас здесь
-справочники, Пульт, Программы, Проекты, Задачи, Календарь и Захват — экраны утверждены
-заказчиком 25–28.09.2026.
+справочники, Пульт, Программы, Проекты, Задачи, Календарь, Захват и Управление — экраны
+утверждены заказчиком 25–29.09.2026.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from app.api.routes import (
     captures,
     decisions,
     dictionaries,
+    management,
     programs,
     projects,
     pult,
@@ -43,3 +44,4 @@ api_router.include_router(projects.router)
 api_router.include_router(tasks.router)
 api_router.include_router(calendar.router)
 api_router.include_router(captures.router)
+api_router.include_router(management.router)
