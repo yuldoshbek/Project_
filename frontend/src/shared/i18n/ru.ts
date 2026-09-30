@@ -1019,7 +1019,8 @@ export const ru = {
         title: 'Что горит и что просрочено?',
         answer: 'горит {{burning}} · просрочено {{overdue}}',
         oldest: 'самое давнее просрочено {{days}} дн',
-        person: 'просрочено {{overdue}} · горит {{burning}}',
+        personOverdue: 'просрочено {{count}}',
+        personBurning: 'горит {{count}}',
         empty: 'Ничего не горит и не просрочено.',
         action: 'Кого поторопить',
       },
@@ -1135,6 +1136,14 @@ export const ru = {
       cell: '{{band}}: {{state}}',
       call: 'Вызвать с отчётом: {{name}} — открытых {{open}}',
       nobody: 'Открытых пунктов нет.',
+      legend: {
+        label: 'Что значит цвет клетки',
+        done: 'сдано или снято с контроля',
+        burn: 'горит или просрочено',
+        wait: 'молчит или зависит от чужих',
+        call: 'ждёт решения',
+        plan: 'идёт по плану',
+      },
     },
     card: {
       label: 'Карточка поручения',
@@ -1259,7 +1268,8 @@ export const ru = {
       history: {
         title: 'Загруженные таблицы',
         question: 'Какая таблица последняя?',
-        line: '{{date}} · {{source}} · новых {{created}} · сроков сдвинуто {{moved}}',
+        created: 'новых {{count}}',
+        moved: 'сроков сдвинуто {{count}}',
       },
     },
     spravka: {

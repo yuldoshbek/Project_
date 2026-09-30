@@ -144,12 +144,18 @@ export function UploadTab({ view }: { view: IjroView }) {
             <li key={batch.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
               <span className="min-w-0 flex-1 truncate text-ink-strong">{batch.file}</span>
               <span className="numeric text-xs text-ink-muted">
-                {t('ijro.upload.history.line', {
-                  date: formatDate(batch.table_on),
-                  source: t(`ijro.sources.${batch.source}`),
-                  created: batch.counts.new,
-                  moved: batch.counts.due_moved,
-                })}
+                {[
+                  formatDate(batch.table_on),
+                  t(`ijro.sources.${batch.source}`),
+                  batch.counts.new > 0
+                    ? t('ijro.upload.history.created', { count: batch.counts.new })
+                    : null,
+                  batch.counts.due_moved > 0
+                    ? t('ijro.upload.history.moved', { count: batch.counts.due_moved })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </li>
           ))}

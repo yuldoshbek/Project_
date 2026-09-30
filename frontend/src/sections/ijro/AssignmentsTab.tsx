@@ -95,13 +95,13 @@ export function AssignmentsTab({
           <table className="w-full table-fixed text-left text-sm">
             <thead className="border-b border-line text-xs text-ink-muted">
               <tr>
-                <th className="w-40 px-3 py-2 font-medium">{t('ijro.list.columns.step')}</th>
-                <th className="w-36 px-3 py-2 font-medium">{t('ijro.list.columns.due')}</th>
-                <th className="w-40 px-3 py-2 font-medium">{t('ijro.list.columns.place')}</th>
+                <th className="w-36 px-3 py-2 font-medium">{t('ijro.list.columns.step')}</th>
+                <th className="w-32 px-3 py-2 font-medium">{t('ijro.list.columns.due')}</th>
+                <th className="w-36 px-3 py-2 font-medium">{t('ijro.list.columns.place')}</th>
                 <th className="px-3 py-2 font-medium">{t('ijro.list.columns.content')}</th>
-                <th className="w-44 px-3 py-2 font-medium">{t('ijro.list.columns.responsible')}</th>
-                <th className="w-32 px-3 py-2 font-medium">{t('ijro.list.columns.stage')}</th>
-                <th className="w-36 px-3 py-2 font-medium">{t('ijro.list.columns.life')}</th>
+                <th className="w-40 px-3 py-2 font-medium">{t('ijro.list.columns.responsible')}</th>
+                <th className="w-28 px-3 py-2 font-medium">{t('ijro.list.columns.stage')}</th>
+                <th className="w-32 px-3 py-2 font-medium">{t('ijro.list.columns.life')}</th>
                 {marking ? (
                   <th className="w-72 px-3 py-2 font-medium">{t('ijro.list.columns.mark')}</th>
                 ) : null}
@@ -224,7 +224,7 @@ function Filters({
       active ? 'border-accent bg-accent-soft text-accent-ink' : 'border-line bg-card text-ink',
     );
   const select =
-    'min-h-touch rounded-[var(--radius)] border border-line-strong bg-card px-2 text-sm text-ink md:min-h-9';
+    'min-h-touch min-w-0 flex-1 rounded-[var(--radius)] border border-line-strong bg-card px-2 text-sm text-ink md:min-h-9 md:flex-none';
 
   // Что сузило список по действию виджета — названо словами и снимается одним касанием.
   const person = filter.person
@@ -262,48 +262,56 @@ function Filters({
           ))}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Ступени — одной строкой с прокруткой внутри: пять фишек в три ряда отнимали у
+          телефона пол-экрана до первой строки списка. */}
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {STEPS.map((step) => (
           <button
             key={step}
             type="button"
             aria-pressed={filter.step === step}
-            className={chip(filter.step === step)}
+            className={cn(chip(filter.step === step), 'shrink-0 whitespace-nowrap')}
             onClick={() => onFilter({ ...filter, step: filter.step === step ? null : step })}
           >
             {t(`pult.steps.${step}`)}
           </button>
         ))}
-        <select
-          aria-label={t('ijro.list.source')}
-          className={select}
-          value={filter.source ?? ''}
-          onChange={(event) =>
-            onFilter({ ...filter, source: (event.target.value || null) as IjroSource | null })
-          }
-        >
-          <option value="">{t('ijro.list.anySource')}</option>
-          {SOURCES.map((source) => (
-            <option key={source} value={source}>
-              {t(`ijro.sources.${source}`)}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label={t('ijro.list.stage')}
-          className={select}
-          value={filter.stage ?? ''}
-          onChange={(event) =>
-            onFilter({ ...filter, stage: (event.target.value || null) as Stage | null })
-          }
-        >
-          <option value="">{t('ijro.list.anyStage')}</option>
-          {STAGES.map((stage) => (
-            <option key={stage} value={stage}>
-              {t(`ijro.stages.${stage}`)}
-            </option>
-          ))}
-        </select>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* На телефоне выборы — своей строкой пополам: рядом со счётчиком они сжимались
+            до «Все ис…». На ноутбуке обёртки нет — они стоят в общей строке. */}
+        <div className="grid w-full grid-cols-2 gap-2 md:contents">
+          <select
+            aria-label={t('ijro.list.source')}
+            className={select}
+            value={filter.source ?? ''}
+            onChange={(event) =>
+              onFilter({ ...filter, source: (event.target.value || null) as IjroSource | null })
+            }
+          >
+            <option value="">{t('ijro.list.anySource')}</option>
+            {SOURCES.map((source) => (
+              <option key={source} value={source}>
+                {t(`ijro.sources.${source}`)}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={t('ijro.list.stage')}
+            className={select}
+            value={filter.stage ?? ''}
+            onChange={(event) =>
+              onFilter({ ...filter, stage: (event.target.value || null) as Stage | null })
+            }
+          >
+            <option value="">{t('ijro.list.anyStage')}</option>
+            {STAGES.map((stage) => (
+              <option key={stage} value={stage}>
+                {t(`ijro.stages.${stage}`)}
+              </option>
+            ))}
+          </select>
+        </div>
         <span className="numeric text-xs text-ink-muted">
           {t('ijro.list.count', { count, total: view.items.length })}
         </span>

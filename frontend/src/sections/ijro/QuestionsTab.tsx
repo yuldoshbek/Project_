@@ -119,10 +119,16 @@ function Breakdown({
                   {each.person?.name ?? each.responsible_raw}
                 </span>
                 <span className="numeric shrink-0 text-xs text-burn-ink">
-                  {t('ijro.questions.burning.person', {
-                    overdue: each.overdue,
-                    burning: each.burning,
-                  })}
+                  {[
+                    each.overdue > 0
+                      ? t('ijro.questions.burning.personOverdue', { count: each.overdue })
+                      : null,
+                    each.burning > 0
+                      ? t('ijro.questions.burning.personBurning', { count: each.burning })
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </span>
               </button>
             </li>
