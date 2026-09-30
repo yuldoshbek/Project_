@@ -21,6 +21,7 @@ import {
 import { App } from '@/app/App';
 import { SECTIONS, sectionPath } from '@/app/sections';
 import { CalendarSection } from '@/sections/calendar/CalendarSection';
+import { IjroRoute } from '@/sections/ijro/IjroRoute';
 import { ManagementSection } from '@/sections/management/ManagementSection';
 import { ProgramsSection } from '@/sections/programs/ProgramsSection';
 import { ProjectsSection } from '@/sections/projects/ProjectsSection';
@@ -48,9 +49,11 @@ const sectionRoutes: AnyRoute[] = SECTIONS.map((section) =>
                 ? ProjectsSection
                 : section.id === 'tasks'
                   ? TasksSection
-                  : function Section() {
-                      return <SoonSection section={section} />;
-                    },
+                  : section.id === 'ijro'
+                    ? IjroRoute
+                    : function Section() {
+                        return <SoonSection section={section} />;
+                      },
   }),
 );
 

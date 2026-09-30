@@ -83,7 +83,7 @@ make check         # ruff + mypy + import-linter + eslint + prettier + tsc
 пороги, доступ) — на API. **Утренняя сводка** (вкладка Пульта: что придёт в 08:30, те же
 строки с решением, включение уведомлений на iPhone) — на API: Web Push, сводка по расписанию
 и пуш «ждёт вашего решения». Отчёт блока 1 — [BLOCK-1](docs/reports/BLOCK-1.md), блок на
-приёмке; блок 2 начат в `block-2-control`. Где остановились —
+приёмке; блок 2 начат в `block-2-control`: **Ижро** — экран на вымышленных данных. Где остановились —
 [HANDOFF](docs/HANDOFF.md), разделы 8–9; разбор состояния — [аудит 25.09](docs/audit/AUDIT-2026-09-25.md);
 снимки экранов — [docs/reports/block-1](docs/reports/block-1).
 
