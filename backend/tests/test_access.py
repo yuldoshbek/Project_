@@ -35,7 +35,7 @@ from app.api.security import Assistant
 from app.domain.access import SESSION_COOKIE, fingerprint, needs_touch
 from app.domain.errors import RuleViolationError
 from app.domain.people import Role
-from app.repos.models import AccessLink, User
+from app.repos.models import AccessLink, PushSubscription, User
 from app.repos.models import Session as SessionRecord
 from app.services import access
 from app.settings import Settings
@@ -256,6 +256,51 @@ class TestReissue:
         )
 
         assert (await api.get("/api/me")).status_code == 401
+
+    async def test_reissue_removes_the_push_subscriptions(
+        self, session: AsyncSession, settings: Settings
+    ) -> None:
+        """Сводка перестаёт приходить на телефон, с которого по прежней ссылке включили
+        уведомления, — в тот же момент, что гаснет сессия. Чужие подписки не трогаются, а
+        отметка «служба отключила этот адрес» остаётся: адрес от перевыпуска не оживает."""
+        leader = await session.scalar(select(User).where(User.role == Role.LEADER.value))
+        assistant = await session.scalar(select(User).where(User.role == Role.ASSISTANT.value))
+        assert leader is not None and assistant is not None
+        dropped = "https://web.push.apple.com/leader-old-phone"
+        for owner, endpoint in (
+            (leader, "https://web.push.apple.com/leader-phone"),
+            (leader, dropped),
+            (assistant, "https://fcm.googleapis.com/fcm/send/assistant-laptop"),
+        ):
+            session.add(
+                PushSubscription(
+                    user_id=owner.id,
+                    endpoint=endpoint,
+                    p256dh="B",
+                    auth="A",
+                    device="iPhone",
+                    gone_at=datetime.now(UTC) if endpoint == dropped else None,
+                )
+            )
+        await session.flush()
+
+        await access.issue_link(
+            session,
+            user=leader,
+            secret=settings.session_secret.get_secret_value(),
+            base_url="http://test",
+            now=datetime.now(UTC),
+        )
+
+        left = await session.execute(
+            select(PushSubscription.user_id, PushSubscription.endpoint).order_by(
+                PushSubscription.endpoint
+            )
+        )
+        assert [tuple(row) for row in left] == [
+            (assistant.id, "https://fcm.googleapis.com/fcm/send/assistant-laptop"),
+            (leader.id, dropped),
+        ]
 
     async def test_only_the_assistant_reissues(self, leader_api: AsyncClient) -> None:
         """Ссылками занимается помощник: он отвечает за доступы и отправляет ссылку."""

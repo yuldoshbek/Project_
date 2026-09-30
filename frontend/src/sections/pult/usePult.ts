@@ -10,14 +10,30 @@
  */
 
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
-import { request } from '@/shared/api/client';
+import { ApiError, request } from '@/shared/api/client';
 
-import { deviceSetup, isAppleMobile, readEnvironment } from '@/app/notifications';
-import { managementQuery } from '@/sections/management/useManagement';
+import {
+  NoWorkerError,
+  currentSubscription,
+  deviceSetup,
+  isAppleMobile,
+  readEnvironment,
+  subscribe,
+  subscriptionBody,
+  workerRegistration,
+  type DeviceSetup,
+} from '@/app/notifications';
 
-import type { DecisionKind, PultView, ReportPeriod, ReportView, TargetType } from './model';
-import { demoDevice, sendAtOf, summaryFrom } from './summary-demo';
+import type {
+  DecisionKind,
+  PultView,
+  ReportPeriod,
+  ReportView,
+  SummaryView,
+  TargetType,
+} from './model';
 
 export function pultQuery() {
   return queryOptions({
@@ -41,41 +57,125 @@ export function usePult() {
 }
 
 /**
- * Утренняя сводка. Пока — вымышленный сервер (`summary-demo.ts`): строки Пульта и время из
- * порога в ответе Управления. С API это станет `request('/api/v1/pult/summary')` под ключом
- * `['pult', 'summary']` — он перечитается после решения вместе с Пультом.
+ * Утренняя сводка. Под ключом Пульта: решение из сводки перечитывает её вместе с лестницей.
  *
- * Ключ не зависит от `as_of` Пульта: оно новое в каждом ответе, и под новым ключом вкладка
- * каждые 15 секунд уходила в «загрузку» — строка сворачивалась, черновик вопроса пропадал.
+ * Ключ не зависит от `as_of`: оно новое в каждом ответе, и под новым ключом вкладка каждые 15
+ * секунд уходила бы в «загрузку» — строка сворачивалась, черновик вопроса пропадал.
  */
-export function useSummary(pult: PultView) {
-  return useQuery({
-    ...managementQuery(),
-    select: (management) => summaryFrom(pult, sendAtOf(management)),
+export function summaryQuery() {
+  return queryOptions({
+    queryKey: ['pult', 'summary'],
+    queryFn: () => request<SummaryView>('/api/v1/pult/summary'),
   });
+}
+
+export function useSummary() {
+  return useQuery(summaryQuery());
 }
 
 const DEVICE_KEY = ['pult', 'device'];
 
-/** Уведомления на этом устройстве: можно ли их включить и включены ли. */
-export function useThisDevice() {
+interface DeviceState {
+  setup: DeviceSetup;
+  apple: boolean;
+  /** У страницы есть service worker: без него подписаться не на что (сервер разработки). */
+  worker: boolean;
+  /** С какого дня сервер доставляет сюда уведомления; `null` — сюда не доставляет. */
+  enabledOn: string | null;
+}
+
+interface Subscribed {
+  since: string;
+  device: string;
+}
+
+/**
+ * Сказать серверу, куда доставлять. Запрос идемпотентен: одна подписка — одна запись, сколько
+ * раз её ни присылай.
+ */
+function save(subscription: PushSubscription): Promise<Subscribed> {
+  return request<Subscribed>('/api/v1/push/subscription', {
+    method: 'PUT',
+    body: subscriptionBody(subscription),
+  });
+}
+
+/**
+ * Сверить подписку браузера с сервером: с какого дня он сюда доставляет; `null` — не доставляет.
+ *
+ * 410 — служба пушей уже ответила серверу, что этого адреса нет, а браузер всё ещё отдаёт ту же
+ * подписку (Chrome не сообщает об отзыве). Сервер её не восстанавливает, и держать её незачем:
+ * снятая, она уступает место кнопке «Включить уведомления», а та создаст новый адрес. Сама
+ * вкладка не подписывается заново: на iPhone подписка возможна только по касанию человека.
+ */
+async function sync(subscription: PushSubscription): Promise<string | null> {
+  try {
+    return (await save(subscription)).since;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 410) throw error;
+    await subscription.unsubscribe();
+    return null;
+  }
+}
+
+/**
+ * Уведомления на этом устройстве: можно ли их включить и включены ли.
+ *
+ * «Включены» говорит сервер, а не браузер: подписка браузера есть и после перевыпуска ссылки,
+ * который стирает подписки на сервере, и после смены ключа. Поэтому при каждом открытии
+ * вкладки существующая подписка отправляется серверу ещё раз — он восстанавливает запись и
+ * отвечает, с какого дня доставляет. Опроса нет, но при возврате в приложение состояние
+ * перечитывается: разрешение могли снять в настройках телефона.
+ */
+export function useThisDevice(pushKey: string | null) {
   const client = useQueryClient();
   const state = useQuery({
-    queryKey: DEVICE_KEY,
-    queryFn: async () => {
+    queryKey: [...DEVICE_KEY, pushKey],
+    queryFn: async (): Promise<DeviceState> => {
       const environment = readEnvironment();
-      return {
-        setup: deviceSetup(environment),
-        apple: isAppleMobile(environment),
-        enabledOn: demoDevice.enabled(),
-      };
+      const setup = deviceSetup(environment);
+      const apple = isAppleMobile(environment);
+      if (setup !== 'ready') return { setup, apple, worker: false, enabledOn: null };
+
+      const registration = await workerRegistration();
+      if (!registration) return { setup, apple, worker: false, enabledOn: null };
+      if (environment.permission !== 'granted' || !pushKey) {
+        return { setup, apple, worker: true, enabledOn: null };
+      }
+      const subscription = await currentSubscription(registration, pushKey);
+      const enabledOn = subscription ? await sync(subscription) : null;
+      return { setup, apple, worker: true, enabledOn };
     },
     refetchInterval: false,
   });
   const enable = useMutation({
-    mutationFn: async () => demoDevice.enable(),
-    onSettled: () => client.invalidateQueries({ queryKey: DEVICE_KEY }),
+    mutationFn: async () => {
+      // Кнопки нет, пока ключа нет (`Summary.tsx`); проверка — для типов.
+      if (!pushKey) return;
+      // Не разрешили — ничего не подписываем: карточка перечитает разрешение и скажет, как
+      // его вернуть.
+      if ((await Notification.requestPermission()) !== 'granted') return;
+      const registration = await workerRegistration();
+      if (!registration) throw new NoWorkerError();
+      await save(await subscribe(registration, pushKey));
+    },
+    // Сводка перечитывается ради устройства руководителя: помощник видит его там же.
+    onSettled: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: DEVICE_KEY }),
+        client.invalidateQueries({ queryKey: summaryQuery().queryKey }),
+      ]),
   });
+
+  // Сбой включения устаревает, как только сервер сказал «доставляю сюда»: например, запись
+  // подписки один раз не прошла, а перечитанное состояние её уже сохранило. Иначе отказ висел
+  // бы под «Включены» до перезагрузки — и всплыл бы снова, если подписку потом отзовут.
+  const enabledOn = state.data?.enabledOn ?? null;
+  const { isError, reset } = enable;
+  useEffect(() => {
+    if (enabledOn && isError) reset();
+  }, [enabledOn, isError, reset]);
+
   return { state, enable };
 }
 

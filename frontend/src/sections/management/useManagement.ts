@@ -10,7 +10,7 @@
  * устарела (инвариант 15).
  */
 
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { request } from '@/shared/api/client';
 
@@ -29,13 +29,8 @@ const KEY = ['management'];
 const SECTIONS = [['pult'], ['projects'], ['tasks'], ['programs'], ['calendar'], ['captures']];
 const FORMS = [['dictionaries'], ['organizations'], ['projects'], ['tasks'], ['programs']];
 
-/** Один набор параметров на ключ: его читает и вкладка «Сводка» Пульта — время из порога. */
-export function managementQuery() {
-  return queryOptions({ queryKey: KEY, queryFn: () => request<ManagementView>(BASE) });
-}
-
 export function useManagement() {
-  return useQuery(managementQuery());
+  return useQuery({ queryKey: KEY, queryFn: () => request<ManagementView>(BASE) });
 }
 
 function useChange<T, R = void>(perform: (input: T) => Promise<R>, also: string[][]) {

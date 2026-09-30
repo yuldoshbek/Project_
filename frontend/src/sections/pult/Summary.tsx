@@ -9,8 +9,10 @@
  * На iPhone уведомления работают только после установки на экран «Домой»: вкладка показывает,
  * как это сделать (ТЗ 8), и только потом предлагает их включить.
  *
- * Пока нет API, доставка и устройство руководителя вымышлены — и вкладка говорит это сама:
- * общий значок шапки говорит о людях и проектах, а не об уведомлениях.
+ * Данные — `GET /api/v1/pult/summary`: списки, экран блокировки и доставку считает сервер
+ * (инвариант 2), вкладка их только показывает. Подписка и пуш о вопросе настоящие в любом
+ * контуре, а утреннюю сводку шлёт расписание — и только рабочему контуру (V30): в демо и превью
+ * вкладка так и говорит, а не обещает сводку ко времени.
  */
 
 import { BellRing, Share, SquarePlus } from 'lucide-react';
@@ -18,28 +20,29 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Device } from '@/app/device';
+import { NoWorkerError } from '@/app/notifications';
 import { describeError } from '@/shared/api/client';
-import { formatDate, formatTime } from '@/shared/time';
+import { formatDate, formatTime, localClock } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
 
 import { LadderRow, type RowActions, type Viewer } from './LadderRow';
-import { rowKey, type PultRow, type PultView, type SummaryView } from './model';
-import { deviationText, summaryLines } from './text';
+import { rowKey, type PultRow, type SummaryView } from './model';
+import { summaryLines } from './push';
+import { deviationText } from './text';
 import { useSummary, useThisDevice } from './usePult';
 
 interface SummaryTabProps {
-  pult: PultView;
   viewer: Viewer;
   actions: RowActions;
   busy: boolean;
   device: Device;
 }
 
-export function SummaryTab({ pult, viewer, actions, busy, device }: SummaryTabProps) {
-  const summary = useSummary(pult);
+export function SummaryTab({ viewer, actions, busy, device }: SummaryTabProps) {
+  const summary = useSummary();
   const view = summary.data;
 
   // «Загрузка» — только пока сводки нет вовсе: на месте открытой строки она свернула бы её и
@@ -127,7 +130,7 @@ function NotificationCard({ summary, viewer }: { summary: SummaryView; viewer: V
           <span className="numeric ml-auto">{summary.send_at}</span>
         </figcaption>
         <p className="text-sm font-semibold text-ink-strong">{t('pult.summary.push.title')}</p>
-        {summaryLines(t, summary).map((line) => (
+        {summaryLines(t, summary.lock_screen).map((line) => (
           <p key={line} className="text-sm leading-snug text-ink">
             {line}
           </p>
@@ -143,16 +146,40 @@ function NotificationCard({ summary, viewer }: { summary: SummaryView; viewer: V
           <p className="mt-2 text-xs text-ink-muted">{t('pult.summary.timeHint')}</p>
         </>
       ) : null}
-      {summary.is_demo ? (
-        <p className="mt-3 text-xs text-ink-muted">{t('pult.summary.demo')}</p>
-      ) : null}
     </Card>
   );
 }
 
-/** Дойдёт ли: ушла ли сегодняшняя, а если нет — придёт ли вообще. */
+/**
+ * Запас на опоздание расписания — в начале окна и в конце. Расписание проверяет время каждые
+ * 10 минут: три проверки подряд без отправки — уже не очередь, а поломка, о которой надо
+ * сказать. И последний запуск утра GitHub тоже начинает с опозданием, а curl повторяет его до
+ * трёх раз: сервер отправит сводку и тогда (у проверки «пора» нет верхней границы), поэтому
+ * «сегодня не пришла» говорится только после этого запаса.
+ */
+const SENDING_MINUTES = 30;
+
+/** Минуты от полуночи для «ЧЧ:ММ». */
+function minutesOf(clock: string): number {
+  const [hours = 0, minutes = 0] = clock.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Дойдёт ли: ушла ли сегодняшняя, а если нет — почему. «Сейчас» — момент ответа сервера
+ * (`as_of`), а не часы браузера: на него сервер и решил, ушла ли сводка.
+ *
+ * Порядок проверок — тот же, что у расписания: без ключа и без устройства руководителя сервер
+ * день не закрывает и отправит сводку первым запуском после того, как они появятся
+ * (`summary_is_due` в `backend/app/jobs/handlers.py`). Поэтому «Отправляется» и «Не ушла»
+ * говорятся, только когда отправить есть чем и куда, а после последнего запуска утра
+ * (`last_run`) с запасом на его опоздание — уже «завтра».
+ */
 function Delivery({ summary }: { summary: SummaryView }) {
   const { t } = useTranslation();
+  if (!summary.push_key) {
+    return <Signal state="burn">{t('pult.summary.delivery.notConfigured')}</Signal>;
+  }
   if (!summary.leader_device) {
     return <Signal state="burn">{t('pult.summary.delivery.noDevice')}</Signal>;
   }
@@ -169,11 +196,37 @@ function Delivery({ summary }: { summary: SummaryView }) {
       </>
     );
   }
+  // Расписание (`.github/workflows/jobs.yml`) вызывает только рабочий контур, а рабочий — это
+  // ровно тот, где данные не вымышленные. В демо и превью обещание «придёт в 08:30» было бы
+  // неправдой каждый день; сводка здесь приходит, только если её отправить вручную, — тогда
+  // выше она уже «Пришла».
+  if (summary.is_demo) {
+    return (
+      <>
+        <Signal state="plain">{t('pult.summary.delivery.noSchedule')}</Signal>
+        <span>{t('pult.summary.delivery.noScheduleAt')}</span>
+      </>
+    );
+  }
+
+  const now = minutesOf(localClock(summary.as_of));
+  const late = now - minutesOf(summary.send_at);
+  const [state, label, detail] =
+    late < 0
+      ? (['plain', 'pending', 'pendingAt'] as const)
+      : now > minutesOf(summary.last_run) + SENDING_MINUTES
+        ? (['burn', 'missed', 'missedAt'] as const)
+        : late < SENDING_MINUTES
+          ? (['plain', 'sending', 'sendingAt'] as const)
+          : (['burn', 'failed', 'failedAt'] as const);
   return (
     <>
-      <Signal state="plain">{t('pult.summary.delivery.pending')}</Signal>
+      <Signal state={state}>{t(`pult.summary.delivery.${label}`)}</Signal>
       <span className="numeric">
-        {t('pult.summary.delivery.pendingAt', { time: summary.send_at })}
+        {t(`pult.summary.delivery.${detail}`, {
+          time: summary.send_at,
+          lastRun: summary.last_run,
+        })}
       </span>
     </>
   );
@@ -267,7 +320,7 @@ function Step({ icon, children }: { icon: ReactNode; children: string }) {
 /** Руководитель: придёт ли сводка на устройство, с которого он смотрит. */
 function ThisDeviceCard({ summary }: { summary: SummaryView }) {
   const { t } = useTranslation();
-  const { state, enable } = useThisDevice();
+  const { state, enable } = useThisDevice(summary.push_key);
   const setup = state.data?.setup;
   const enabledOn = state.data?.enabledOn ?? null;
   const denied = state.data?.apple ? 'deniedApple' : 'deniedBrowser';
@@ -295,18 +348,29 @@ function ThisDeviceCard({ summary }: { summary: SummaryView }) {
   } else if (setup === 'denied') {
     body = <p className="text-sm text-ink">{t(`pult.summary.device.${denied}`)}</p>;
   } else if (setup === 'ready' && enabledOn) {
+    // Вне рабочего контура сводку по расписанию не шлют (см. `Delivery`): «придёт в 08:30»
+    // было бы неправдой, а пуш о вопросе приходит и здесь.
     body = (
       <p className="flex flex-wrap items-center gap-2 text-sm text-ink">
         <Signal state="calm">{t('pult.summary.device.on')}</Signal>
         <span className="numeric">
-          {/* В демо касание ничего не подписывает — и время не обещается. */}
-          {t(summary.is_demo ? 'pult.summary.device.onDemo' : 'pult.summary.device.onSince', {
-            date: formatDate(enabledOn),
-            time: summary.send_at,
-          })}
+          {t(
+            summary.is_demo
+              ? 'pult.summary.device.onSinceNoSchedule'
+              : 'pult.summary.device.onSince',
+            {
+              date: formatDate(enabledOn),
+              time: summary.send_at,
+            },
+          )}
         </span>
       </p>
     );
+  } else if (setup === 'ready' && !summary.push_key) {
+    // Без ключа сервера подписка не состоится: кнопка обещала бы то, чего нет.
+    body = <p className="text-sm text-ink">{t('pult.summary.device.notConfigured')}</p>;
+  } else if (setup === 'ready' && !state.data?.worker) {
+    body = <p className="text-sm text-ink">{t('pult.summary.device.noWorker')}</p>;
   } else if (setup === 'ready') {
     body = (
       <Button
@@ -323,8 +387,23 @@ function ThisDeviceCard({ summary }: { summary: SummaryView }) {
 
   return (
     <Card title={t('pult.summary.device.title')} question={t('pult.summary.device.question')}>
-      {state.isPending ? <Loading /> : body}
-      {enable.isError ? <Failure detail={describeError(enable.error)} /> : null}
+      {state.isPending ? (
+        <Loading />
+      ) : state.isError ? (
+        <Failure detail={describeError(state.error)} onRetry={() => void state.refetch()} />
+      ) : (
+        body
+      )}
+      {/* Состояние устройства уже «Включены» — прежний отказ устарел и противоречил бы ему. */}
+      {enable.isError && !enabledOn ? (
+        <Failure
+          detail={
+            enable.error instanceof NoWorkerError
+              ? t('pult.summary.device.noWorker')
+              : describeError(enable.error)
+          }
+        />
+      ) : null}
       <Which summary={summary} />
     </Card>
   );

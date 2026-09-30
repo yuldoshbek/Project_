@@ -22,6 +22,7 @@ from app.jobs import run_job
 from app.repos.models import AuditLog, LeaderQuestion
 from app.services import metrics
 from tests.factories import make_project, make_task
+from tests.fakes import FakePushSender
 
 pytestmark = pytest.mark.infra
 
@@ -128,7 +129,9 @@ class TestOneSetOfNumbers:
         session.add(LeaderQuestion(target_type="project", target_id=overdue.id, text="Продлить?"))
         await session.flush()
 
-        outcome = await run_job(session, "morning-summary", now=now_utc(), force=True)
+        outcome = await run_job(
+            session, "morning-summary", push=FakePushSender(), now=now_utc(), force=True
+        )
         ladder = await metrics.ladder(session, today=today, zone=TASHKENT)
 
         assert outcome.result is not None

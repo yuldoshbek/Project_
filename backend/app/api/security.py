@@ -77,9 +77,10 @@ async def require_assistant(user: CurrentUser) -> User:
     случайная правка того, что он пришёл посмотреть, — единственная ошибка, которую здесь
     можно сделать пальцем.
 
-    Исключений два, и оба проверяются отдельно и явно, а не послаблением здесь: исключение
+    Исключений три, и все проверяются отдельно и явно, а не послаблением здесь: исключение
     должно быть видно в коде. Решение руководителя — `require_leader`; его собственные
-    просьба и идея в Захвате (ТЗ 6, допущение V17) — `app.domain.capture.check_author`.
+    просьба и идея в Захвате (ТЗ 6, допущение V17) — `app.domain.capture.check_author`;
+    подписка его устройства на уведомления (V28) — `app.domain.push.check_subscriber`.
     """
     if Role(user.role) is not Role.ASSISTANT:
         raise PermissionDeniedError("Изменение данных доступно в режиме помощника")
@@ -92,7 +93,7 @@ Assistant = Annotated[User, Depends(require_assistant)]
 async def require_leader(user: CurrentUser) -> User:
     """Решение руководителя — запись, которую делает только он сам (ТЗ 3.7).
 
-    Одно из двух исключений из `require_assistant`, отдельное и явное: решение помощника от
+    Одно из исключений из `require_assistant`, отдельное и явное: решение помощника от
     имени руководителя подписало бы журнал решений чужой рукой.
     """
     if Role(user.role) is not Role.LEADER:

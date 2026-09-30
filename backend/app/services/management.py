@@ -57,6 +57,7 @@ from app.domain.management import (
     clean_threshold,
     moved_due,
     renamed_script,
+    threshold_bounds,
     week_start,
 )
 from app.domain.pult import PROJECTS
@@ -111,8 +112,8 @@ class ThresholdView:
     default: Any
     origin: str
     kind: str
-    low: int | None
-    high: int | None
+    low: int | str | None
+    high: int | str | None
     affected: int | None
     version: int
 
@@ -487,6 +488,9 @@ async def load(
         except ValueError:
             continue
         default, origin = THRESHOLD_DEFAULTS[key]
+        low, high = threshold_bounds(
+            value_type=row.value_type, low=row.min_value, high=row.max_value
+        )
         threshold_views.append(
             ThresholdView(
                 key=key,
@@ -494,8 +498,8 @@ async def load(
                 default=default,
                 origin=origin.value,
                 kind=row.value_type,
-                low=row.min_value,
-                high=row.max_value,
+                low=low,
+                high=high,
                 affected=await figures.count(key, thresholds, ladder),
                 version=row.version,
             )

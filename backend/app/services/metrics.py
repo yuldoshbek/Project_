@@ -34,6 +34,7 @@ from app.domain.attention import (
     Holder,
     Item,
     Ladder,
+    Row,
     build_ladder,
     with_due_changes,
 )
@@ -348,6 +349,16 @@ async def ladder(
 def holders(ladder: Ladder) -> list[Holder]:
     """«Кто держит» — по строкам той же лестницы, а не отдельным подсчётом."""
     return holders_of(ladder.rows)
+
+
+def due_today(ladder: Ladder, today: date) -> tuple[Row, ...]:
+    """«Срок сегодня» утренней сводки — строки лестницы со сроком сегодня, на любой ступени.
+
+    На любой, а не только «горит» (V26): вопрос по вехе, срок которой сегодня, стоит на
+    ступени «ждёт решения» — и руководитель должен увидеть его в обоих списках. Нормы
+    здесь быть не может: срок сегодня делает строку горящей при любом пороге.
+    """
+    return tuple(row for row in ladder.rows if row.due_on == today)
 
 
 async def deadline_moves(

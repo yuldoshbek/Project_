@@ -348,6 +348,38 @@ describe('пороги', () => {
     expect(within(quiet).getByRole('button', { name: 'Сохранить' })).toBeDisabled();
     expect(within(quiet).getByText('от 1 до 180')).toHaveClass('text-burn-ink');
   });
+
+  it('время сводки — только в окне расписания: окно видно до записи, вне его не записать', async () => {
+    serve();
+    renderSection();
+    await openTab('Пороги');
+    const summary = () => itemOf('Утренняя сводка');
+    const field = () => within(summary()).getByLabelText('Значение: Утренняя сводка');
+    expect(field()).toHaveAttribute('min', '06:00');
+    expect(field()).toHaveAttribute('max', '11:00');
+    expect(within(summary()).getByText('от 06:00 до 11:00')).toHaveClass('text-ink-muted');
+
+    for (const outside of ['12:30', '05:45', '11:01']) {
+      fireEvent.change(field(), { target: { value: outside } });
+      expect(within(summary()).getByRole('button', { name: 'Сохранить' })).toBeDisabled();
+      expect(within(summary()).getByText('от 06:00 до 11:00')).toHaveClass('text-burn-ink');
+    }
+
+    fireEvent.change(field(), { target: { value: '11:00' } });
+    fireEvent.click(within(summary()).getByRole('button', { name: 'Сохранить' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Порог «Утренняя сводка» сохранён');
+    expect(sent).toContainEqual({
+      path: '/api/v1/management/thresholds/summary_at',
+      body: { value: '11:00', version: 1 },
+    });
+  });
+
+  it('сервер в памяти отказывает во времени вне окна, как настоящий', () => {
+    expect(() => new FakeManagement().setThreshold('summary_at', '11:30', 1)).toThrow(
+      /с 06:00 до 11:00/,
+    );
+    expect(new FakeManagement().setThreshold('summary_at', '06:00', 1).value).toBe('06:00');
+  });
 });
 
 describe('справочники', () => {

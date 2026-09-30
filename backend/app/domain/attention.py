@@ -307,7 +307,10 @@ def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_da
             )
         )
 
-    rows.sort(key=lambda row: row.order)
+    # Равные по ступени, отклонению и сроку строки идут по названию, затем по записи: без
+    # этого их порядок зависел бы от того, в каком порядке база отдала снимок, и первой
+    # строкой «срок сегодня» на экране блокировки оказывалась бы то одна, то другая.
+    rows.sort(key=lambda row: (row.order, row.title or "", str(row.entity_id)))
     return Ladder(rows=tuple(rows), on_track=on_track)
 
 

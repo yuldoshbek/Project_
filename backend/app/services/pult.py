@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.attention import LADDER, Attention
+from app.domain.attention import Row as LadderRow
 from app.domain.clock import local_date
 from app.domain.pult import (
     DECISIONS,
@@ -141,18 +143,51 @@ async def load(
     today = local_date(now, zone)
     ladder = await metrics.ladder(session, today=today, zone=zone)
 
-    details = await read_model.row_details(session, ladder.rows, zone)
-    targets = [detail.target for detail in details.values()]
-    questions = await read_model.open_questions(session, targets)
-    decisions = await read_model.last_decisions(session, targets)
+    rows = await row_views(session, ladder.rows, zone)
     holders = metrics.holders(ladder)
     moves = await metrics.deadline_moves(session, now=now, zone=zone)
     changes = await _changes(session, viewer=viewer, zone=zone)
 
+    # Кто держит — всегда ответственный хотя бы одной строки лестницы, поэтому имена уже
+    # прочитаны вместе со строками, и второй запрос за ними не нужен.
+    names = {row.responsible.id: row.responsible.name for row in rows if row.responsible}
+
+    return PultView(
+        as_of=now,
+        last_visit_at=viewer.last_visit_at,
+        rows=rows,
+        counts={step.value: ladder.count(step) for step in STEPS},
+        on_track=ladder.on_track,
+        holders=[
+            HolderView(
+                person=PersonRef(id=holder.person_id, name=names.get(holder.person_id, "")),
+                counts={step.value: holder.counts[step] for step in STEPS},
+                total=holder.total,
+                worst=holder.worst,
+            )
+            for holder in holders
+        ],
+        changes=changes,
+        deadline_moves=await _moves_view(session, moves, zone),
+        is_demo=is_demo,
+    )
+
+
+async def row_views(
+    session: AsyncSession, rows: Sequence[LadderRow], zone: ZoneInfo
+) -> list[RowView]:
+    """Строки лестницы в том виде, в каком их показывает экран, — в том же порядке.
+
+    Одна сборка на Пульт и на утреннюю сводку: имя ответственного, к чему относится
+    строка, вопрос и последнее решение. Каждое — одним запросом на все строки
+    (CLAUDE.md, «Read-модель на экран»).
+    """
+    details = await read_model.row_details(session, rows, zone)
+    targets = [detail.target for detail in details.values()]
+    questions = await read_model.open_questions(session, targets)
+    decisions = await read_model.last_decisions(session, targets)
     names = await read_model.people_names(
-        session,
-        [row.responsible_person_id for row in ladder.rows if row.responsible_person_id]
-        + [holder.person_id for holder in holders],
+        session, [row.responsible_person_id for row in rows if row.responsible_person_id]
     )
 
     def person(person_id: uuid.UUID | None) -> PersonRef | None:
@@ -160,14 +195,14 @@ async def load(
             return None
         return PersonRef(id=person_id, name=names[person_id])
 
-    rows: list[RowView] = []
-    for row in ladder.rows:
+    views: list[RowView] = []
+    for row in rows:
         detail = details.get((row.section, row.entity_id))
         target = detail.target if detail else (row.section, row.entity_id)
         question = questions.get(target) if row.attention is Attention.AWAITING_DECISION else None
         # У строки-решения «последнее решение» — она сама: показывать его второй раз незачем.
         decision = decisions.get(target) if row.section != "decisions" else None
-        rows.append(
+        views.append(
             RowView(
                 section=row.section,
                 entity_id=row.entity_id,
@@ -199,26 +234,7 @@ async def load(
                 target_id=target[1],
             )
         )
-
-    return PultView(
-        as_of=now,
-        last_visit_at=viewer.last_visit_at,
-        rows=rows,
-        counts={step.value: ladder.count(step) for step in STEPS},
-        on_track=ladder.on_track,
-        holders=[
-            HolderView(
-                person=PersonRef(id=holder.person_id, name=names.get(holder.person_id, "")),
-                counts={step.value: holder.counts[step] for step in STEPS},
-                total=holder.total,
-                worst=holder.worst,
-            )
-            for holder in holders
-        ],
-        changes=changes,
-        deadline_moves=await _moves_view(session, moves, zone),
-        is_demo=is_demo,
-    )
+    return views
 
 
 async def _moves_view(session: AsyncSession, moves: DeadlineMoves, zone: ZoneInfo) -> MovesView:

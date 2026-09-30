@@ -13,12 +13,13 @@ V20–V25 в `docs/OPEN-QUESTIONS.md`.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from enum import StrEnum
 from typing import Any
 
 from app.domain.dictionaries import SettingKey, TaskStatus
 from app.domain.errors import RuleViolationError
+from app.domain.push import LAST_SUMMARY_RUN, SUMMARY_WINDOW
 
 
 class RoundReason(StrEnum):
@@ -155,16 +156,43 @@ _TIME = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 
 def clean_threshold(*, value_type: str, value: Any, low: int | None, high: int | None) -> Any:
-    """Значение порога: время — «ЧЧ:ММ», дни и счёт — целое в границах справочника."""
+    """Значение порога: время — «ЧЧ:ММ», дни и счёт — целое в границах справочника.
+
+    Порог-время один — время утренней сводки, и принимается оно только внутри окна
+    `app.domain.push.SUMMARY_WINDOW`: там же сказано, почему окно кончается раньше
+    последнего вызова расписания. Время вне окна сохранилось бы и не наступило либо
+    оставило бы сводке одну попытку.
+    """
     if value_type == "time":
         if not isinstance(value, str) or not _TIME.fullmatch(value):
             raise RuleViolationError("Время — часы и минуты, например 08:30")
+        start, end = SUMMARY_WINDOW
+        if not start <= time.fromisoformat(value) <= end:
+            raise RuleViolationError(
+                f"Сводку можно назначить с {start:%H:%M} до {end:%H:%M}: расписание "
+                f"повторяет попытки только до {LAST_SUMMARY_RUN:%H:%M}, и более позднему "
+                "времени не осталось бы запаса на повтор"
+            )
         return value
     if isinstance(value, bool) or not isinstance(value, int):
         raise RuleViolationError("Порог — целое число")
     if (low is not None and value < low) or (high is not None and value > high):
         raise RuleViolationError(f"Порог — целое число от {low} до {high}")
     return value
+
+
+def threshold_bounds(
+    *, value_type: str, low: int | None, high: int | None
+) -> tuple[int | str | None, int | str | None]:
+    """Границы порога для экрана — те же, что проверяет `clean_threshold`.
+
+    У чисел они в справочнике, у времени — окно сводки, и едут они строками «ЧЧ:ММ»:
+    экран ставит их полю времени и не даёт записать то, что сервер всё равно отвергнет.
+    """
+    if value_type == "time":
+        start, end = SUMMARY_WINDOW
+        return f"{start:%H:%M}", f"{end:%H:%M}"
+    return low, high
 
 
 # --------------------------------------------------------------------------------------

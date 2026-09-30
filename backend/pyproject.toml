@@ -21,6 +21,11 @@ dependencies = [
     # ни в облегчённых образах Linux — приложение падало бы при первом расчёте
     # светофора, на машине, где его никто не проверял.
     "tzdata>=2025.2",
+    # Web Push на телефон руководителя (ТЗ 8): шифрование RFC 8291, подпись RFC 8292,
+    # отправка httpx. Почему не pywebpush — ADR-0036.
+    "http-ece>=1.2.1",
+    "py-vapid>=1.9.4",
+    "httpx>=0.28.1",
 ]
 
 # Сняты вместе с прежним стеком: redis и arq (постоянного воркера нет — ADR-0032),
@@ -33,8 +38,6 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "python-dotenv>=1.0",
-    # Клиент для тестов API и для будущих обращений наружу.
-    "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
     "import-linter>=2.1",
@@ -109,7 +112,7 @@ disallow_untyped_calls = false
 
 # Библиотеки без маркера py.typed: аннотации внутри есть, но mypy их не видит.
 [[tool.mypy.overrides]]
-module = ["asyncpg.*"]
+module = ["asyncpg.*", "http_ece.*", "py_vapid.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------

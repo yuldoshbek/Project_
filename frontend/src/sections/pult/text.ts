@@ -8,20 +8,11 @@ import type { TFunction } from 'i18next';
 
 import { formatDate } from '@/shared/time';
 
-import type { DecisionKind, PultRow, RowSection, SummaryView } from './model';
+import type { PultRow } from './model';
 
-/**
- * Название строки. У решения без текста названия нет — подписью служит вид решения, у
- * удалённой записи — её раздел: пустая строка на экране читается как «данных нет».
- */
-export function rowTitle(
-  t: TFunction,
-  row: { title: string | null; section: RowSection; decision_kind?: DecisionKind | null },
-): string {
-  if (row.title) return row.title;
-  if (row.decision_kind) return t(`pult.decisions.${row.decision_kind}`);
-  return t(`pult.rowSections.${row.section}`);
-}
+// Название строки нужно и уведомлению, которое складывает service worker, поэтому живёт в
+// модуле без зависимостей от приложения.
+export { rowTitle } from './push';
 
 /** «Ждёт 6 дн», «срок завтра», «тишина 21 дн» — число рядом со ступенью, словами ступени. */
 export function deviationText(t: TFunction, row: Pick<PultRow, 'step' | 'deviation'>): string {
@@ -48,55 +39,4 @@ export function dueText(t: TFunction, row: PultRow): string | null {
     });
   }
   return t('pult.due', { date: formatDate(row.due_on) });
-}
-
-/**
- * Название в тексте уведомления. У решения без текста на Пульте рядом видна строка объекта, а
- * на экране блокировки её нет: одно «Поторопить» не скажет, о какой работе речь.
- */
-function pushTitle(t: TFunction, row: PultRow): string {
-  if (!row.title && row.decision_kind && row.context) {
-    return t('pult.summary.push.decision', {
-      kind: t(`pult.decisions.${row.decision_kind}`),
-      context: row.context,
-    });
-  }
-  return rowTitle(t, row);
-}
-
-/**
- * Текст утренней сводки на экране блокировки (V29): числа и два названия — то, что ждёт
- * дольше всех, и первый срок. Больше экран блокировки не показывает, а длинный текст iPhone
- * обрежет сам, не спросив, что важнее.
- *
- * Пустой пункт — фраза, а не нуль (ТЗ 5): «0 ждут решения» читается как поломка. Оценки
- * «сегодня спокойно» нет: просроченное в сводку не входит (V26), и при нём «спокойно» было бы
- * неправдой.
- */
-export function summaryLines(t: TFunction, summary: SummaryView): string[] {
-  const [oldest] = summary.awaiting;
-  const [first] = summary.due_today;
-
-  const awaiting = !oldest
-    ? t('pult.summary.push.noAwaiting')
-    : oldest.deviation === 0
-      ? t('pult.summary.push.awaitingToday', {
-          count: summary.awaiting.length,
-          title: pushTitle(t, oldest),
-        })
-      : t('pult.summary.push.awaiting', {
-          count: summary.awaiting.length,
-          title: pushTitle(t, oldest),
-          days: oldest.deviation,
-        });
-  const due = !first
-    ? t('pult.summary.push.noDue')
-    : summary.due_today.length === 1
-      ? t('pult.summary.push.dueOne', { title: pushTitle(t, first) })
-      : t('pult.summary.push.dueMany', {
-          count: summary.due_today.length,
-          title: pushTitle(t, first),
-          more: summary.due_today.length - 1,
-        });
-  return [awaiting, due];
 }

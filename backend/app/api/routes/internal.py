@@ -9,8 +9,14 @@
   ссылки;
 - сравнение секрета идёт за постоянное время: иначе по времени ответа его можно подобрать.
 
-Ответ всегда говорит, что произошло: выполнено, уже было сделано или задача не найдена.
-«Уже было сделано» — не ошибка, а нормальный исход второго вызова.
+Ответ всегда говорит, что произошло: выполнено, уже было сделано, ещё не время или задача
+не найдена. «Уже было сделано» и «ещё не время» (`not_due`) — не ошибки, а нормальные
+исходы частого вызова: утреннюю сводку расписание спрашивает каждые десять минут.
+
+Неудачный прогон (`failed`: внешняя служба не приняла работу) отвечает 503 тем же телом, а
+не исключением. Исключение откатило бы транзакцию, а записанное прогоном — отключённые
+службой подписки, уведомление без отметки доставки — должно остаться. Код 503 нужен
+расписанию: curl повторяет попытку, а прогон GitHub краснеет и присылает письмо.
 """
 
 from __future__ import annotations
@@ -18,13 +24,14 @@ from __future__ import annotations
 import hmac
 from typing import Any
 
-from fastapi import Header
+from fastapi import Header, Response, status
 from pydantic import BaseModel
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import PushDep, SessionDep, SettingsDep
 from app.api.transaction import transactional_router
 from app.domain.errors import NotAuthenticatedError
 from app.jobs import run_job
+from app.jobs.registry import STATUS_FAILED
 
 router = transactional_router(prefix="/internal", tags=["служебные"], include_in_schema=False)
 
@@ -45,6 +52,8 @@ async def run(
     name: str,
     session: SessionDep,
     settings: SettingsDep,
+    push: PushDep,
+    response: Response,
     x_orbita_jobs_secret: str = Header(default=""),
 ) -> JobRunResponse:
     """Выполняет задачу один раз за её период.
@@ -61,7 +70,9 @@ async def run(
     # Часовой пояс — из настроек системы, как у командной строки (`app.jobs.run`): период
     # «сутки» у расписания и у ручного запуска обязан быть одним и тем же, иначе вызов
     # руками и вызов по расписанию разойдутся в том, какой сегодня день.
-    outcome = await run_job(session, name, timezone=settings.timezone)
+    outcome = await run_job(session, name, push=push, timezone=settings.timezone)
+    if outcome.status == STATUS_FAILED:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return JobRunResponse(
         status=outcome.status,
         job=outcome.name,

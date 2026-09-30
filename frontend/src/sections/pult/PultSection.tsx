@@ -225,13 +225,7 @@ function Pult({ view }: { view: PultView }) {
       {tab === 'report' ? (
         <ReportTab />
       ) : tab === 'summary' ? (
-        <SummaryTab
-          pult={view}
-          viewer={viewer}
-          actions={actions}
-          busy={action.isPending}
-          device={device}
-        />
+        <SummaryTab viewer={viewer} actions={actions} busy={action.isPending} device={device} />
       ) : (
         <>
           <Counters

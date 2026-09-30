@@ -71,8 +71,9 @@ class Threshold(BaseModel):
     default: int | str
     origin: Literal["tz", "assumption"]
     kind: Literal["days", "count", "time"]
-    min: int | None
-    max: int | None
+    # У времени границы — строки «ЧЧ:ММ» (окно сводки), у дней и счёта — числа.
+    min: int | str | None
+    max: int | str | None
     affected: int | None
     version: int
 

@@ -228,6 +228,9 @@ const AHEAD: [inDays: number, deadlines: number][] = [
   [61, 4],
 ];
 
+/** Последний запуск расписания за утро — `LAST_SUMMARY_RUN` сервера. */
+const LAST_SUMMARY_RUN = '11:50';
+
 const THRESHOLDS: Omit<Threshold, 'affected' | 'version'>[] = [
   { key: 'burn_days', value: 7, default: 7, origin: 'tz', kind: 'days', min: 1, max: 60 },
   { key: 'quiet_days', value: 14, default: 14, origin: 'tz', kind: 'days', min: 1, max: 180 },
@@ -273,8 +276,9 @@ const THRESHOLDS: Omit<Threshold, 'affected' | 'version'>[] = [
     default: '08:30',
     origin: 'tz',
     kind: 'time',
-    min: null,
-    max: null,
+    // Окно, как у сервера (`SUMMARY_WINDOW` в `backend/app/domain/push.py`).
+    min: '06:00',
+    max: '11:00',
   },
 ];
 
@@ -610,11 +614,18 @@ export class FakeManagement {
       if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
         fail('Время — часы и минуты, например 08:30');
       }
+      // «ЧЧ:ММ» с нулём впереди сравниваются строкой так же, как временем.
+      const [start, end] = [String(current.min), String(current.max)];
+      if (value < start || value > end) {
+        fail(
+          `Сводку можно назначить с ${start} до ${end}: расписание повторяет попытки только до ${LAST_SUMMARY_RUN}, и более позднему времени не осталось бы запаса на повтор`,
+        );
+      }
     } else if (
       typeof value !== 'number' ||
       !Number.isInteger(value) ||
-      value < (current.min ?? 0) ||
-      value > (current.max ?? Infinity)
+      value < Number(current.min ?? 0) ||
+      value > Number(current.max ?? Infinity)
     ) {
       fail(`Порог — целое число от ${current.min} до ${current.max}`);
     }

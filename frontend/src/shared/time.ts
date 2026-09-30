@@ -31,6 +31,14 @@ const timeFormat = new Intl.DateTimeFormat('ru-RU', {
   minute: '2-digit',
 });
 
+/** «ЧЧ:ММ» по Ташкенту, всегда 24 часа и с нулём впереди: так хранятся времена в порогах. */
+const clockFormat = new Intl.DateTimeFormat('en-GB', {
+  timeZone: AGENCY_TIMEZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
 /** День в Ташкенте как `YYYY-MM-DD` — для полей дат и сравнения со сроками. */
 const dayFormat = new Intl.DateTimeFormat('en-CA', {
   timeZone: AGENCY_TIMEZONE,
@@ -41,6 +49,11 @@ const dayFormat = new Intl.DateTimeFormat('en-CA', {
 
 export function localDay(value: string | Date): string {
   return dayFormat.format(new Date(value));
+}
+
+/** Время по Ташкенту как «ЧЧ:ММ» — для сравнения со временем из порога (`summary_at`). */
+export function localClock(value: string | Date): string {
+  return clockFormat.format(new Date(value));
 }
 
 export function formatDate(value: string | Date): string {

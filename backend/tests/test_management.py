@@ -462,6 +462,8 @@ class TestThresholds:
         assert (by_key["burn_days"]["default"], by_key["burn_days"]["origin"]) == (7, "tz")
         assert by_key["hot_day_threshold"]["origin"] == "assumption"
         assert (by_key["burn_days"]["min"], by_key["burn_days"]["max"]) == (1, 60)
+        # У времени сводки границы — её окно, строками: экран ставит их полю времени.
+        assert (by_key["summary_at"]["min"], by_key["summary_at"]["max"]) == ("06:00", "11:00")
 
     async def test_quiet_counts_projects_waiting_for_outsiders(
         self, leader_api: AsyncClient, session: AsyncSession
@@ -547,6 +549,9 @@ class TestThresholds:
         path = f"{MANAGEMENT}/thresholds/summary_at"
         assert (
             await assistant_api.put(path, json={"value": "8:30", "version": summary["version"]})
+        ).status_code == 422
+        assert (
+            await assistant_api.put(path, json={"value": "11:30", "version": summary["version"]})
         ).status_code == 422
         assert (
             await assistant_api.put(path, json={"value": "09:00", "version": summary["version"]})

@@ -28,19 +28,46 @@ CLAUDE.md и так помещает транзакции в слой сцена
 обработчике: обработчиков десятки, и забыть можно в любом — а забытая фиксация выглядит
 как «данные не сохранились через раз». Класс маршрута применяется один раз к роутеру и
 действует на все его пути.
+
+**После фиксации — действия наружу** (`after_commit`). Пуш «ждёт вашего решения» уходит,
+когда вопрос уже записан: отправленный до фиксации, он мог бы сообщить о вопросе, которого
+откат так и не записал, — а пуш с телефона не отзывается. Действие после фиксации не
+может отменить ответ: вопрос уже записан, поэтому неудача действия пишется в лог, а не
+превращается в ошибку для помощника.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Request, Response
 from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = structlog.get_logger(__name__)
+
 SESSION_STATE_ATTRIBUTE = "session"
 """Имя, под которым сессия запроса лежит в `request.state` (кладёт `deps.get_session`)."""
+
+AFTER_COMMIT_ATTRIBUTE = "after_commit"
+"""Имя списка действий после фиксации в `request.state` (пополняет `after_commit`)."""
+
+AfterCommit = Callable[[], Awaitable[object]]
+
+
+def after_commit(request: Request, action: AfterCommit) -> None:
+    """Выполнить действие, когда транзакция запроса зафиксирована, — до ответа клиенту.
+
+    Действие работает в той же сессии, уже в новой транзакции, и фиксирует её маршрут:
+    отметка «пуш доставлен» записывается так же, как всё остальное.
+    """
+    actions: list[AfterCommit] | None = getattr(request.state, AFTER_COMMIT_ATTRIBUTE, None)
+    if actions is None:
+        actions = []
+        setattr(request.state, AFTER_COMMIT_ATTRIBUTE, actions)
+    actions.append(action)
 
 
 class CommitOnSuccess(APIRoute):
@@ -60,6 +87,16 @@ class CommitOnSuccess(APIRoute):
             session: AsyncSession | None = getattr(request.state, SESSION_STATE_ATTRIBUTE, None)
             if session is not None:
                 await session.commit()
+
+            for action in getattr(request.state, AFTER_COMMIT_ATTRIBUTE, ()):
+                try:
+                    await action()
+                    if session is not None:
+                        await session.commit()
+                except Exception:
+                    if session is not None:
+                        await session.rollback()
+                    logger.exception("after_commit_failed", path=request.url.path)
 
             return response
 

@@ -25,6 +25,20 @@ import { Failure } from '@/shared/ui/States';
 import type { Threshold } from './model';
 import { useImpact, useSaveThreshold } from './useManagement';
 
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Время внутри окна. «ЧЧ:ММ» с нулём впереди сравниваются строкой так же, как временем, —
+ * разбирать их незачем. Пустое поле и «08:30:15» в окно не входят: сервер их не примет.
+ */
+function clockWithin(value: string, min: number | string | null, max: number | string | null) {
+  return (
+    CLOCK.test(value) &&
+    (typeof min !== 'string' || min <= value) &&
+    (typeof max !== 'string' || value <= max)
+  );
+}
+
 function ThresholdRow({
   item,
   canEdit,
@@ -43,9 +57,13 @@ function ThresholdRow({
   const isTime = item.kind === 'time';
   const value = draft ?? item.value;
   const numeric = typeof value === 'number' ? value : Number(value);
-  const min = item.min ?? 0;
-  const max = item.max ?? Infinity;
-  const inBounds = isTime || (Number.isInteger(numeric) && numeric >= min && numeric <= max);
+  const min = typeof item.min === 'number' ? item.min : 0;
+  const max = typeof item.max === 'number' ? item.max : Infinity;
+  // Время сводки вне окна сервер не запишет (`clean_threshold`): кнопка гаснет сразу, а не
+  // после отказа.
+  const inBounds = isTime
+    ? clockWithin(String(value), item.min, item.max)
+    : Number.isInteger(numeric) && numeric >= min && numeric <= max;
   const changed = draft !== null && draft !== item.value;
   const impact = useImpact(item.key, value, changed && inBounds && !isTime);
 
@@ -76,9 +94,14 @@ function ThresholdRow({
             <input
               type="time"
               aria-label={t('management.thresholds.value', { title })}
+              min={typeof item.min === 'string' ? item.min : undefined}
+              max={typeof item.max === 'string' ? item.max : undefined}
               value={String(value)}
               onChange={(event) => setDraft(event.target.value)}
-              className="numeric min-h-touch rounded-[var(--radius)] border border-line-strong bg-card px-3 text-base text-ink"
+              className={cn(
+                'numeric min-h-touch rounded-[var(--radius)] border bg-card px-3 text-base text-ink',
+                inBounds ? 'border-line-strong' : 'border-burn',
+              )}
             />
           ) : (
             <>

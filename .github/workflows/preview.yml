@@ -158,15 +158,25 @@ jobs:
           ORBITA_SESSION_SECRET: ${{ secrets.PREVIEW_SESSION_SECRET }}
           ORBITA_JOBS_SECRET: ${{ secrets.PREVIEW_JOBS_SECRET }}
           ORBITA_BASE_URL: ${{ steps.alias.outputs.url }}
+          # Необязателен и потому не в списке «Ключи площадок»: без него превью работает,
+          # а уведомления в нём честно «не настроены». С ним заказчик проверяет настоящий
+          # пуш «ждёт вашего решения» на своём телефоне до выкладки. Утреннюю сводку в
+          # превью не шлёт никто: расписание (jobs.yml) зовёт только рабочий контур (V30).
+          ORBITA_VAPID_PRIVATE_KEY: ${{ secrets.PREVIEW_VAPID_PRIVATE_KEY }}
         run: |
           npx --yes vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
           npx --yes vercel@latest build --token="$VERCEL_TOKEN"
+          push_key=()
+          if [ -n "$ORBITA_VAPID_PRIVATE_KEY" ]; then
+            push_key=(--env ORBITA_VAPID_PRIVATE_KEY="$ORBITA_VAPID_PRIVATE_KEY")
+          fi
           url="$(npx --yes vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" \
             --env ORBITA_ENV=preview \
             --env ORBITA_DATABASE_URL="$ORBITA_DATABASE_URL" \
             --env ORBITA_SESSION_SECRET="$ORBITA_SESSION_SECRET" \
             --env ORBITA_JOBS_SECRET="$ORBITA_JOBS_SECRET" \
-            --env ORBITA_BASE_URL="$ORBITA_BASE_URL")"
+            --env ORBITA_BASE_URL="$ORBITA_BASE_URL" \
+            "${push_key[@]}")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v5

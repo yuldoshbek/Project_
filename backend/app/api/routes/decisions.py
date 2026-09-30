@@ -3,6 +3,9 @@
 Четыре пути ровно под четыре действия экрана: решить, отменить решение, спросить,
 отменить вопрос. Решает только руководитель, спрашивает только помощник — оба правила
 стоят на входе (`Leader`, `Assistant`), а не внутри сценария.
+
+Вопрос отправляет руководителю пуш «ждёт вашего решения» — после фиксации, в том же
+запросе (V27): пуш о вопросе, который откат не записал, с телефона уже не отозвать.
 """
 
 from __future__ import annotations
@@ -10,15 +13,17 @@ from __future__ import annotations
 import uuid
 from zoneinfo import ZoneInfo
 
-from fastapi import status
+from fastapi import Request, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import PushDep, SessionDep, SettingsDep
 from app.api.security import Assistant, Leader
-from app.api.transaction import transactional_router
+from app.api.transaction import after_commit, transactional_router
 from app.domain.clock import local_date, now_utc
 from app.domain.decisions import TEXT_MAX_LENGTH, DecisionKind
+from app.domain.push import question_key
 from app.services import decisions as service
+from app.services import notifications
 
 router = transactional_router(tags=["решения"])
 
@@ -80,13 +85,20 @@ async def delete_decision(decision_id: uuid.UUID, user: Leader, session: Session
     status_code=status.HTTP_201_CREATED,
     summary="Вопрос руководителю",
 )
-async def create_question(body: QuestionRequest, user: Assistant, session: SessionDep) -> Created:
+async def create_question(
+    body: QuestionRequest, user: Assistant, session: SessionDep, push: PushDep, request: Request
+) -> Created:
     question = await service.ask(
         session,
         user=user,
         target_type=body.target_type,
         target_id=body.target_id,
         text=body.text,
+    )
+    key = question_key(question.id)
+    after_commit(
+        request,
+        lambda: notifications.deliver_pending(session, push, dedup_key=key, now=now_utc()),
     )
     return Created(id=question.id)
 
