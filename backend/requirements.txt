@@ -8,12 +8,23 @@ annotated-types==0.8.0
     # via pydantic
 anyio==4.15.1
     # via
+    #   httpx
     #   starlette
     #   watchfiles
 asyncpg==0.31.0
     # via orbita-backend
+certifi==2026.7.22
+    # via
+    #   httpcore
+    #   httpx
+cffi==2.1.1 ; platform_python_implementation != 'PyPy'
+    # via cryptography
 click==8.5.0
     # via uvicorn
+cryptography==50.0.1
+    # via
+    #   http-ece
+    #   py-vapid
 dnspython==2.8.0
     # via email-validator
 email-validator==2.3.0
@@ -23,17 +34,30 @@ fastapi==0.141.1
 greenlet==3.5.5
     # via sqlalchemy
 h11==0.16.0
-    # via uvicorn
+    # via
+    #   httpcore
+    #   uvicorn
+http-ece==1.2.1
+    # via orbita-backend
+httpcore==1.0.9
+    # via httpx
 httptools==0.8.0
     # via uvicorn
+httpx==0.28.1
+    # via orbita-backend
 idna==3.19
     # via
     #   anyio
     #   email-validator
+    #   httpx
 mako==1.4.1
     # via alembic
 markupsafe==3.0.3
     # via mako
+py-vapid==1.9.4
+    # via orbita-backend
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+    # via cffi
 pydantic==2.13.5
     # via
     #   fastapi

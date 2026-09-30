@@ -36,6 +36,7 @@ from app.repos.models import Session as SessionRecord
 from app.repos.models import User
 from app.seed import seed
 from app.settings import Settings
+from tests.fakes import FakePushSender
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -134,6 +135,9 @@ def build_settings() -> Settings:
         db_name=configured_test_db(),
         db_user=_env("ORBITA_DB_USER", "orbita"),
         db_password=SecretStr(_env("ORBITA_DB_PASSWORD", "orbita")),
+        # Ключ уведомлений из .env разработчика тестам не нужен: настоящая служба
+        # уведомлений в тестах не вызывается, вместо неё — подделка (`push`).
+        vapid_private_key=None,
         log_json=True,
     )
 
@@ -162,6 +166,14 @@ async def app(settings: Settings) -> AsyncIterator[FastAPI]:
         yield application
     finally:
         await dispose_database()
+
+
+@pytest.fixture
+def push(app: FastAPI) -> FakePushSender:
+    """Подделка службы уведомлений на месте порта приложения (`app.state.push`)."""
+    fake = FakePushSender()
+    app.state.push = fake
+    return fake
 
 
 @pytest.fixture

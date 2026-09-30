@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.dictionaries import OrganizationKind
-from app.repos.base import Base, Timestamps, UUIDPrimaryKey
+from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
 
 ORGANIZATION_KINDS = ", ".join(f"'{kind.value}'" for kind in OrganizationKind)
@@ -44,13 +44,17 @@ class LocalizedName:
     name_uz_latn: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
-class DictionaryEntry(UUIDPrimaryKey, LocalizedName, Timestamps):
+class DictionaryEntry(Auditable, Versioned, UUIDPrimaryKey, LocalizedName, Timestamps):
     """Общее у всех справочников.
 
     `code` — стабильный технический ключ, на него ссылается код и внешние ключи; он не
     меняется никогда. `is_active` — мягкое исключение: удалять значение, на которое уже
     ссылаются записи, нельзя, а убрать его из форм создания нужно, иначе в старом проекте
     исчезнет направление, по которому его когда-то завели.
+
+    Значения правит помощник в «Управлении» (ТЗ 3.9): правка — с версией (инвариант 15) и
+    в журнал (инвариант 5). Наполнение (`app.seed`) пишет мимо сессии, поэтому журнал им не
+    засоряется.
     """
 
     code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
@@ -88,7 +92,7 @@ class ProjectTypeRef(DictionaryEntry, Base):
     __tablename__ = "project_types"
 
 
-class ProjectTypeMilestone(UUIDPrimaryKey, LocalizedName, Timestamps, Base):
+class ProjectTypeMilestone(Auditable, Versioned, UUIDPrimaryKey, LocalizedName, Timestamps, Base):
     """Веха шаблона: что подставляется в новый проект этого типа (ТЗ 3.1).
 
     Ради этого типы и заводятся. Помощник выбирает «нормативный акт» — и получает
@@ -149,7 +153,7 @@ class TaskStatusRef(DictionaryEntry, Base):
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="grey")
 
 
-class Organization(Auditable, UUIDPrimaryKey, Timestamps, Base):
+class Organization(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     """Организация: министерство, ведомство, хокимият, международная организация, компания.
 
     `is_founded_by_agency` отмечает Центр космического мониторинга — организацию,
@@ -164,8 +168,8 @@ class Organization(Auditable, UUIDPrimaryKey, Timestamps, Base):
     организации нет и не заводится: ТЗ 3.4 его не называет, а помощник знает организацию
     по названию. Две строки с одним названием — это одна организация, заведённая дважды:
     роли в проектах и написания из таблиц «Ижро» разошлись бы по двум записям, и срез «что
-    держит Центр» потерял бы половину. Тот же ключ узнаёт Центр при повторном наполнении
-    (`app.seed`).
+    держит Центр» потерял бы половину. Центр при повторном наполнении узнаётся не по
+    названию, а по признаку (`app.seed._seed_center`): название помощник переименовывает.
     """
 
     __tablename__ = "organizations"
@@ -187,13 +191,15 @@ class Organization(Auditable, UUIDPrimaryKey, Timestamps, Base):
     )
 
 
-class Setting(UUIDPrimaryKey, Timestamps, Base):
+class Setting(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     """Пороги сигналов: их меняет помощник, а не разработчик (ТЗ 3.9).
 
     Не путать с переменными окружения: те задаёт тот, кто разворачивает систему.
 
     `min_value` и `max_value` нужны форме редактирования: порог «горит за 900 дней»
-    выключает сигнал, не сообщая об этом, и восстановить его будет некому.
+    выключает сигнал, не сообщая об этом, и восстановить его будет некому. Порог меняет
+    сигналы на всех экранах сразу, поэтому правка — с версией и в журнал: «кто поднял
+    порог молчания» — вопрос, который задают, когда Пульт вдруг опустел.
     """
 
     __tablename__ = "settings"

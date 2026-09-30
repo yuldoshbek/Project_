@@ -93,6 +93,10 @@ LADDER: tuple[Attention, ...] = (
     Attention.ON_TRACK,
 )
 
+QUIET_STEPS: frozenset[Attention] = frozenset({Attention.SILENT, Attention.BLOCKED_BY_OTHERS})
+"""Ступени одного порога тишины: молчит, а у проекта с чужим головным — ждёт чужих. Тишина
+одна, поэтому обход и число порога «молчат» считают обе."""
+
 _SIGNALS: dict[Attention, Signal] = {
     Attention.AWAITING_DECISION: Signal.CALL,
     Attention.OVERDUE: Signal.BURN,
@@ -173,10 +177,7 @@ def deviation_days(
         return (today - due_on).days
     if attention is Attention.BURNING and due_on is not None:
         return (due_on - today).days
-    if (
-        attention in {Attention.SILENT, Attention.BLOCKED_BY_OTHERS}
-        and last_sign_of_life is not None
-    ):
+    if attention in QUIET_STEPS and last_sign_of_life is not None:
         return (today - last_sign_of_life).days
     return 0
 
@@ -306,7 +307,10 @@ def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_da
             )
         )
 
-    rows.sort(key=lambda row: row.order)
+    # Равные по ступени, отклонению и сроку строки идут по названию, затем по записи: без
+    # этого их порядок зависел бы от того, в каком порядке база отдала снимок, и первой
+    # строкой «срок сегодня» на экране блокировки оказывалась бы то одна, то другая.
+    rows.sort(key=lambda row: (row.order, row.title or "", str(row.entity_id)))
     return Ladder(rows=tuple(rows), on_track=on_track)
 
 

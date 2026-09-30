@@ -7,14 +7,26 @@
 сначала экран, заказчик его утверждает, потом API под утверждённый экран (CLAUDE.md, цикл
 блока). Прежние сорок эндпоинтов были написаны раньше экранов, не получили ни одного
 потребителя и ушли вместе со старой схемой (docs/audit/AUDIT-2026-09-20.md). Сейчас здесь
-справочники и Пульт — экран утверждён заказчиком 25.09.2026.
+справочники, Пульт со сводкой, Программы, Проекты, Задачи, Календарь, Захват, Управление
+и подписка на уведомления — экраны утверждены заказчиком 25–29.09.2026.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.api.routes import decisions, dictionaries, pult
+from app.api.routes import (
+    calendar,
+    captures,
+    decisions,
+    dictionaries,
+    management,
+    programs,
+    projects,
+    pult,
+    push,
+    tasks,
+)
 from app.api.security import get_current_user
 
 API_PREFIX = "/api/v1"
@@ -28,3 +40,10 @@ api_router = APIRouter(prefix=API_PREFIX, dependencies=[Depends(get_current_user
 api_router.include_router(dictionaries.router)
 api_router.include_router(pult.router)
 api_router.include_router(decisions.router)
+api_router.include_router(programs.router)
+api_router.include_router(projects.router)
+api_router.include_router(tasks.router)
+api_router.include_router(calendar.router)
+api_router.include_router(captures.router)
+api_router.include_router(management.router)
+api_router.include_router(push.router)

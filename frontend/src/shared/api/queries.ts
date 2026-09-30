@@ -17,10 +17,10 @@
  * так карточка «Состояние системы» спрашивала `/api/health` раз в 15 секунд вместо минуты.
  */
 
-import { queryOptions } from '@tanstack/react-query';
+import { queryOptions, skipToken } from '@tanstack/react-query';
 
 import { ApiError } from './client';
-import { api, type Role } from './orbita';
+import { api, type AccessLink, type Role } from './orbita';
 
 /** Данные разделов: 15 секунд — компромисс из ADR-0034. */
 export const POLL_INTERVAL_MS = 15_000;
@@ -76,4 +76,19 @@ export function dictionariesQuery() {
 
 export function sessionsQuery(role: Role) {
   return queryOptions({ queryKey: ['sessions', role], queryFn: () => api.sessions(role) });
+}
+
+/**
+ * Только что перевыпущенная ссылка роли. Не запрашивается — её кладёт перевыпуск. Показывается
+ * один раз, но не пропадает ни со сменой вкладки, ни вместе с оболочкой, когда своя ссылка
+ * гасит сессию того, кто нажал: тогда её показывает экран «откройте по ссылке» (`App`).
+ * Токена в базе нет, только отпечаток, — второй раз ту же ссылку не получить.
+ */
+export function issuedLinkQuery(role: Role) {
+  return queryOptions<AccessLink>({
+    queryKey: ['issued-link', role],
+    queryFn: skipToken,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 }

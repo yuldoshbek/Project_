@@ -55,6 +55,13 @@ LIBRARY_LOGGERS = (
 
 ACCESS_LOG_LOGGER = "uvicorn.access"
 
+QUIET_LOGGERS = ("httpx", "httpcore")
+"""Клиент HTTP пишет каждый исходящий запрос на уровне INFO с полным адресом, а адрес
+подписки на пуши — сам по себе право отправить уведомление на телефон руководителя
+(`app.adapters.push`). Замечено 29.09.2026: `HTTP Request: POST https://web.push.apple.com/…`
+в журнале на каждую сводку. Предупреждения и ошибки этих библиотек остаются, а исход
+каждой отправки — без адреса — пишет сам отправитель."""
+
 MASKED_TOKEN = "***"  # noqa: S105 — это заглушка вместо секрета, а не сам секрет
 
 # Токен личной ссылки — всё, что стоит после `/api/access/` до конца сегмента. Соседние
@@ -170,6 +177,9 @@ def route_library_logs() -> None:
         library_logger = logging.getLogger(name)
         library_logger.handlers = []
         library_logger.propagate = True
+
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     # Фильтр на самом логгере журнала доступа, а не на нашем обработчике: он срабатывает
     # до любого обработчика, в том числе подключённого uvicorn позже нас.

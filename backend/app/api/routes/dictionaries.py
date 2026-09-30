@@ -10,12 +10,13 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import Depends, Query
-from pydantic import BaseModel, ConfigDict
+from fastapi import Depends, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep
-from app.api.security import get_current_user
+from app.api.security import Assistant, get_current_user
 from app.api.transaction import transactional_router
+from app.domain.dictionaries import ORGANIZATION_NAME_MAX_LENGTH, OrganizationKind
 from app.services import dictionaries as service
 
 # Требование входа объявлено на роутере, а не на каждом обработчике: забыть его на одном
@@ -166,6 +167,24 @@ async def read_organizations(
         session, active_only=active_only, search=search, founded_by_agency=founded_by_agency
     )
     return [OrganizationItem.model_validate(row) for row in rows]
+
+
+class NewOrganizationRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=ORGANIZATION_NAME_MAX_LENGTH)
+    kind: OrganizationKind
+
+
+@router.post(
+    "/organizations",
+    response_model=OrganizationItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Новая организация: название и вид",
+)
+async def create_organization(
+    body: NewOrganizationRequest, user: Assistant, session: SessionDep
+) -> OrganizationItem:
+    organization = await service.create_organization(session, name=body.name, kind=body.kind)
+    return OrganizationItem.model_validate(organization)
 
 
 @router.get("/settings", summary="Пороги сигналов")

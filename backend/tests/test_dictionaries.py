@@ -201,6 +201,23 @@ class TestSeedBehaviour:
         assert same is not None
         assert same.name_ru == "Своя формулировка помощника"
 
+    async def test_renamed_center_is_not_seeded_again(self, session: AsyncSession) -> None:
+        """Центр, переименованный в «Управлении», не возвращается под старым названием."""
+        await session.execute(
+            update(Organization)
+            .where(Organization.name == seed_module.CENTER_NAME)
+            .values(name="Центр мониторинга")
+        )
+
+        await seed_module.seed(session)
+
+        founded = (
+            await session.scalars(
+                select(Organization.name).where(Organization.is_founded_by_agency.is_(True))
+            )
+        ).all()
+        assert founded == ["Центр мониторинга"]
+
     async def test_seed_does_not_duplicate(self, session: AsyncSession) -> None:
         await seed_module.seed(session)
         await seed_module.seed(session)

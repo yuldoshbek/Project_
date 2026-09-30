@@ -6,19 +6,24 @@
  *
  * Высота строки — токен `--topbar-height`: по нему же прилипает боковая полоса.
  *
+ * На ноутбуке и мониторе здесь же кнопка Захвата: он есть на каждом экране (ТЗ 6, 7), а на
+ * телефоне его место — посередине нижней панели.
+ *
  * Пометка контура («превью») стоит здесь нарочно и только вне рабочего контура: человек,
  * работающий в превью, обязан видеть, что данные вымышленные, — иначе он однажды заведёт
  * настоящее поручение в копии, которая удалится вместе с закрытием PR.
  */
 
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { Device } from '@/app/device';
 import { useCurrentUser, useHealth } from '@/app/session';
 import { ThemeMenu } from '@/app/shell/ThemeMenu';
+import { Button } from '@/shared/ui/Button';
 import { Signal } from '@/shared/ui/Signal';
 
-export function TopBar({ device }: { device: Device }) {
+export function TopBar({ device, onCapture }: { device: Device; onCapture: () => void }) {
   const { t } = useTranslation();
   const user = useCurrentUser();
   const health = useHealth();
@@ -50,6 +55,16 @@ export function TopBar({ device }: { device: Device }) {
           ) : null}
 
           <ThemeMenu />
+
+          {!isPhone ? (
+            <Button look="primary" size="small" onClick={onCapture} title={t('capture.shortcut')}>
+              <Plus className="size-4" aria-hidden="true" />
+              {t('capture.open')}
+              <kbd className="rounded-[var(--radius-sm)] bg-ink-inverse/10 px-1.5 text-xs font-normal">
+                {t('capture.key')}
+              </kbd>
+            </Button>
+          ) : null}
         </div>
       </div>
     </header>

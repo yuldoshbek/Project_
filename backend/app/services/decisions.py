@@ -10,6 +10,9 @@
 
 В журнал изменений всё попадает само — обработчиками сессии (`app.services.audit`),
 включая удаление при отмене: запись «решено и отменено через минуту» остаётся видна.
+
+Вопрос заводит руководителю уведомление «ждёт вашего решения» в той же транзакции (V27);
+пуш уходит после её фиксации (`app.api.transaction.after_commit`).
 """
 
 from __future__ import annotations
@@ -21,9 +24,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.decisions import TEXT_MAX_LENGTH, DecisionKind, DecisionState, DecisionTarget
-from app.domain.errors import NotFoundError, PermissionDeniedError, RuleViolationError
+from app.domain.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    RuleViolationError,
+    check_version,
+)
+from app.domain.projects import validate_horizon
+from app.domain.push import NotificationKind, question_key, question_payload
+from app.repos import notifications as recipients
 from app.repos import pult as read_model
 from app.repos.models import LeaderDecision, LeaderQuestion, User
+from app.services import notifications
 
 UNDO_WINDOW = timedelta(minutes=10)
 """Сколько после действия работает «Отменить». Экран показывает кнопку восемь секунд;
@@ -134,7 +147,11 @@ async def ask(
     target_id: uuid.UUID,
     text: str,
 ) -> LeaderQuestion:
-    """Вопрос помощника руководителю — ставит объект на ступень «ждёт решения»."""
+    """Вопрос помощника руководителю — ставит объект на ступень «ждёт решения».
+
+    И заводит руководителю уведомление в той же транзакции: откат вопроса откатывает и его,
+    а пуш о вопросе, которого нет, не уйдёт.
+    """
     await _existing_target(session, target_type, target_id)
     question = LeaderQuestion(
         target_type=target_type,
@@ -144,6 +161,22 @@ async def ask(
     )
     session.add(question)
     await session.flush()
+
+    leader = await recipients.leader(session)
+    if leader is not None:
+        table = read_model.TARGET_TABLE.get(target_type, "")
+        titles = await read_model.titles(session, [(table, target_id)])
+        await notifications.record(
+            session,
+            user_id=leader.id,
+            kind=NotificationKind.AWAITING_DECISION,
+            dedup_key=question_key(question.id),
+            payload=question_payload(
+                question.id, title=titles.get((table, target_id)), text=question.text
+            ),
+            entity_type="question",
+            entity_id=question.id,
+        )
     return question
 
 
@@ -161,3 +194,43 @@ async def undo_question(
     if now - question.created_at > UNDO_WINDOW:
         raise RuleViolationError("Отменить можно только сразу после вопроса")
     await session.delete(question)
+    # Неотправленное уведомление уходит вместе с вопросом. Пуш, уже пришедший на телефон,
+    # не отзывается: касание откроет сводку, где вопроса уже нет (ADR-0036).
+    await notifications.withdraw(session, dedup_key=question_key(question.id))
+
+
+async def _decision(session: AsyncSession, decision_id: uuid.UUID) -> LeaderDecision:
+    decision = await session.get(LeaderDecision, decision_id)
+    if decision is None:
+        raise NotFoundError("Решение не найдено: его могли отменить")
+    return decision
+
+
+async def complete(
+    session: AsyncSession, *, decision_id: uuid.UUID, version: int, today: date
+) -> None:
+    """Решение исполнено — из обхода «Управления» (ТЗ 3.7, допущение V20).
+
+    Отмечает помощник: исполнение видно ему, а не тому, кто решал. Исполненное второй раз
+    не отмечается — это устаревшая картина, а не новое событие.
+    """
+    decision = await _decision(session, decision_id)
+    check_version(expected=version, actual=decision.version)
+    if decision.state == DecisionState.DONE.value:
+        raise ConflictError("Решение уже исполнено")
+    decision.state = DecisionState.DONE.value
+    decision.done_on = today
+    await session.flush()
+
+
+async def move_due(
+    session: AsyncSession, *, decision_id: uuid.UUID, due_on: date, version: int
+) -> None:
+    """Новый срок исполнения решения — «перенести на неделю» в обходе."""
+    decision = await _decision(session, decision_id)
+    check_version(expected=version, actual=decision.version)
+    if decision.state == DecisionState.DONE.value:
+        raise ConflictError("Исполненное решение не переносят")
+    validate_horizon(due_on)
+    decision.due_on = due_on
+    await session.flush()

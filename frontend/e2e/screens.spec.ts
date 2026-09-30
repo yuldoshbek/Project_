@@ -71,6 +71,9 @@ test('на телефоне цели нажатия не меньше 44 px', as
   await page.goto(link);
 
   const links = page.getByRole('navigation').getByRole('link');
+  // Оболочка рисуется после ответа `/api/me`: считать кнопки раньше — значит иногда
+  // насчитать ноль, пока сессия ещё проверяется.
+  await expect(links.first()).toBeVisible();
   const count = await links.count();
   expect(count, 'в нижней панели нет разделов').toBeGreaterThan(0);
 

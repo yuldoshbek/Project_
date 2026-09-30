@@ -12,6 +12,12 @@ export default defineConfig({
     // PWA нужна ради одного: установки на экран «Домой» у руководителя. Только после неё
     // iOS разрешает уведомления, а магазины приложений становятся не нужны (ADR-0030).
     VitePWA({
+      // Свой service worker (`src/sw.ts`), а не собранный плагином: кроме оболочки он показывает
+      // пуши утренней сводки. Регистрирует его по-прежнему `registerSW.js` плагина, а не
+      // `virtual:pwa-register`: тот потянул бы workbox-window в бюджет открытия.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       manifest: {
         name: 'ORBITA',
@@ -36,14 +42,10 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Кешируется оболочка, а не данные. Данные обновляются опросом и обязаны быть
-        // свежими: показанный из кеша просроченный срок — это неверное решение
-        // руководителя, а не экономия сети.
+      // Кешируется оболочка, а не данные. Почему — и запрет отдавать оболочку вместо `/api/` —
+      // в `src/sw.ts`.
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/internal\//],
-        runtimeCaching: [],
       },
       devOptions: { enabled: false },
     }),

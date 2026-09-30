@@ -35,8 +35,8 @@ test('сессия держится между переходами', async ({ p
   await page.goto('/management');
 
   await expect(page.getByRole('heading', { name: 'Управление' })).toBeVisible();
-  // Справочники наполнены — это критерий приёмки блока 0.
-  await expect(page.getByText('Направления')).toBeVisible();
+  // Сессия пережила переход: раздел открылся, и вкладки помощника на месте.
+  await expect(page.getByRole('tab', { name: 'Доступ' })).toBeVisible();
 });
 
 test('cookie сессии закрыта от скриптов', async ({ page, context }) => {
