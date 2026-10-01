@@ -6,7 +6,8 @@
  * карточка показывает содержание и написание ФИО как в источнике; загрузку видит только
  * помощник, и повторное применение таблицы ничего не меняет.
  *
- * Данные раздела — вымышленный сервер `demo.ts`; сеть (сессия) подменена на уровне `fetch`.
+ * Сеть подменена на уровне `fetch`: `/api/v1/ijro…`, решения и вопросы по поручению отвечает
+ * сервер в памяти (`test-server.ts`) по правилам настоящего, сессию — заготовка.
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -16,9 +17,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CurrentUser } from '@/shared/api/orbita';
 import { setViewport } from '@/test-setup';
 
-import { demoIjro } from './demo';
 import { IjroSection } from './IjroSection';
 import { QUESTIONS } from './model';
+import { FakeIjro, handle } from './test-server';
 
 /** Адрес вместо маршрутизатора: вкладка раздела живёт в `?view=`. */
 const route = vi.hoisted(() => {
@@ -59,16 +60,28 @@ function user(role: 'assistant' | 'leader'): CurrentUser {
   };
 }
 
+function reply(status: number, body: unknown): Response {
+  return {
+    ok: status < 400,
+    status,
+    statusText: '',
+    json: () => Promise.resolve(body),
+  } as unknown as Response;
+}
+
+let server = new FakeIjro();
+
 function serve(role: 'assistant' | 'leader') {
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const found = path === '/api/me';
-    return Promise.resolve({
-      ok: found,
-      status: found ? 200 : 404,
-      statusText: '',
-      json: () => Promise.resolve(found ? user(role) : { detail: `нет подмены ${path}` }),
-    } as unknown as Response);
+    const method = init?.method ?? 'GET';
+    const raw = init?.body;
+    // Файл таблицы уходит как есть, остальное — JSON.
+    const body = raw instanceof Blob ? raw : raw ? (JSON.parse(String(raw)) as unknown) : undefined;
+    const answer = handle(server, method, path, body, role);
+    if (answer) return Promise.resolve(reply(answer[0], answer[1]));
+    if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
+    return Promise.resolve(reply(404, { detail: `нет подмены ${path}` }));
   });
 }
 
@@ -90,7 +103,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   route.set({});
-  demoIjro.reset();
+  server = new FakeIjro();
 });
 
 describe('Ижро', () => {
@@ -201,7 +214,12 @@ describe('Ижро', () => {
     serve('assistant');
     renderIjro();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Показать на образце' }));
+    const file = new File(['PK'], 'АП топшириқлари 4-чорак.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    fireEvent.change(await screen.findByLabelText('Выбрать файл Word'), {
+      target: { files: [file] },
+    });
 
     expect(await screen.findByText('срок сдвинут: 3')).toBeVisible();
     expect(screen.getByText('новые: 2')).toBeVisible();

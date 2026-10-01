@@ -1,5 +1,6 @@
 /**
- * Ижро (`sections/ijro/`) — экран на утверждение, на вымышленных данных (`demo.ts`).
+ * Ижро (`sections/ijro/`) — экран, утверждённый 30.09.2026, на настоящем API
+ * (`/api/v1/ijro…`) и вымышленных данных базы (`backend/app/demo_ijro.py`).
  *
  * Что проверяется запуском:
  *
@@ -7,13 +8,16 @@
  * 2. телефон руководителя: список вместо таблицы, карточка поручения, цели нажатия не
  *    меньше 44 px, контрольная отметка в одно касание (критерий 3 блока 2);
  * 3. стена документов на ноутбуке;
- * 4. помощник: предпросмотр таблицы и её применение.
+ * 4. помощник: предпросмотр настоящей таблицы Word, её применение и повтор.
  *
- * Снимки — в папку отчёта блока 2. База не меняется: раздел пока живёт в памяти вкладки.
+ * Снимки — в папку отчёта блока 2. Сценарии пишут в базу (отметка, применённая таблица):
+ * таблица каждый раз со своей новой строкой, чтобы повторный прогон не упирался в «уже
+ * применена».
  */
 
 import { expect, test, type Page } from '@playwright/test';
 
+import { controlTable, dueCell } from './docx';
 import { REPORT_DIR, issueLink } from './link';
 
 const SIZES = [
@@ -149,20 +153,74 @@ test('ноутбук: реестр таблицей и стена докумен
   });
 });
 
-test('помощник: предпросмотр таблицы, применение и повтор', async ({ page }) => {
+interface RegistryRow {
+  document: { code: string };
+  band: string | null;
+  content: string;
+  due_on: string | null;
+  due_precision: string;
+  responsible_raw: string;
+}
+
+test('помощник: предпросмотр таблицы Word, применение и повтор', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, assistant, 'upload');
-  await page.getByRole('button', { name: 'Показать на образце' }).click();
-  await expect(page.getByText('срок сдвинут: 3')).toBeVisible();
+
+  // Таблица из текущего реестра: одна строка как есть и одна новая — со своим номером
+  // пункта, чтобы каждый прогон привозил новую таблицу.
+  const registry = (await (await page.request.get('/api/v1/ijro')).json()) as {
+    items: RegistryRow[];
+  };
+  const year = new Date().getFullYear();
+  const known = registry.items.find(
+    (item) =>
+      item.document.code === 'ПФ-155' &&
+      item.band !== null &&
+      item.due_precision === 'exact' &&
+      item.due_on?.startsWith(String(year)),
+  );
+  expect(known, 'строка ПФ-155 с точным сроком этого года').toBeTruthy();
+  const band = 100 + (Date.now() % 800);
+  const file = controlTable(year, [
+    {
+      document: 'ПФ-155',
+      // В таблице пункт — начало содержания, как в источнике: по нему, документу и сроку
+      // строка опознаётся как уже известная, а не новая.
+      content: known!.content.startsWith(known!.band!)
+        ? known!.content
+        : `${known!.band}. ${known!.content}`,
+      due: dueCell(known!.due_on!),
+      responsible: known!.responsible_raw,
+    },
+    {
+      document: 'ПФ-155',
+      content: `${band}-банд. Синов топшириғи бажарилсин.`,
+      due: '25 декабрь',
+      responsible: 'Каримов А.',
+    },
+  ]);
+
+  await page.getByLabel('Выбрать файл Word').setInputFiles({
+    name: `АП топшириқлари ${band}.docx`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: file,
+  });
+  await expect(page.getByText('новые: 1')).toBeVisible();
   await page.screenshot({
     path: `${REPORT_DIR}/ijro-upload-laptop-light.png`,
     animations: 'disabled',
     fullPage: true,
   });
 
-  await page.getByRole('checkbox', { name: 'Подтверждаю перенос' }).first().check();
   await page.getByRole('button', { name: 'Применить' }).click();
-  await expect(page.getByRole('status')).toContainText('продлений записано 1');
+  await expect(page.getByRole('status')).toContainText('новых 1');
+
+  // Та же таблица ещё раз — «уже применена», ничего не меняется (ТЗ 7).
+  await page.getByLabel('Выбрать файл Word').setInputFiles({
+    name: `АП топшириқлари ${band}.docx`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: file,
+  });
   await expect(page.getByText(/Эта таблица уже применена/)).toBeVisible();
 });
 
@@ -174,6 +232,8 @@ test('справка по проблемным поручениям открыв
     page.getByRole('heading', { name: 'Справка по проблемным поручениям' }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Печать' })).toBeVisible();
+  // Строки справки — свой запрос: снимок только после них, иначе на нём «Загружаем».
+  await expect(page.getByRole('article').getByRole('listitem').first()).toBeVisible();
   await page.screenshot({
     path: `${REPORT_DIR}/ijro-spravka-laptop-light.png`,
     animations: 'disabled',

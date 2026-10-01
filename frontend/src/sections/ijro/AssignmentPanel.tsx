@@ -95,9 +95,9 @@ function Panel({ card, viewer }: { card: AssignmentCard; viewer: Role }) {
 
       <Stage card={card} canEdit={canEdit} />
       <Problem key={`problem-${card.version}`} card={card} canEdit={canEdit} />
-      <Marks card={card} viewer={viewer} />
+      <Marks card={card} />
       <Tasks card={card} canEdit={canEdit} />
-      <Feed card={card} viewer={viewer} />
+      <Feed card={card} />
 
       <Block title={t('ijro.card.source.title')}>
         <p className="text-sm text-ink">
@@ -219,7 +219,13 @@ function Due({ card, canEdit }: { card: AssignmentCard; canEdit: boolean }) {
           <Button
             size="small"
             disabled={requested.isPending}
-            onClick={() => requested.mutate({ id: card.id, value: !card.extension_requested })}
+            onClick={() =>
+              requested.mutate({
+                id: card.id,
+                value: !card.extension_requested,
+                version: card.version,
+              })
+            }
           >
             {t(card.extension_requested ? 'ijro.card.due.unrequest' : 'ijro.card.due.request')}
           </Button>
@@ -258,7 +264,7 @@ function Suggestions({ card }: { card: AssignmentCard }) {
           key={person.id}
           size="small"
           disabled={match.isPending}
-          onClick={() => match.mutate({ id: card.id, personId: person.id })}
+          onClick={() => match.mutate({ id: card.id, personId: person.id, version: card.version })}
         >
           {t('ijro.card.responsible.suggest', { name: person.name })}
         </Button>
@@ -284,7 +290,7 @@ function Stage({ card, canEdit }: { card: AssignmentCard; canEdit: boolean }) {
               look={card.stage === each ? 'primary' : 'plain'}
               aria-pressed={card.stage === each}
               disabled={stage.isPending}
-              onClick={() => stage.mutate({ id: card.id, stage: each })}
+              onClick={() => stage.mutate({ id: card.id, stage: each, version: card.version })}
             >
               {t(`ijro.stages.${each}`)}
             </Button>
@@ -319,7 +325,7 @@ function Problem({ card, canEdit }: { card: AssignmentCard; canEdit: boolean }) 
           className="flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            save.mutate({ id: card.id, problem, proposal });
+            save.mutate({ id: card.id, problem, proposal, version: card.version });
           }}
         >
           <label className="text-xs font-medium text-ink-muted" htmlFor={`problem-${card.id}`}>
@@ -367,7 +373,7 @@ function Problem({ card, canEdit }: { card: AssignmentCard; canEdit: boolean }) 
   );
 }
 
-function Marks({ card, viewer }: { card: AssignmentCard; viewer: Role }) {
+function Marks({ card }: { card: AssignmentCard }) {
   const { t } = useTranslation();
   const mark = useMark();
   const [promised, setPromised] = useState('');
@@ -380,7 +386,6 @@ function Marks({ card, viewer }: { card: AssignmentCard; viewer: Role }) {
         kind,
         promised_on: promised || null,
         comment: comment || null,
-        author: viewer,
       },
       {
         onSuccess: () => {
@@ -524,7 +529,7 @@ function Tasks({ card, canEdit }: { card: AssignmentCard; canEdit: boolean }) {
   );
 }
 
-function Feed({ card, viewer }: { card: AssignmentCard; viewer: Role }) {
+function Feed({ card }: { card: AssignmentCard }) {
   const { t } = useTranslation();
   const add = useComment();
   const [text, setText] = useState('');
@@ -552,10 +557,7 @@ function Feed({ card, viewer }: { card: AssignmentCard; viewer: Role }) {
           event.preventDefault();
           const value = text.trim();
           if (!value) return;
-          add.mutate(
-            { id: card.id, text: value, author: viewer },
-            { onSuccess: () => setText('') },
-          );
+          add.mutate({ id: card.id, text: value }, { onSuccess: () => setText('') });
         }}
       >
         <input

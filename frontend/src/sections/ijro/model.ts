@@ -1,9 +1,9 @@
 /**
- * Ижро — договор данных раздела.
+ * Ижро — договор данных раздела: форма ответов `GET /api/v1/ijro…`.
  *
- * Это форма будущего ответа API (`GET /api/v1/ijro…`). Экран строится раньше API по
- * правилу блока «экран → API» (CLAUDE.md): вымышленный сервер (`demo.ts`) отдаёт ровно эту
- * форму, и замена его настоящим будет заменой тел функций в хуках, а не экрана.
+ * Экран утверждён заказчиком 30.09.2026 на вымышленных данных этой формы, и API написан под
+ * него (`backend/app/api/routes/ijro.py`). Сервер в памяти для тестов экрана —
+ * `test-server.ts`.
  *
  * **Числа считает сервер** (инвариант 2): ступень лестницы и отклонение, признак жизни,
  * промежуточный срок, число продлений, двенадцать ответов и их списки, стена документов,
@@ -57,7 +57,7 @@ export const OPEN_STAGES: ReadonlySet<Stage> = new Set(['not_started', 'in_progr
 export const TERMINAL_STAGE: Stage = 'removed_from_control';
 
 /** Точность срока (ТЗ 3.3, V33). Месяц и конец года по дням не горят. */
-export type DuePrecision = 'day' | 'month' | 'end_of_year';
+export type DuePrecision = 'exact' | 'month' | 'end_of_year';
 
 /** Вид контрольной отметки (ТЗ 3.3). Порядок — порядок кнопок в одно касание. */
 export type MarkKind = 'contacted' | 'doing' | 'no_answer';
@@ -428,9 +428,9 @@ export interface Batch {
   counts: Record<ChangeClass, number>;
 }
 
-/** Что придёт с файлом: сам файл в этом шаге не разбирается — только его имя и размер. */
+/** Выбранная таблица: файл уходит на сервер как есть, разбирает его сервер. */
 export interface UploadInput {
-  file: { name: string; size: number };
+  file: File;
   /** Источник и год — из заголовка таблицы; человек может поправить до применения. */
   source?: IjroSource;
   table_year?: number;

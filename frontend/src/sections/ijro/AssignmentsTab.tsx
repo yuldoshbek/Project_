@@ -12,7 +12,6 @@ import { useTranslation } from 'react-i18next';
 
 import type { Device } from '@/app/device';
 import { STEP_SIGNAL, type Step } from '@/sections/pult/model';
-import type { Role } from '@/shared/api/orbita';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
@@ -43,20 +42,12 @@ const STEPS: readonly Step[] = [
 interface AssignmentsTabProps {
   view: IjroView;
   device: Device;
-  viewer: Role;
   filter: Filter;
   onFilter: (filter: Filter) => void;
   onOpen: (id: string) => void;
 }
 
-export function AssignmentsTab({
-  view,
-  device,
-  viewer,
-  filter,
-  onFilter,
-  onOpen,
-}: AssignmentsTabProps) {
+export function AssignmentsTab({ view, device, filter, onFilter, onOpen }: AssignmentsTabProps) {
   const { t } = useTranslation();
   const rows = applyFilter(view, filter);
   const marking = filter.question === 'silent';
@@ -86,7 +77,7 @@ export function AssignmentsTab({
                   {[who(row), dueLabel(t, row), leadText(t, row)].filter(Boolean).join(' · ')}
                 </span>
               </button>
-              {marking ? <MarkRow id={row.id} viewer={viewer} /> : null}
+              {marking ? <MarkRow id={row.id} /> : null}
             </li>
           ))}
         </ul>
@@ -156,7 +147,7 @@ export function AssignmentsTab({
                   </td>
                   {marking ? (
                     <td className="px-3 py-1" onClick={(event) => event.stopPropagation()}>
-                      <MarkRow id={row.id} viewer={viewer} />
+                      <MarkRow id={row.id} />
                     </td>
                   ) : null}
                 </tr>
@@ -187,7 +178,7 @@ export function StepBadge({ row }: { row: Pick<AssignmentRow, 'step' | 'deviatio
 }
 
 /** Контрольная отметка в одно касание: три вида, без формы. */
-export function MarkRow({ id, viewer }: { id: string; viewer: Role }) {
+export function MarkRow({ id }: { id: string }) {
   const { t } = useTranslation();
   const mark = useMark();
   return (
@@ -197,7 +188,7 @@ export function MarkRow({ id, viewer }: { id: string; viewer: Role }) {
           key={kind}
           size="small"
           disabled={mark.isPending}
-          onClick={() => mark.mutate({ id, kind, author: viewer })}
+          onClick={() => mark.mutate({ id, kind })}
         >
           {t(`ijro.marks.${kind}`)}
         </Button>

@@ -6,8 +6,8 @@
  * человеком и попадает в историю продлений; написание ФИО сопоставляет человек; повторная
  * загрузка той же таблицы ничего не меняет.
  *
- * На этом шаге файл не разбирается: экран на вымышленных данных показывает предпросмотр
- * образца по имени файла. Разбор Word — шаг API.
+ * Файл уходит на сервер как есть и разбирается там (`backend/app/domain/ijro_import.py`);
+ * предпросмотр — партия на подтверждение, применение — по её номеру.
  */
 
 import { Upload } from 'lucide-react';
@@ -36,9 +36,6 @@ import {
 } from './model';
 import { useApply, usePreview } from './useIjro';
 
-/** Имя образца: таблица следующего квартала вымышленного реестра. */
-const SAMPLE = 'АП топшириқлари 4-чорак.docx';
-
 const NO_CHOICES: ApplyChoices = { due_moves: {}, aliases: {}, removed: [] };
 
 const FIELD =
@@ -54,8 +51,8 @@ export function UploadTab({ view }: { view: IjroView }) {
   const preview = usePreview(upload);
   const apply = useApply();
 
-  const take = (name: string, size: number) => {
-    setUpload({ file: { name, size }, source });
+  const take = (file: File) => {
+    setUpload({ file, source });
     setChoices(NO_CHOICES);
     setResult(null);
   };
@@ -64,7 +61,7 @@ export function UploadTab({ view }: { view: IjroView }) {
     event.preventDefault();
     setOver(false);
     const file = event.dataTransfer.files[0];
-    if (file) take(file.name, file.size);
+    if (file) take(file);
   };
 
   return (
@@ -92,7 +89,9 @@ export function UploadTab({ view }: { view: IjroView }) {
             aria-label={t('ijro.upload.choose')}
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) take(file.name, file.size);
+              if (file) take(file);
+              // Тот же файл ещё раз — новый разбор: без сброса браузер не пришлёт событие.
+              event.target.value = '';
             }}
           />
         </label>
@@ -112,11 +111,7 @@ export function UploadTab({ view }: { view: IjroView }) {
               </option>
             ))}
           </select>
-          <Button size="small" onClick={() => take(SAMPLE, 48_000)}>
-            {t('ijro.upload.sample')}
-          </Button>
         </div>
-        <p className="mt-2 text-xs text-ink-muted">{t('ijro.upload.demo')}</p>
       </Card>
 
       {upload ? (
@@ -132,7 +127,10 @@ export function UploadTab({ view }: { view: IjroView }) {
             result={result}
             busy={apply.isPending}
             onApply={() =>
-              apply.mutate({ upload, choices }, { onSuccess: (outcome) => setResult(outcome) })
+              apply.mutate(
+                { batchId: preview.data.batch_id, choices },
+                { onSuccess: (outcome) => setResult(outcome) },
+              )
             }
           />
         )

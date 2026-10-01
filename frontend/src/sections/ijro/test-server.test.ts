@@ -1,26 +1,27 @@
 /**
- * Правила вымышленного сервера «Ижро» — те же, что посчитает настоящий (`services/metrics`):
- * лестница, двенадцать ответов и их списки, стена, предпросмотр и применение таблицы.
+ * Правила сервера «Ижро» в памяти — те же, что считает настоящий (`services/metrics`):
+ * лестница, двенадцать ответов и их списки, стена, предпросмотр и применение таблицы. Сервер
+ * в памяти отвечает тестам экрана, и расхождение с настоящим сделало бы их ложными.
  *
  * Главное обещание — одно вычисление на число и его список (ТЗ 5, инвариант 2).
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { DemoIjro } from './demo';
+import { FakeIjro } from './test-server';
 import { OPEN_STAGES, QUESTIONS, type ApplyChoices, type QuestionAnswer } from './model';
 
 // 10:00 по Ташкенту.
 const NOW = new Date('2026-09-30T05:00:00Z');
-const FILE = { file: { name: 'АП топшириқлари 4-чорак.docx', size: 48_000 } };
+const FILE = { name: 'АП топшириқлари 4-чорак.docx' };
 const NO_CHOICES: ApplyChoices = { due_moves: {}, aliases: {}, removed: [] };
 
 function server(now: Date = NOW) {
-  return new DemoIjro(() => now);
+  return new FakeIjro(() => now);
 }
 
 function answer<K extends QuestionAnswer['key']>(
-  ijro: DemoIjro,
+  ijro: FakeIjro,
   key: K,
 ): Extract<QuestionAnswer, { key: K }> {
   const found = ijro.view().questions.find((each) => each.key === key);
@@ -28,7 +29,7 @@ function answer<K extends QuestionAnswer['key']>(
   return found as Extract<QuestionAnswer, { key: K }>;
 }
 
-function steps(ijro: DemoIjro) {
+function steps(ijro: FakeIjro) {
   const counts: Record<string, number> = {};
   for (const row of ijro.view().items) {
     if (row.step) counts[row.step] = (counts[row.step] ?? 0) + 1;
@@ -275,7 +276,7 @@ describe('загрузка таблицы', () => {
   it('следующая таблица без отличий — «изменений нет»', () => {
     const ijro = server();
     ijro.apply(FILE, NO_CHOICES);
-    const other = { file: { name: 'другая.docx', size: 1 } };
+    const other = { name: 'другая.docx' };
 
     const preview = ijro.preview(other);
     expect(preview.counts.unchanged).toBe(preview.rows.length);

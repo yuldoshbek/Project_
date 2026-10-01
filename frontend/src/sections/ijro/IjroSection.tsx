@@ -140,7 +140,6 @@ function Ijro({ view }: { view: IjroView }) {
           <AssignmentsTab
             view={view}
             device={device}
-            viewer={viewer}
             filter={filter}
             onFilter={setFilter}
             onOpen={setOpen}

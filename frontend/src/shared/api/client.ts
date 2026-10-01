@@ -92,7 +92,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     // понадобился бы только при обращении на чужой домен — то есть при поломке ADR-0028.
     credentials: 'same-origin',
   };
-  if (body !== undefined) {
+  if (body instanceof Blob) {
+    // Файл — телом запроса как есть: таблицу «Ижро» сервер читает целиком, и форма
+    // `multipart` ему не нужна (`backend/app/api/routes/ijro.py`).
+    init.headers = { 'Content-Type': body.type || 'application/octet-stream' };
+    init.body = body;
+  } else if (body !== undefined) {
     init.headers = { 'Content-Type': 'application/json' };
     init.body = JSON.stringify(body);
   }

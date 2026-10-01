@@ -1,19 +1,15 @@
 /**
- * Вымышленный сервер раздела «Ижро» — пока экран не утверждён и API нет.
+ * Сервер «Ижро» в памяти — для тестов экрана.
  *
- * Правило блока: сначала экран на вымышленных данных, заказчик смотрит, потом API под
- * утверждённый экран (CLAUDE.md, цикл блока). Изменённое во вкладке живёт до перезагрузки.
- * После утверждения файл становится сервером тестов, а данные переезжают в `app/demo.py`.
+ * Был вымышленным сервером экрана на утверждение (30.09.2026); после утверждения API написан
+ * под него (`backend/app/api/routes/ijro.py`), а этот файл отвечает на те же пути в тестах
+ * (`handle`). Правила — те же, что у сервера: лестница — порядок проверок
+ * `domain/attention.attention_of`, горит только срок с известным днём (V33), сданное и
+ * снятое с контроля в лестницу не входит (V32). Сам сервер проверяют
+ * `backend/tests/test_ijro.py` и `test_ijro_import.py`; здесь — что экран делает с ответами.
  *
  * **Одни данные — все числа.** Виджеты, списки, стена и карточка считаются из одного набора
  * записей одними функциями: ответ вопроса и его список — одно вычисление (ТЗ 5, инвариант 2).
- * Настоящий сервер считает то же в `services/metrics.py`; экран только показывает.
- *
- * **Лестница** — порядок проверок сервера (`domain/attention.attention_of`): ждёт решения →
- * просрочено → горит (только срок с известным днём, V33) → зависит от чужих (мы соисполнитель
- * и тишина дольше порога) → молчит → по плану. Сданное и снятое с контроля в лестницу не
- * входит (V32). Признак жизни — самое свежее из контрольной отметки, движения связанной
- * задачи и промежуточной информации (ТЗ 4).
  *
  * Сроки заданы от сегодняшнего дня по Ташкенту, чтобы лестница была живой в любой день.
  * Содержание поручений — узбекская кириллица, как в таблицах источника: это данные.
@@ -55,7 +51,6 @@ import {
   type Stage,
   type TaskPrefill,
   type Thresholds,
-  type UploadInput,
   type WallDocument,
 } from './model';
 
@@ -799,13 +794,22 @@ function bandOrder(band: string): number {
   return numbers.reduce((total, each) => total * 100 + each, 0);
 }
 
-export class DemoIjro {
+/** Выбранная таблица: в тестах файл не разбирается — образец выдаётся по имени. */
+export interface TableInput {
+  name: string;
+  source?: IjroSource;
+  table_year?: number;
+}
+
+export class FakeIjro {
   private readonly now: () => Date;
   private documents: IjroDocument[] = [];
   private rows: Row[] = [];
   private batches: Batch[] = [];
   private effect: BatchEffect = { created: [], changed: [], vanished: 0, pending: [] };
   private nextApplied = false;
+  /** Последняя показанная таблица — её применяет `POST /imports/{id}/apply`. */
+  lastInput: TableInput | null = null;
   private counter = 0;
   /** Что вернуть «Отменить»: решение закрыло вопрос, отмена его возвращает. */
   private undo = new Map<
@@ -836,10 +840,10 @@ export class DemoIjro {
       return new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
     };
     const due = (spec: DueSpec): [string | null, DuePrecision] => {
-      if (spec === null) return [null, 'day'];
+      if (spec === null) return [null, 'exact'];
       if (spec === 'year_end') return [`${year}-12-31`, 'end_of_year'];
       if (spec === 'month_end') return [monthEnd(), 'month'];
-      return [shift(today, spec), 'day'];
+      return [shift(today, spec), 'exact'];
     };
 
     this.counter = 0;
@@ -979,7 +983,7 @@ export class DemoIjro {
       const left = between(today, row.due_on);
       if (left < 0) return { step: 'overdue', deviation: -left };
       // Месяц и конец года по дням не горят (V33): дня у такого срока нет.
-      if (row.due_precision === 'day' && left <= THRESHOLDS.burn_days) {
+      if (row.due_precision === 'exact' && left <= THRESHOLDS.burn_days) {
         return { step: 'burning', deviation: left };
       }
     }
@@ -1179,7 +1183,7 @@ export class DemoIjro {
       },
       without_tasks: () => {
         // Полнота по ADR-0033: открытые с точным сроком, у которых нет ни одной задачи.
-        const exact = open.filter((each) => each.due_precision === 'day' && each.due_on !== null);
+        const exact = open.filter((each) => each.due_precision === 'exact' && each.due_on !== null);
         const rows = exact.filter((each) => each.tasks === 0);
         return { key: 'without_tasks', count: rows.length, total: exact.length, rows: ids(rows) };
       },
@@ -1461,7 +1465,7 @@ export class DemoIjro {
       type_code: 'ijro_report',
       assignee_id: row.person_id,
       due_on:
-        row.due_on && row.due_precision === 'day'
+        row.due_on && row.due_precision === 'exact'
           ? workdaysBefore(row.due_on, WORKDAYS_BEFORE)
           : null,
       ijro_assignment_id: id,
@@ -1495,15 +1499,16 @@ export class DemoIjro {
    * Предпросмотр таблицы. Файл в этом шаге не разбирается: вымышленный сервер выдаёт один и
    * тот же набор классов для первой новой таблицы, а после её применения — «без изменений».
    */
-  preview(input: UploadInput): Preview {
+  preview(input: TableInput): Preview {
+    this.lastInput = input;
     const today = this.today();
     const applied = this.batches.find(
-      (each) => each.state === 'applied' && each.file === input.file.name,
+      (each) => each.state === 'applied' && each.file === input.name,
     );
     const source = input.source ?? 'pa';
     const base = {
       batch_id: NEXT_BATCH_ID,
-      file: input.file.name,
+      file: input.name,
       source,
       table_year: input.table_year ?? Number(today.slice(0, 4)),
       table_on: today,
@@ -1687,7 +1692,7 @@ export class DemoIjro {
    * ответственного, срок. Перенос срока записывается только подтверждённый человеком и
    * попадает в историю продлений; неподтверждённый остаётся ждать (ТЗ 7).
    */
-  apply(input: UploadInput, choices: ApplyChoices): ApplyResult {
+  apply(input: TableInput, choices: ApplyChoices): ApplyResult {
     const preview = this.preview(input);
     if (preview.already_applied_on) {
       return { outcome: 'already_applied', applied_on: preview.already_applied_on };
@@ -1716,7 +1721,7 @@ export class DemoIjro {
           content: each.content,
           mechanism: null,
           due_on: shift(today, 75),
-          due_precision: 'day',
+          due_precision: 'exact',
           original_due_on: shift(today, 75),
           history: [],
           extension_requested: false,
@@ -1779,7 +1784,7 @@ export class DemoIjro {
 
     this.batches.push({
       id: NEXT_BATCH_ID,
-      file: input.file.name,
+      file: input.name,
       source: preview.source,
       table_on: today,
       uploaded_at: this.now().toISOString(),
@@ -1800,4 +1805,93 @@ export class DemoIjro {
   }
 }
 
-export const demoIjro = new DemoIjro();
+type Reply = [number, unknown];
+
+const ASSISTANT_ONLY = new Set(['stage', 'problem', 'extension-request', 'responsible', 'tasks']);
+
+/**
+ * Ответ на запрос экрана: те же пути и роли, что у сервера. `null` — путь не «Ижро», и
+ * отвечает следующая подмена теста.
+ */
+export function handle(
+  server: FakeIjro,
+  method: string,
+  path: string,
+  body: unknown,
+  role: Role,
+): Reply | null {
+  const [bare = path, search = ''] = path.split('?');
+  const query = new URLSearchParams(search);
+  const input = (body && !(body instanceof Blob) ? body : {}) as Record<string, unknown>;
+  const refused: Reply = [403, { detail: 'Это действие помощника' }];
+  try {
+    if (bare === '/api/v1/decisions' && input.target_type === 'ijro_assignment') {
+      return [201, { id: server.decide(String(input.target_id), input.kind as DecisionKind) }];
+    }
+    if (bare.startsWith('/api/v1/decisions/') && method === 'DELETE') {
+      server.undoDecision(bare.slice('/api/v1/decisions/'.length));
+      return [204, undefined];
+    }
+    if (bare === '/api/v1/questions' && input.target_type === 'ijro_assignment') {
+      return [201, { id: server.ask(String(input.target_id), String(input.text)) }];
+    }
+    if (bare.startsWith('/api/v1/questions/') && method === 'DELETE') {
+      server.undoQuestion(bare.slice('/api/v1/questions/'.length));
+      return [204, undefined];
+    }
+    if (!bare.startsWith('/api/v1/ijro')) return null;
+    const rest = bare.slice('/api/v1/ijro'.length).split('/').filter(Boolean);
+    if (method === 'GET' && rest.length === 0) return [200, server.view()];
+    if (method === 'GET' && rest[0] === 'spravka') return [200, server.spravka()];
+    if (rest[0] === 'imports') {
+      if (role !== 'assistant') return refused;
+      if (rest.length === 1) {
+        const source = query.get('source') as IjroSource | null;
+        return [
+          201,
+          server.preview({ name: query.get('file') ?? '', ...(source ? { source } : {}) }),
+        ];
+      }
+      if (rest[2] === 'apply' && server.lastInput) {
+        return [200, server.apply(server.lastInput, input as unknown as ApplyChoices)];
+      }
+    }
+    if (rest[0] === 'assignments' && rest[1]) {
+      const id = rest[1];
+      const tail = rest[2];
+      if (tail && ASSISTANT_ONLY.has(tail) && role !== 'assistant') return refused;
+      if (method === 'GET' && !tail) return [200, server.card(id)];
+      if (method === 'GET' && tail === 'task-prefill') return [200, server.taskPrefill(id)];
+      if (tail === 'marks') {
+        server.mark(
+          id,
+          {
+            kind: input.kind as MarkKind,
+            promised_on: (input.promised_on as string | null) ?? null,
+            comment: (input.comment as string | null) ?? null,
+          },
+          role,
+        );
+        return [201, { id: 'mark' }];
+      }
+      if (tail === 'comments') {
+        server.comment(id, String(input.text), role);
+        return [201, { id: 'comment' }];
+      }
+      if (tail === 'stage') server.setStage(id, input.stage as Stage);
+      else if (tail === 'problem') {
+        server.setProblem(id, String(input.problem ?? ''), String(input.proposal ?? ''));
+      } else if (tail === 'extension-request') {
+        server.setExtensionRequested(id, Boolean(input.value));
+      } else if (tail === 'responsible') server.matchPerson(id, String(input.person_id));
+      else if (tail === 'tasks') {
+        server.createTask(id);
+        return [201, { id: 'task', code: 'TSK-2026-0200' }];
+      }
+      if (tail) return [204, undefined];
+    }
+    return [404, { detail: `нет пути ${method} ${path}` }];
+  } catch (error) {
+    return [422, { detail: error instanceof Error ? error.message : String(error) }];
+  }
+}
