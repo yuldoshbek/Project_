@@ -29,9 +29,11 @@ from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.domain.errors import (
+    STALE_VERSION_MESSAGE,
     ConflictError,
     DomainError,
     ExternalServiceError,
+    GoneError,
     NotAuthenticatedError,
     NotFoundError,
     PermissionDeniedError,
@@ -46,6 +48,7 @@ PROBLEM_CONTENT_TYPE = "application/problem+json"
 STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ConflictError: status.HTTP_409_CONFLICT,
+    GoneError: status.HTTP_410_GONE,
     RuleViolationError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     # Строго до PermissionDeniedError: сопоставление идёт по первому подходящему
     # типу в порядке объявления, а перестановка этих двух строк молча вернёт 403.
@@ -60,16 +63,16 @@ TITLE_BY_STATUS: dict[int, str] = {
     status.HTTP_403_FORBIDDEN: "Действие недоступно",
     status.HTTP_404_NOT_FOUND: "Запись не найдена",
     status.HTTP_409_CONFLICT: "Действие противоречит текущему состоянию",
+    status.HTTP_410_GONE: "Запись больше не действует",
     status.HTTP_422_UNPROCESSABLE_CONTENT: "Данные не прошли проверку",
     status.HTTP_429_TOO_MANY_REQUESTS: "Слишком много запросов",
     status.HTTP_500_INTERNAL_SERVER_ERROR: "Внутренняя ошибка",
     status.HTTP_503_SERVICE_UNAVAILABLE: "Сервис временно недоступен",
 }
 
-STALE_DATA_MESSAGE = (
-    "Запись уже изменили, пока вы её редактировали. Ваша правка не сохранена: обновите "
-    "данные и внесите её ещё раз"
-)
+# Один текст на оба пути: гонка внутри запроса (`StaleDataError`) и правка по старой
+# версии (`StaleVersionError`) для человека — одно событие.
+STALE_DATA_MESSAGE = STALE_VERSION_MESSAGE
 
 # Код состояния SQLSTATE → что сказать человеку. Классы из стандарта SQL, одинаковые для
 # любой установки PostgreSQL: https://www.postgresql.org/docs/16/errcodes-appendix.html

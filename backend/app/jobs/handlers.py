@@ -4,7 +4,7 @@
 
 | Имя | Период | Когда зовут | Что делает |
 |---|---|---|---|
-| `morning-summary` | сутки | 08:30 Ташкент | собирает утреннюю сводку руководителю |
+| `morning-summary` | сутки | 06:00–11:50 Ташкент, раз в 10 мин | отправляет сводку в её время |
 | `daily-snapshot` | сутки | 23:50 Ташкент | сохраняет состояние дня для графиков |
 | `deadline-check` | час | в рабочие часы | считает, что просрочено и что подходит к сроку |
 
@@ -13,10 +13,14 @@
 телефон в 08:31. Свой запрос здесь означал бы второй расчёт — и расхождение, которое
 обнаружится ровно в тот момент, когда на него посмотрят вдвоём.
 
-**Чего эти обработчики пока не делают.** Отправки нет: порт `PushSender` появляется вместе
-с устройствами и подписками, и до него сводка складывается в результат прогона — её видно
-в журнале прогонов и в сводке GitHub Actions. Это не заглушка: числа настоящие, считает их
-тот же код, который потом будет их отправлять.
+**Сводку зовут часто, а работает она раз в день.** Время сводки — порог справочника, его
+меняет помощник без выкладки (V24), а строку cron меняет только выкладка. Поэтому
+расписание спрашивает каждые десять минут, и день занимает только доставленная сводка:
+после неё остальные вызовы до 11:50 отвечают «уже сделано» одним запросом. До того —
+`not_due` с причиной, и строки о прогоне нет: «ещё не время» (`not_yet`), «некому»
+(`no_device` — руководитель не включил уведомления или служба отключила все его
+устройства), «нечем» (`not_configured` — нет ключа). Служба не приняла сводку ни для одного
+устройства — прогон `failed`, ответ 503, и следующий вызов пробует снова.
 """
 
 from __future__ import annotations
@@ -24,8 +28,18 @@ from __future__ import annotations
 from typing import Any
 
 from app.domain.attention import Attention
-from app.jobs.registry import Job, JobContext, daily_period, hourly_period, register
-from app.services import metrics
+from app.domain.push import SummaryOutcome
+from app.jobs.registry import (
+    STATUS_FAILED,
+    STATUS_NOT_DUE,
+    Job,
+    JobContext,
+    Release,
+    daily_period,
+    hourly_period,
+    register,
+)
+from app.services import metrics, summary
 
 
 async def _summary(context: JobContext) -> dict[str, Any]:
@@ -47,14 +61,45 @@ async def _summary(context: JobContext) -> dict[str, Any]:
     }
 
 
-async def morning_summary(context: JobContext) -> dict[str, Any]:
-    """Утренняя сводка: что ждёт решения и что горит сегодня (ТЗ 8).
+async def morning_summary(context: JobContext) -> dict[str, Any] | Release:
+    """Утренняя сводка: что ждёт решения и что со сроком сегодня (ТЗ 8, V26).
 
-    Отправка появится вместе с портом `PushSender`. До неё сводка лежит в результате
-    прогона — руководитель её ещё не получает, и отчёт блока говорит об этом прямо, а не
-    «уведомления готовы».
+    В результате прогона — те же числа лестницы, что у снимка, и исход отправки: он виден
+    в журнале прогонов и в сводке прогона GitHub Actions — там и ищут ответ на «почему не
+    пришла».
+
+    День занимает только доставка. «Некому» — все устройства руководителя отключены
+    службой — отпускает день, как «ещё не время»: сводка уйдёт, когда он включит
+    уведомления снова. «Служба не приняла» отпускает его неудачей — 503, и расписание
+    повторит попытку. Записанное прогоном остаётся в обоих случаях (`Release`).
     """
-    return {**await _summary(context), "delivered": False}
+    numbers = await _summary(context)
+    sent = await summary.send(context.session, context.push, now=context.now, zone=context.timezone)
+    result = {
+        **numbers,
+        "delivered": sent.delivered,
+        "devices": sent.devices,
+        "reason": sent.reason.value,
+    }
+    if sent.reason is SummaryOutcome.SENT:
+        return result
+    if sent.reason is SummaryOutcome.REFUSED:
+        return Release(
+            status=STATUS_FAILED,
+            result=result,
+            error="Сводка не доставлена: служба уведомлений не приняла её ни для одного "
+            "устройства. Расписание повторит попытку",
+        )
+    return Release(status=STATUS_NOT_DUE, result=result)
+
+
+async def summary_is_due(context: JobContext) -> str | None:
+    """Пора ли сводке: время наступило, ключ есть, руководителю есть куда её доставить
+    (V24). Не пора — причина из `SummaryOutcome`."""
+    reason = await summary.blocker(
+        context.session, context.push, now=context.now, zone=context.timezone
+    )
+    return None if reason is None else reason.value
 
 
 async def daily_snapshot(context: JobContext) -> dict[str, Any]:
@@ -70,7 +115,8 @@ async def deadline_check(context: JobContext) -> dict[str, Any]:
     """Проверка сроков: что уже просрочено и что подходит к сроку.
 
     Просрочка не пишется в статус и не хранится (инвариант 1) — задача её только считает.
-    Напоминания появятся вместе с уведомлениями.
+    Напоминаний о сроках она не шлёт: ТЗ v2.0 их сняло, поводов для пуша два — утренняя
+    сводка и вопрос помощника (ADR-0036).
     """
     return await _summary(context)
 
@@ -81,6 +127,7 @@ register(
         title="Утренняя сводка",
         period=daily_period,
         handler=morning_summary,
+        due=summary_is_due,
     )
 )
 register(

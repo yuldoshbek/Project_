@@ -162,3 +162,52 @@ def test_unknown_variables_are_ignored() -> None:
     settings = build(some_unknown_variable="значение")
 
     assert settings.env == "test"
+
+
+def test_push_key_is_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Без ключа уведомления выключены, а сборка, миграции и превью работают как прежде."""
+    monkeypatch.delenv("ORBITA_VAPID_PRIVATE_KEY", raising=False)
+
+    assert build().vapid_private_key is None
+
+
+def test_an_empty_push_key_means_off() -> None:
+    """Так выглядит строка из .env.example, скопированного как есть."""
+    assert build(vapid_private_key="").vapid_private_key is None
+    assert build(vapid_private_key=SecretStr("  ")).vapid_private_key is None
+
+
+def test_a_push_key_is_checked_at_start() -> None:
+    """Испорченный ключ обнаруживается выкладкой, а не молчащим телефоном в 08:30."""
+    for broken in ("не-ключ", "AAAA", "A" * 43):
+        with pytest.raises(ValidationError) as error:
+            build(vapid_private_key=SecretStr(broken))
+        assert "app.push_keys" in str(error.value)
+
+
+def test_a_rejected_secret_is_not_repeated_in_the_error() -> None:
+    """Ошибка проверки уходит в журнал площадки при падении старта. Ключ с одной лишней
+    буквой — это почти весь рабочий ключ, и в тексте ошибки ему не место."""
+    from app.push_keys import new_private_key
+
+    key = new_private_key() + "x"
+    short = "короткий-секрет"
+
+    with pytest.raises(ValidationError) as broken_key:
+        build(vapid_private_key=key)
+    with pytest.raises(ValidationError) as short_secret:
+        build(session_secret=short)
+
+    for error, value in ((broken_key, key), (short_secret, short)):
+        text = str(error.value)
+        assert value not in text
+        assert "input_value" not in text
+    assert "app.push_keys" in str(broken_key.value), "причина и команда остались в тексте"
+
+
+def test_a_generated_push_key_is_accepted() -> None:
+    from app.push_keys import new_private_key
+
+    key = new_private_key()
+
+    assert build(vapid_private_key=SecretStr(key)).vapid_private_key == SecretStr(key)

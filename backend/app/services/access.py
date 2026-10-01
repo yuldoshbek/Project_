@@ -6,8 +6,9 @@
 
 Что важно не потерять при правке:
 
-- **Перевыпуск ссылки гасит сессии.** Иначе тот, кому ссылку переслали, продолжает
-  работать, а в «Управлении» написано, что доступ закрыт.
+- **Перевыпуск ссылки гасит сессии и подписки на уведомления.** Иначе тот, кому ссылку
+  переслали, продолжает работать, а в «Управлении» написано, что доступ закрыт; и сводка
+  продолжает приходить на телефон, с которого по этой ссылке включили уведомления.
 - **Отметка последнего обращения обновляется редко.** Интерфейс опрашивает API раз в
   пятнадцать секунд (ADR-0034), и запись на каждом запросе — это четыре записи в минуту
   ради строки, которую смотрят раз в месяц.
@@ -20,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.access import (
@@ -35,7 +36,7 @@ from app.domain.access import (
     visit_began,
 )
 from app.domain.errors import NotAuthenticatedError, NotFoundError, RuleViolationError
-from app.repos.models import AccessLink, Session, User
+from app.repos.models import AccessLink, PushSubscription, Session, User
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +65,15 @@ async def issue_link(
     now: datetime,
     token: str | None = None,
 ) -> IssuedLink:
-    """Выпускает пользователю новую ссылку и гасит все его сессии.
+    """Выпускает пользователю новую ссылку, гасит все его сессии и удаляет подписки.
 
     Перевыпуск — это не «обновить адрес», а «закрыть доступ прежнему владельцу ссылки».
     Поэтому сессии гасятся здесь же, а не отдельной кнопкой, которую забудут нажать.
+    Действующие подписки удаляются, а не получают отметку `gone_at`: отметка значит «адрес
+    отключён службой», а этот адрес жив, и браузер, в который владелец войдёт по новой
+    ссылке, пришлёт его снова при первом открытии «Сводки» — отказ 410 заставил бы браузер
+    отписаться без причины. Отметки, поставленные службой, остаются: отключённый адрес не
+    оживает от перевыпуска ссылки.
 
     `token` задаётся только для первой ссылки в облаке (`app.access_cli --token-from-env`):
     его знает заказчик, и печатать ссылку в журнал не нужно. Обычный перевыпуск всегда
@@ -95,6 +101,11 @@ async def issue_link(
         link.uses = 0
 
     await revoke_sessions(session, user_id=user.id, now=now)
+    await session.execute(
+        delete(PushSubscription).where(
+            PushSubscription.user_id == user.id, PushSubscription.gone_at.is_(None)
+        )
+    )
     await session.flush()
     return IssuedLink(url=link_for(base_url, token), issued_at=now)
 

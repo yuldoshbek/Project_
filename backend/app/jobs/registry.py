@@ -12,7 +12,13 @@
 - брошенный прогон занимает период не дольше `ABANDONED_AFTER`: процесс, убитый
   посреди работы, не должен заклинить задачу навсегда;
 - пропущенный период задача догоняет сама — обработчик смотрит на состояние, а не на
-  календарь вызовов.
+  календарь вызовов;
+- у задачи может быть **условие «пора»** (`Job.due`): расписание зовёт утреннюю сводку
+  каждые десять минут, а время сводки назначает помощник. «Ещё не время» — не прогон, и
+  строки в базе после себя не оставляет;
+- обработчик может **отпустить период** (`Release`): работать оказалось не для чего или
+  внешняя служба не приняла работу. Записанное им при этом остаётся — в отличие от
+  падения, которое откатывает всё.
 
 Что задача **не** делает: не длится минутами. Тяжёлый разбор таблицы «Ижро» идёт в
 обработчике загрузки по частям — здесь для него нет ни времени функции, ни смысла.
@@ -23,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Final, Literal
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -31,14 +37,18 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.push import PushSender
 from app.domain.errors import ConflictError, NotFoundError
 from app.repos.models import JobRun
 
 logger = structlog.get_logger(__name__)
 
-STATUS_RUNNING = "running"
-STATUS_DONE = "done"
-STATUS_FAILED = "failed"
+STATUS_RUNNING: Final = "running"
+STATUS_DONE: Final = "done"
+STATUS_FAILED: Final = "failed"
+STATUS_NOT_DUE: Final = "not_due"
+"""Не пора или не для чего: условие задачи не выполнено либо обработчик отпустил период
+(`Release`). Не пишется в базу — это ответ, а не прогон."""
 
 ABANDONED_AFTER = timedelta(minutes=10)
 """Прогон, который «выполняется» дольше этого, брошен, и период снова свободен.
@@ -59,19 +69,46 @@ ABANDONED_AFTER = timedelta(minutes=10)
 
 @dataclass(frozen=True, slots=True)
 class JobContext:
-    """Что известно задаче: сессия, момент вызова и часовой пояс пользователей.
+    """Что известно задаче: сессия, момент вызова, часовой пояс и отправитель уведомлений.
 
     Время приходит аргументом, а не берётся внутри обработчика: иначе задачу нельзя
-    проверить на «вчера» и «завтра», а значит, нельзя проверить вовсе.
+    проверить на «вчера» и «завтра», а значит, нельзя проверить вовсе. Отправитель — по той
+    же причине: в тестах вместо службы уведомлений стоит подделка.
     """
 
     session: AsyncSession
     now: datetime
     timezone: ZoneInfo
+    push: PushSender
 
 
-Handler = Callable[[JobContext], Awaitable[dict[str, Any]]]
+@dataclass(frozen=True, slots=True)
+class Release:
+    """Обработчик отпускает период: прогон его не занимает, а записанное остаётся.
+
+    Не исключение, потому что это не падение. Падение откатывает работу целиком — половина
+    сводки хуже никакой. Здесь же работа сделана честно, и её след нужен: уведомление без
+    отметки доставки, подписки, которые служба назвала отключёнными. Откатить их значило бы
+    завтра снова стучаться в отключённый адрес.
+
+    - `not_due` — работать оказалось не для чего (сводку некому доставить): как «ещё не
+      время», никакой строки о прогоне;
+    - `failed` — работа не удалась по внешней причине: строка `failed` с текстом `error`,
+      которая период не занимает. Вызывающий видит неудачу — эндпоинт расписания отвечает
+      503, командная строка выходит с ненулевым кодом, — и следующий вызов пробует снова.
+    """
+
+    status: Literal["not_due", "failed"]
+    result: dict[str, Any]
+    error: str | None = None
+
+
+Handler = Callable[[JobContext], Awaitable[dict[str, Any] | Release]]
+Gate = Callable[[JobContext], Awaitable[str | None]]
 PeriodKey = Callable[[datetime, ZoneInfo], str]
+
+_RUN_STATE = ("status", "started_at", "finished_at", "result", "error")
+"""Поля строки прогона, которые повторный прогон перезаписывает, а отпущенный — возвращает."""
 
 
 def daily_period(now: datetime, timezone: ZoneInfo) -> str:
@@ -96,6 +133,9 @@ class Job:
     title: str
     period: PeriodKey
     handler: Handler
+    due: Gate | None = None
+    """Пора ли работать в этот вызов: `None` в ответ — пора, строка — почему ещё нет (она
+    уходит в результат `not_due`). Без условия — пора всегда."""
 
 
 @dataclass(slots=True)
@@ -135,6 +175,7 @@ async def run_job(
     session: AsyncSession,
     name: str,
     *,
+    push: PushSender,
     now: datetime | None = None,
     timezone: str = "Asia/Tashkent",
     force: bool = False,
@@ -142,14 +183,19 @@ async def run_job(
     """Выполняет задачу один раз за её период.
 
     `force` нужен разработке и разбору происшествий: он позволяет прогнать задачу повторно,
-    не дожидаясь следующего периода. В расписании его нет — иначе идемпотентность
-    отключалась бы одним параметром.
+    не дожидаясь следующего периода и назначенного времени. В расписании его нет — иначе
+    идемпотентность отключалась бы одним параметром.
+
+    Условие «пора» проверяется после «уже сделано» и до отметки о начале: сделанная работа
+    отвечает «сделано» и после назначенного часа, а «ещё не время» не оставляет строки,
+    которая заняла бы период.
 
     Повторный прогон **занимает строку прежнего**, а не заводит вторую: уникальность пары
     «задача + период» держит частичный индекс, и вторая строка со статусом не `failed`
     упала бы на нём. Строка периода описывает последний прогон за этот период; прежний
-    результат остаётся в логе (`job_forced`). Если повторный прогон упадёт, откат вернёт
-    строке прежнее состояние — удачный результат не теряется из-за неудачной попытки.
+    результат остаётся в логе (`job_forced`). Если повторный прогон упадёт или отпустит
+    период (`Release`), строка вернёт прежнее состояние — удачный результат не теряется
+    из-за неудачной попытки.
     """
     jobs = all_jobs()
     job = jobs.get(name)
@@ -176,7 +222,18 @@ async def run_job(
         logger.info("job_skipped", job=name, period=period)
         return JobResult(name=name, period=period, status=existing.status, skipped=True)
 
+    context = JobContext(session=session, now=moment, timezone=zone, push=push)
+    if job.due is not None and not force:
+        reason = await job.due(context)
+        if reason is not None:
+            logger.info("job_not_due", job=name, period=period, reason=reason)
+            return JobResult(
+                name=name, period=period, status=STATUS_NOT_DUE, result={"reason": reason}
+            )
+
+    previous: dict[str, Any] | None = None
     if existing is not None:
+        previous = {field: getattr(existing, field) for field in _RUN_STATE}
         logger.info(
             "job_forced" if force else "job_abandoned_run_taken_over",
             job=name,
@@ -203,7 +260,6 @@ async def run_job(
         logger.info("job_already_running", job=name, period=period)
         raise ConflictError(f"Задача «{name}» за {period} уже выполняется") from error
 
-    context = JobContext(session=session, now=moment, timezone=zone)
     try:
         payload = await job.handler(context)
     except Exception as error:
@@ -215,12 +271,58 @@ async def run_job(
         logger.exception("job_failed", job=name, period=period)
         raise
 
+    if isinstance(payload, Release):
+        return await _release(
+            session, run, previous, payload, name=name, period=period, started_at=moment
+        )
+
     run.status = STATUS_DONE
     run.finished_at = datetime.now(UTC)
     run.result = payload
     await session.flush()
     logger.info("job_done", job=name, period=period, **payload)
     return JobResult(name=name, period=period, status=STATUS_DONE, result=payload)
+
+
+async def _release(
+    session: AsyncSession,
+    run: JobRun,
+    previous: dict[str, Any] | None,
+    release: Release,
+    *,
+    name: str,
+    period: str,
+    started_at: datetime,
+) -> JobResult:
+    """Прогон отпускает период, а записанное обработчиком остаётся в той же транзакции.
+
+    Своя строка прогона удаляется, чужая — прежняя строка периода, которую занял повторный
+    или брошенный прогон, — получает назад своё состояние: неудачная попытка не стирает
+    удачный результат. Неудача пишется отдельной строкой `failed` — такие строки период не
+    занимают (`run_job`).
+    """
+    if previous is None:
+        await session.delete(run)
+    else:
+        for field, value in previous.items():
+            setattr(run, field, value)
+    if release.status == STATUS_FAILED:
+        session.add(
+            JobRun(
+                name=name,
+                period=period,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                status=STATUS_FAILED,
+                result=release.result,
+                error=release.error[:500] if release.error else None,
+            )
+        )
+        logger.warning("job_failed", job=name, period=period, error=release.error, **release.result)
+    else:
+        logger.info("job_not_due", job=name, period=period, **release.result)
+    await session.flush()
+    return JobResult(name=name, period=period, status=release.status, result=release.result)
 
 
 async def _record_failure(

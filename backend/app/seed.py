@@ -31,7 +31,7 @@ import uuid
 from typing import Any, cast
 
 import structlog
-from sqlalchemy import CursorResult
+from sqlalchemy import CursorResult, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -514,10 +514,53 @@ SETTINGS: list[Row] = [
         ),
     },
     {
+        "key": SettingKey.HOT_DAY_THRESHOLD.value,
+        "value": 3,
+        "value_type": "count",
+        "min_value": 2,
+        "max_value": 20,
+        "description_ru": (
+            "Сколько незакрытых сроков в один день делают его горячим в Календаре; срок "
+            "проекта в день его же вехи — один срок (ТЗ 5)"
+        ),
+    },
+    {
+        "key": SettingKey.HOT_WINDOW_DAYS.value,
+        "value": 28,
+        "value_type": "days",
+        "min_value": 7,
+        "max_value": 90,
+        "description_ru": (
+            "На сколько дней вперёд Календарь отвечает «где неделя перегружена?» (ТЗ 5)"
+        ),
+    },
+    {
         "key": SettingKey.SUMMARY_AT.value,
         "value": "08:30",
         "value_type": "time",
         "description_ru": "Время утренней сводки руководителю по Ташкенту (ТЗ 8)",
+    },
+    {
+        "key": SettingKey.SLEEPING_DAYS.value,
+        "value": 90,
+        "value_type": "days",
+        "min_value": 14,
+        "max_value": 365,
+        "description_ru": (
+            "Через сколько дней без движения соглашение «спит»: движение — правка следующего "
+            "шага или его даты (ТЗ 5, V40)"
+        ),
+    },
+    {
+        "key": SettingKey.MIN_LETTERS_FOR_SPEED.value,
+        "value": 5,
+        "value_type": "count",
+        "min_value": 2,
+        "max_value": 50,
+        "description_ru": (
+            "Сколько полученных ответов нужно, чтобы показывать скорость ответа организации; "
+            "меньше — «мало писем» (ТЗ 4)"
+        ),
     },
 ]
 
@@ -611,6 +654,23 @@ async def _seed_project_types(session: AsyncSession) -> tuple[int, int]:
     return types_added, milestones_added
 
 
+async def _seed_center(session: AsyncSession) -> int:
+    """Центр — по признаку «учреждена агентством», а не по названию.
+
+    Название организации помощник меняет в «Управлении» (V21). Узнавай наполнение Центр по
+    названию, следующая выкладка после переименования завела бы второй Центр со старым
+    названием, и срез «что держит Центр» разошёлся бы по двум записям. `ON CONFLICT` по
+    названию остаётся — на гонку и на организацию, уже заведённую помощником под этим
+    названием.
+    """
+    founded = await session.scalar(
+        select(Organization.id).where(Organization.is_founded_by_agency.is_(True)).limit(1)
+    )
+    if founded is not None:
+        return 0
+    return await _insert_missing(session, Organization, ORGANIZATIONS, "name")
+
+
 async def seed(session: AsyncSession) -> dict[str, int]:
     """Наполняет справочники. Возвращает число добавленных записей по каждому."""
     types_added, milestones_added = await _seed_project_types(session)
@@ -626,7 +686,7 @@ async def seed(session: AsyncSession) -> dict[str, int]:
         "task_statuses": await _insert_missing(session, TaskStatusRef, TASK_STATUSES, "code"),
         "settings": await _insert_missing(session, Setting, SETTINGS, "key"),
         "users": await _insert_missing(session, User, USERS, "role"),
-        "organizations": await _insert_missing(session, Organization, ORGANIZATIONS, "name"),
+        "organizations": await _seed_center(session),
     }
     await session.flush()
     return added

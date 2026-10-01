@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time, tzinfo
+from enum import StrEnum
 
 from app.domain.dictionaries import TaskStatus
-from app.domain.errors import ConflictError
+from app.domain.errors import ConflictError, RuleViolationError
 
 # Куда можно перейти из каждого состояния.
 #
@@ -74,3 +75,69 @@ def days_overdue(*, due_at: datetime | None, status: TaskStatus, now: datetime) 
         return 0
     assert due_at is not None
     return (now - due_at).days
+
+
+TITLE_MAX_LENGTH = 300
+"""Как у столбца `tasks.title`."""
+
+DUE_TIME = time(18, 0)
+"""Во сколько наступает срок, названный днём: конец рабочего дня по Ташкенту.
+
+Человек назначает срок днём («к пятнице»), а хранится момент (`tasks.due_at`, инвариант 8).
+Полночь начала дня сделала бы задачу просроченной с утра того дня, к которому её просили,
+а полночь конца — «сегодняшней» ещё и ночью. Конец рабочего дня — то, что имеют в виду.
+"""
+
+WEEK_DAYS = 7
+"""«Ближайшая неделя» в списке — семь дней вперёд, как порог «горит» по умолчанию (ТЗ 4)."""
+
+
+class Horizon(StrEnum):
+    """«К какому сроку» — группа списка задач. Порядок объявления — порядок показа."""
+
+    OVERDUE = "overdue"
+    TODAY = "today"
+    TOMORROW = "tomorrow"
+    WEEK = "week"
+    LATER = "later"
+    NONE = "none"
+    CLOSED = "closed"
+
+
+def horizon_of(*, status: TaskStatus, due_on: date | None, today: date) -> Horizon:
+    """Группа задачи по сроку относительно сегодняшнего дня Ташкента.
+
+    Закрытая задача — в своей группе, какой бы срок у неё ни был: список дел отвечает на
+    «что делать», а сделанное — на другой вопрос.
+    """
+    if status.is_terminal:
+        return Horizon.CLOSED
+    if due_on is None:
+        return Horizon.NONE
+    days = (due_on - today).days
+    if days < 0:
+        return Horizon.OVERDUE
+    if days == 0:
+        return Horizon.TODAY
+    if days == 1:
+        return Horizon.TOMORROW
+    if days <= WEEK_DAYS:
+        return Horizon.WEEK
+    return Horizon.LATER
+
+
+def due_moment(day: date, zone: tzinfo) -> datetime:
+    """Момент срока для дня: конец рабочего дня (`DUE_TIME`) в поясе агентства."""
+    return datetime.combine(day, DUE_TIME, zone)
+
+
+def validate_title(title: str) -> str:
+    """Название задачи — единственное обязательное поле (ТЗ 7)."""
+    if "\x00" in title:
+        raise RuleViolationError("В названии задачи есть недопустимый символ")
+    value = title.strip()
+    if not value:
+        raise RuleViolationError("Напишите, что нужно сделать")
+    if len(value) > TITLE_MAX_LENGTH:
+        raise RuleViolationError(f"Название длиннее {TITLE_MAX_LENGTH} символов")
+    return value

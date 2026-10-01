@@ -38,6 +38,9 @@ PROJECTS = "projects"
 TASKS = "tasks"
 MILESTONES = "milestones"
 DECISIONS = "leader_decisions"
+IJRO = "ijro_assignments"
+LETTERS = "letters"
+AGREEMENTS = "agreements"
 
 # Поле срока у каждой сущности. У задачи срок — момент, у проекта и вехи — дата.
 DUE_FIELD = {PROJECTS: "due_on", MILESTONES: "due_on", TASKS: "due_at"}

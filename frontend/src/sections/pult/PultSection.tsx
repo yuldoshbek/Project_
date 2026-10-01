@@ -17,6 +17,7 @@
  * легко сделать по ошибке, и цена ошибки — запись в журнале решений.
  */
 
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Gauge } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +47,7 @@ import {
 } from './model';
 import { Orbits } from './Orbits';
 import { ReportTab } from './Report';
+import { SummaryTab } from './Summary';
 import { rowTitle } from './text';
 import { usePult, usePultAction, type PultAction, type Target } from './usePult';
 import { HoldersCard, MovesCard, SinceCard } from './Widgets';
@@ -65,7 +67,16 @@ function targetFrom(row: PultRow): Target {
   return { target_type: row.target_type, target_id: row.target_id };
 }
 
-type Tab = 'now' | 'report';
+/**
+ * Вид Пульта живёт в адресе (`/?view=summary`): касание утренней сводки открывает её вкладку,
+ * а не «Сейчас» (ТЗ 8).
+ */
+const TABS = ['now', 'report', 'summary'] as const;
+type Tab = (typeof TABS)[number];
+
+function isTab(value: unknown): value is Tab {
+  return TABS.includes(value as Tab);
+}
 
 type Filter = { kind: 'step'; step: Step } | { kind: 'person'; person: Person } | null;
 
@@ -95,7 +106,11 @@ function Pult({ view }: { view: PultView }) {
   // проверяет то же самое сам — экран только не показывает кнопок, которые кончатся 403.
   const viewer: Viewer = user.data?.role === 'leader' ? 'leader' : 'assistant';
 
-  const [tab, setTab] = useState<Tab>('now');
+  const search: { view?: unknown } = useSearch({ strict: false });
+  const navigate = useNavigate();
+  const tab: Tab = isTab(search.view) ? search.view : 'now';
+  const setTab = (next: Tab) =>
+    void navigate({ to: '/', search: next === 'now' ? {} : { view: next }, replace: true });
   const [filter, setFilter] = useState<Filter>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -209,6 +224,8 @@ function Pult({ view }: { view: PultView }) {
 
       {tab === 'report' ? (
         <ReportTab />
+      ) : tab === 'summary' ? (
+        <SummaryTab viewer={viewer} actions={actions} busy={action.isPending} device={device} />
       ) : (
         <>
           <Counters
@@ -288,14 +305,16 @@ function PultHeader({
   if (compact) {
     return (
       <header className="flex flex-col gap-1.5 print:hidden">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg font-semibold text-ink-strong">{t('sections.pult')}</h1>
-          <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
-            {t('pult.asOf', { when: formatDateTime(view.as_of) })}
-          </span>
           <PultTabs tab={tab} onTab={onTab} />
         </div>
-        {demo ? <div className="flex text-xs">{demo}</div> : null}
+        {/* Время данных — второй строкой: рядом с тремя вкладками на 390 px от него
+            оставалось «Данные на 2…». */}
+        <div className="flex min-w-0 items-center gap-2 text-xs text-ink-muted">
+          <span className="truncate">{t('pult.asOf', { when: formatDateTime(view.as_of) })}</span>
+          {demo}
+        </div>
       </header>
     );
   }
@@ -326,14 +345,15 @@ function PultHeader({
 }
 
 /**
- * «Сейчас» и «Отчёт». Отчёт недели и месяца — вкладка Пульта, а не отдельный раздел
- * (ТЗ 2): его числа — те же, что на Пульте, и отдельный экран развёл бы их.
+ * «Сейчас», «Отчёт» и «Сводка». Отчёт недели и месяца — вкладка Пульта, а не отдельный раздел
+ * (ТЗ 2): его числа — те же, что на Пульте, и отдельный экран развёл бы их. Так же и
+ * предпросмотр утренней сводки (PLAN, состав Пульта).
  */
 function PultTabs({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) {
   const { t } = useTranslation();
   return (
     <span role="tablist" aria-label={t('pult.tabs.label')} className="inline-flex gap-1">
-      {(['now', 'report'] as const).map((each) => (
+      {TABS.map((each) => (
         <button
           key={each}
           type="button"

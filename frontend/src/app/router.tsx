@@ -20,9 +20,15 @@ import {
 
 import { App } from '@/app/App';
 import { SECTIONS, sectionPath } from '@/app/sections';
+import { CalendarSection } from '@/sections/calendar/CalendarSection';
+import { IjroRoute } from '@/sections/ijro/IjroRoute';
+import { InteractionRoute } from '@/sections/interaction/InteractionRoute';
 import { ManagementSection } from '@/sections/management/ManagementSection';
+import { ProgramsSection } from '@/sections/programs/ProgramsSection';
+import { ProjectsSection } from '@/sections/projects/ProjectsSection';
 import { PultSection } from '@/sections/pult/PultSection';
 import { SoonSection } from '@/sections/SoonSection';
+import { TasksSection } from '@/sections/tasks/TasksSection';
 import { RenderFailure } from '@/shared/ui/Boundary';
 
 const rootRoute = createRootRoute({ component: App });
@@ -34,11 +40,23 @@ const sectionRoutes: AnyRoute[] = SECTIONS.map((section) =>
     component:
       section.id === 'management'
         ? ManagementSection
-        : section.id === 'pult'
-          ? PultSection
-          : function Section() {
-              return <SoonSection section={section} />;
-            },
+        : section.id === 'calendar'
+          ? CalendarSection
+          : section.id === 'pult'
+            ? PultSection
+            : section.id === 'programs'
+              ? ProgramsSection
+              : section.id === 'projects'
+                ? ProjectsSection
+                : section.id === 'tasks'
+                  ? TasksSection
+                  : section.id === 'ijro'
+                    ? IjroRoute
+                    : section.id === 'interaction'
+                      ? InteractionRoute
+                      : function Section() {
+                          return <SoonSection section={section} />;
+                        },
   }),
 );
 

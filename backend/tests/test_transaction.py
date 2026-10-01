@@ -27,7 +27,12 @@ from fastapi import APIRouter, FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 
 from app.api import routes
-from app.api.transaction import SESSION_STATE_ATTRIBUTE, CommitOnSuccess, transactional_router
+from app.api.transaction import (
+    SESSION_STATE_ATTRIBUTE,
+    CommitOnSuccess,
+    after_commit,
+    transactional_router,
+)
 from app.domain.errors import NotFoundError
 
 
@@ -69,6 +74,32 @@ def probe_app(spy: SpySession) -> FastAPI:
     async def broken(request: Request) -> dict[str, str]:
         setattr(request.state, SESSION_STATE_ATTRIBUTE, spy)
         raise RuntimeError("что-то сломалось")
+
+    async def notify() -> None:
+        spy.events.append("после фиксации")
+
+    async def fails() -> None:
+        spy.events.append("после фиксации")
+        raise RuntimeError("служба уведомлений недоступна")
+
+    @router.get("/probe/then-notify")
+    async def then_notify(request: Request) -> dict[str, str]:
+        setattr(request.state, SESSION_STATE_ATTRIBUTE, spy)
+        after_commit(request, notify)
+        spy.events.append("обработчик")
+        return {"status": "ok"}
+
+    @router.get("/probe/then-fail")
+    async def then_fail(request: Request) -> dict[str, str]:
+        setattr(request.state, SESSION_STATE_ATTRIBUTE, spy)
+        after_commit(request, fails)
+        return {"status": "ok"}
+
+    @router.get("/probe/refused-then-notify")
+    async def refused_then_notify(request: Request) -> dict[str, str]:
+        setattr(request.state, SESSION_STATE_ATTRIBUTE, spy)
+        after_commit(request, notify)
+        raise NotFoundError("Запись не найдена")
 
     app = FastAPI()
     app.include_router(router)
@@ -128,6 +159,35 @@ class TestCommitPrecedesTheAnswer:
             response = await client.get("/probe/sessionless")
 
         assert response.status_code == 200
+
+
+class TestActionsAfterCommit:
+    """Действие наружу — пуш о вопросе — только о том, что уже записано."""
+
+    async def test_the_action_runs_after_the_commit_and_is_committed_itself(
+        self, probe: AsyncClient, spy: SpySession
+    ) -> None:
+        response = await probe.get("/probe/then-notify")
+
+        assert response.status_code == 200
+        assert spy.events == ["обработчик", "commit", "после фиксации", "commit"]
+
+    async def test_a_failed_action_does_not_undo_the_answer(
+        self, probe: AsyncClient, spy: SpySession
+    ) -> None:
+        """Вопрос записан — и ответ «записан», даже если пуш о нём не ушёл."""
+        response = await probe.get("/probe/then-fail")
+
+        assert response.status_code == 200
+        assert spy.events == ["commit", "после фиксации", "rollback"]
+
+    async def test_a_refused_request_does_not_act(
+        self, probe: AsyncClient, spy: SpySession
+    ) -> None:
+        """Отказ ничего не записал — и сообщать наружу не о чем."""
+        await probe.get("/probe/refused-then-notify")
+
+        assert "после фиксации" not in spy.events
 
 
 class TestEveryRouterHasTheBoundary:

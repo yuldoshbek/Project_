@@ -270,10 +270,31 @@ class TestWhatBurns:
             horizon_days=3,
         )
 
-    def test_a_finished_assignment_never_burns(self) -> None:
+    def test_a_month_deadline_does_not_burn(self) -> None:
+        """Срок «до конца месяца» дня не называет — считать дни до него нечем (V33)."""
         assert not is_burning(
+            date(2026, 12, 24),
+            IjroState.IN_PROGRESS,
+            DuePrecision.MONTH,
+            today=self.TODAY,
+            horizon_days=3,
+        )
+
+    def test_submitted_and_removed_never_burn(self) -> None:
+        """Сданное ждёт ответа сверху, снятое — конечно: торопить некого (V32)."""
+        for state in (IjroState.SUBMITTED, IjroState.REMOVED_FROM_CONTROL):
+            assert not is_burning(
+                date(2026, 12, 23),
+                state,
+                DuePrecision.EXACT,
+                today=self.TODAY,
+                horizon_days=3,
+            )
+
+    def test_returned_burns_again(self) -> None:
+        assert is_burning(
             date(2026, 12, 23),
-            IjroState.DONE,
+            IjroState.RETURNED,
             DuePrecision.EXACT,
             today=self.TODAY,
             horizon_days=3,
@@ -283,7 +304,7 @@ class TestWhatBurns:
         past = date(2026, 12, 1)
 
         assert is_overdue(past, IjroState.IN_PROGRESS, today=self.TODAY)
-        assert not is_overdue(past, IjroState.DONE, today=self.TODAY)
+        assert not is_overdue(past, IjroState.SUBMITTED, today=self.TODAY)
         assert not is_overdue(past, IjroState.REMOVED_FROM_CONTROL, today=self.TODAY)
         assert not is_overdue(None, IjroState.IN_PROGRESS, today=self.TODAY)
 

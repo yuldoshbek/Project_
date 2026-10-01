@@ -39,15 +39,15 @@ export function SideRail({ wide }: { wide: boolean }) {
                 // Цифра блока рядом с названием читалась как счётчик записей. Готовность
                 // показывается иначе: неготовый раздел приглушён, а когда он появится —
                 // написано в подсказке.
-                title={section.block > 0 ? t('soon.title', { block: section.block }) : undefined}
+                title={section.ready ? undefined : t('soon.title', { block: section.block })}
                 className={cn(
                   'flex min-h-10 items-center gap-2.5 rounded-[var(--radius)] px-3 text-sm',
                   'transition-colors duration-[var(--motion-fast)]',
                   active
                     ? 'bg-accent-soft font-medium text-accent-ink'
-                    : section.block > 0
-                      ? 'text-ink-muted hover:bg-hover'
-                      : 'text-ink hover:bg-hover',
+                    : section.ready
+                      ? 'text-ink hover:bg-hover'
+                      : 'text-ink-muted hover:bg-hover',
                 )}
               >
                 <Icon className="size-4 shrink-0" />

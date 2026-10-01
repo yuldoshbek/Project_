@@ -55,6 +55,17 @@ function ratio(front: string, back: string): number {
   return (bright + 0.05) / (dark + 0.05);
 }
 
+/** Цвет `front` с прозрачностью `alpha` поверх `back` — как его видит глаз. */
+function blend(front: string, alpha: number, back: string): string {
+  const mix = (at: number) => {
+    const value =
+      Number.parseInt(front.slice(at, at + 2), 16) * alpha +
+      Number.parseInt(back.slice(at, at + 2), 16) * (1 - alpha);
+    return Math.round(value).toString(16).padStart(2, '0');
+  };
+  return `#${mix(1)}${mix(3)}${mix(5)}`;
+}
+
 const TEXT_MINIMUM = 4.5;
 const MARK_MINIMUM = 3;
 
@@ -69,6 +80,7 @@ const TEXT_PAIRS = [
   ['--ink-muted', '--surface-card'],
   ['--ink-muted', '--surface-sunken'],
   ['--accent', '--surface-card'],
+  ['--ink-inverse', '--accent'],
   ['--accent-ink', '--accent-soft'],
   ['--burn-ink', '--burn-soft'],
   ['--wait-ink', '--wait-soft'],
@@ -101,5 +113,13 @@ describe.each([
     const frontColor = theme[front];
     const backColor = theme[back];
     expect(ratio(frontColor as string, backColor as string)).toBeGreaterThanOrEqual(MARK_MINIMUM);
+  });
+
+  // Клавиша «+» на кнопке Захвата: подложка — тот же цвет текста с прозрачностью 10 %
+  // (`bg-ink-inverse/10`, app/shell/TopBar.tsx). При 20 % светлая тема давала 4.43:1.
+  it('клавиша «+» на кнопке Захвата читается (4.5:1)', () => {
+    const ink = theme['--ink-inverse'] as string;
+    const cap = blend(ink, 0.1, theme['--accent'] as string);
+    expect(ratio(ink, cap)).toBeGreaterThanOrEqual(TEXT_MINIMUM);
   });
 });

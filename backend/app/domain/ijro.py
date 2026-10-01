@@ -87,29 +87,31 @@ class IjroState(StrEnum):
     (инвариант 1 `CLAUDE.md`, [ADR-0004](../../../docs/adr/ADR-0004-overdue-is-computed.md)).
     Записав его сюда, мы потеряли бы исходное состояние — а именно оно отвечает на
     вопрос «что с этим делать».
+
+    Набор — пять этапов ТЗ 3.3 (допущение V32, экран утверждён 30.09.2026). «Зависит от
+    чужих» здесь нет: это ступень лестницы, она считается по головному исполнителю и
+    тишине (ТЗ 4), а этап записывает помощник.
     """
 
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
 
-    BLOCKED_BY_LEAD = "blocked_by_lead"
-    """Головной исполнитель — чужое ведомство — не начал.
-
-    Отдельное состояние, а не пометка в тексте: таких поручений 55 из 165, и вопрос
-    руководителя «что сорвётся» почти целиком про них. Пометкой на это не ответить
-    запросом.
-    """
-
     SUBMITTED = "submitted"
-    """Материал отправлен в `ijro.gov.uz`, ответа ещё нет."""
+    """Материал отправлен в `ijro.gov.uz`, ответа ещё нет. Работа — не наша: торопить
+    некого, и срок после сдачи не «просрочен»."""
 
-    DONE = "done"
+    RETURNED = "returned"
+    """Вернули на доработку — работа снова наша."""
+
     REMOVED_FROM_CONTROL = "removed_from_control"
-    """«НАЗОРАТДАН ЕЧИЛДИ» — снято с контроля. Источник изредка это всё же присылает."""
+    """«НАЗОРАТДАН ЕЧИЛДИ» — снято с контроля. Единственный конечный этап."""
 
 
-TERMINAL_STATES = frozenset({IjroState.DONE, IjroState.REMOVED_FROM_CONTROL})
-"""Состояния, после которых поручение не горит и в просрочку не попадает."""
+OPEN_STATES = frozenset({IjroState.NOT_STARTED, IjroState.IN_PROGRESS, IjroState.RETURNED})
+"""Этапы, на которых работа наша: только они горят, просрочиваются и стоят в лестнице."""
+
+TERMINAL_STATES = frozenset({IjroState.REMOVED_FROM_CONTROL})
+"""Конечный этап: после него поручение ничего не ждёт ни от кого."""
 
 
 class DuePrecision(StrEnum):
@@ -126,10 +128,41 @@ class DuePrecision(StrEnum):
 
     Правило назначения живёт в настройках, а не в коде: следующий ответ заказчика про
     25 октября не должен становиться правкой кода.
+
+    Три точности (допущение V33): день, месяц, конец года. Горит только срок с известным
+    днём; прошедший срок любой точности — просрочен.
     """
 
     EXACT = "exact"
+    MONTH = "month"
     END_OF_YEAR = "end_of_year"
+
+
+class MarkKind(StrEnum):
+    """Контрольная отметка (ТЗ 3.3): что ответил ответственный. Порядок — порядок кнопок."""
+
+    CONTACTED = "contacted"
+    DOING = "doing"
+    NO_ANSWER = "no_answer"
+
+
+class ExtensionKind(StrEnum):
+    """Вид переноса срока в истории продлений (ТЗ 3.3): продление или уточнение даты.
+
+    Различать нужно потому, что «продлевали ≥ 2» (ТЗ 5) — про продления: исправленная
+    опечатка в дате не делает поручение хроническим.
+    """
+
+    EXTENSION = "extension"
+    CORRECTION = "correction"
+
+
+class LifeSource(StrEnum):
+    """Откуда признак жизни поручения (ТЗ 4): самое свежее из трёх событий."""
+
+    CONTROL_MARK = "control_mark"
+    TASK_MOVEMENT = "task_movement"
+    INTERIM_REPORT = "interim_report"
 
 
 class DueYearSource(StrEnum):
@@ -523,8 +556,9 @@ def is_overdue(due: date | None, state: IjroState, *, today: date) -> bool:
 
     Вычисляется, а не хранится (инвариант 1 `CLAUDE.md`): записав просрочку состоянием, мы
     потеряли бы исходное — а именно оно отвечает на вопрос, что с поручением делать.
+    Просрочено только открытое: сданное ждёт ответа сверху, а не нашей работы.
     """
-    if due is None or state in TERMINAL_STATES:
+    if due is None or state not in OPEN_STATES:
         return False
     return due < today
 
@@ -541,11 +575,11 @@ def is_burning(
 
     **Поручение с неточным сроком не горит.** Срок «до конца года» — это дата отчётности,
     а не обязательство успеть к 25 декабря, и показать 56 таких строк как горящие значило
-    бы утопить в них те, что горят по-настоящему. Просроченным оно тоже не станет: там же,
-    в `is_overdue`, — по той же причине.
+    бы утопить в них те, что горят по-настоящему. То же со сроком «месяцем»: дня у него
+    нет, и считать дни до него — выдумывать день (V33).
     """
-    if due is None or state in TERMINAL_STATES:
+    if due is None or state not in OPEN_STATES:
         return False
-    if precision is DuePrecision.END_OF_YEAR:
+    if precision is not DuePrecision.EXACT:
         return False
     return (due - today).days <= horizon_days
