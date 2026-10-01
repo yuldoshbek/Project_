@@ -124,6 +124,9 @@ class NewTask:
     due_on: date | None
     assignee_id: uuid.UUID | None
     project_id: uuid.UUID | None
+    ijro_assignment_id: uuid.UUID | None = None
+    """Поручение, из которого выросла задача (ТЗ 3.2, ADR-0033): «Разложить на задачу».
+    Проверяет его сценарий раздела Ижро — здесь только связь."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,6 +361,7 @@ async def create(
         status=TaskStatus.NEW.value,
         due_at=due_at,
         original_due_at=due_at,
+        ijro_assignment_id=data.ijro_assignment_id,
     )
     today = local_date(now, zone)
     await add_with_code(

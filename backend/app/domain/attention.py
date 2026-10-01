@@ -116,6 +116,7 @@ def attention_of(
     lead_is_outside: bool,
     burn_days: int,
     quiet_days: int,
+    due_is_exact: bool = True,
 ) -> Attention:
     """Ступень лестницы для одной незавершённой записи.
 
@@ -133,6 +134,10 @@ def attention_of(
     Все пороги приходят аргументами: они лежат в справочнике и меняются без разработчика
     (ТЗ 3.9). Сегодняшний день — тоже аргумент, а не системные часы: сроки наступают по
     Ташкенту (`app.domain.clock`).
+
+    `due_is_exact = False` — срок без известного дня: поручение Ижро «до конца месяца» или
+    «до конца года» (V33). Просроченным оно становится, когда срок прошёл, а гореть не
+    может: считать дни до него значило бы выдумать день.
     """
     # Вопрос к руководителю старше срока: пока он не ответил, работать всё равно нельзя,
     # и показывать такую строку просроченной — значит требовать действия от того, кто
@@ -143,7 +148,7 @@ def attention_of(
     if due_on is not None:
         if due_on < today:
             return Attention.OVERDUE
-        if (due_on - today).days <= burn_days:
+        if due_is_exact and (due_on - today).days <= burn_days:
             return Attention.BURNING
 
     if last_sign_of_life is not None and (today - last_sign_of_life).days > quiet_days:
@@ -205,7 +210,7 @@ class Item:
     """
 
     section: str
-    """Раздел, откуда запись: `projects`, `milestones`, `tasks`, `decisions`."""
+    """Раздел, откуда запись: `projects`, `milestones`, `tasks`, `decisions`, `ijro`."""
 
     entity_id: uuid.UUID
     title: str | None
@@ -219,6 +224,9 @@ class Item:
     kind: str | None = None
     """Вид записи внутри раздела — сейчас вид решения. Подпись по нему переводит
     интерфейс: код в заголовок строки не подставляется."""
+
+    due_is_exact: bool = True
+    """Известен ли день срока — см. `attention_of`. Ложно только у поручений Ижро."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +292,7 @@ def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_da
             lead_is_outside=item.lead_is_outside,
             burn_days=burn_days,
             quiet_days=quiet_days,
+            due_is_exact=item.due_is_exact,
         )
         if state.is_normal:
             on_track += 1

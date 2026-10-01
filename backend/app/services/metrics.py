@@ -43,7 +43,15 @@ from app.domain.calendar import CalendarKind, HotDay
 from app.domain.calendar import hot_days as hot_days_of
 from app.domain.calendar import window as hot_window_of
 from app.domain.dictionaries import ProjectStatus, SettingKey, TaskStatus
-from app.domain.programs import Pace, days_left, in_window, window_start
+from app.domain.ijro_control import NEAR_DUE_DAYS
+from app.domain.ijro_control import Answer as IjroAnswer
+from app.domain.ijro_control import BatchEffect as IjroBatch
+from app.domain.ijro_control import Limits as IjroLimits
+from app.domain.ijro_control import Line as IjroLine
+from app.domain.ijro_control import WallDocument as IjroWall
+from app.domain.ijro_control import answers as ijro_answers_of
+from app.domain.ijro_control import wall as ijro_wall_of
+from app.domain.programs import PACE_WINDOW_DAYS, Pace, days_left, in_window, window_start
 from app.domain.programs import pace as pace_of
 from app.domain.projects import (
     DEFAULT_IMPEDIMENT_STALE_DAYS,
@@ -343,6 +351,53 @@ async def ladder(
     items = await snapshot.load_items(session, zone=zone)
     return build_ladder(
         items, today=today, burn_days=limits.burn_days, quiet_days=limits.quiet_days
+    )
+
+
+def steps(items: Iterable[Item], *, today: date, thresholds: Thresholds) -> dict[uuid.UUID, Row]:
+    """Ступени отдельных записей — тем же `build_ladder`, что строит Пульт.
+
+    Раздел «Ижро» показывает ступень у каждой строки реестра, а не только у тех, что на
+    Пульте; считать её второй формулой значило бы рискнуть, что поручение горит на Пульте и
+    идёт по плану в своём разделе (инвариант 2). Записи без строки — по плану.
+    """
+    ladder = build_ladder(
+        items, today=today, burn_days=thresholds.burn_days, quiet_days=thresholds.quiet_days
+    )
+    return {row.entity_id: row for row in ladder.rows}
+
+
+def ijro_limits(thresholds: Thresholds) -> IjroLimits:
+    """Пороги вопросов Ижро: тишина и темп — из справочника, «близкий срок» — V36."""
+    return IjroLimits(
+        quiet_days=thresholds.quiet_days,
+        near_due_days=NEAR_DUE_DAYS,
+        pace_window_days=PACE_WINDOW_DAYS,
+        min_closed_for_pace=thresholds.min_closed_for_pace,
+    )
+
+
+def ijro_wall(
+    lines: Sequence[IjroLine],
+    documents: Sequence[uuid.UUID],
+    bands: dict[uuid.UUID, str | None],
+    band_order: dict[uuid.UUID, str],
+) -> list[IjroWall]:
+    """«Как исполнен документ целиком?» — стена документов (ТЗ 5)."""
+    return ijro_wall_of(lines, documents, bands, band_order)
+
+
+def ijro_answers(
+    lines: Sequence[IjroLine],
+    *,
+    today: date,
+    thresholds: Thresholds,
+    documents: Sequence[IjroWall],
+    batch: IjroBatch | None,
+) -> list[IjroAnswer]:
+    """Двенадцать ответов раздела «Ижро» (V31) — по строкам в порядке лестницы."""
+    return ijro_answers_of(
+        lines, today=today, limits=ijro_limits(thresholds), documents=documents, batch=batch
     )
 
 

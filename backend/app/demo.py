@@ -24,10 +24,8 @@
 - сведения по ПФ-155 для Администрации Президента закрываются после визита внутри засухи,
   а не лежат без проекта закрытыми вчера: на них держатся «сделано 1 из 3» у засухи и та
   же строка «С прошлого визита»;
-- метки поручений Ижро не ставятся: поручение — это документ, содержание на узбекской
-  кириллице и привоз, из которого оно пришло, а раздел Ижро с его моделью — блок 2, и
-  модель ещё отстаёт от ТЗ (`docs/audit/AUDIT-2026-09-20.md`). Задачи по поручениям есть —
-  без связи.
+- три задачи «сведения по поручению» связаны с поручениями Ижро (`app.demo_ijro`,
+  экран раздела утверждён 30.09.2026); остальные задачи типа «Ижро» — без связи.
 
 **Программы экрана «Программы» — в конце списка проектов**, чтобы номера утверждённых раньше
 не сдвинулись (экран — `frontend/src/sections/programs/demo.ts` в коммите dfbe637). С экраном
@@ -109,6 +107,7 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import demo_ijro
 from app.domain.capture import CaptureKind
 from app.domain.clock import local_date
 from app.domain.cycles import CycleRule, horizon
@@ -1351,6 +1350,10 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
     session.add(partner)
     await session.flush()
 
+    # Поручения Ижро — до задач: три задачи заводятся сразу со связью, а правка задачи после
+    # создания сдвинула бы её тишину на Пульте (`app.demo_ijro`).
+    assignments = await demo_ijro.load(session, now=now, zone=zone, people=people, partner=partner)
+
     # Проект заведён в систему, когда начался, — но не позже последнего движения по нему.
     # Тишина задаётся правкой проекта: сервер берёт её самым свежим моментом (см. модуль).
     born = {spec.key: max(-spec.start, spec.life) for spec in PROJECTS}
@@ -1464,6 +1467,11 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
             assignee_person_id=people[work.who].id if work.who else None,
             due_at=due,
             original_due_at=due,
+            ijro_assignment_id=(
+                assignments[demo_ijro.TASK_LINKS[work.key]]
+                if work.key in demo_ijro.TASK_LINKS
+                else None
+            ),
             **_stamps(
                 work.status,
                 created=ago(work.created),
@@ -1656,6 +1664,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         "checklist_items": sum(len(work.checklist) for work in TASKS),
         "cycles": len(CYCLES),
         "captures": len(CAPTURES),
+        "ijro_assignments": len(assignments),
     }
 
 

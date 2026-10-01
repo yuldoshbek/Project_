@@ -25,7 +25,9 @@ from app.repos.models.dictionaries import (
 )
 from app.repos.models.ijro import (
     IjroAssignment,
+    IjroControlMark,
     IjroDocument,
+    IjroExtension,
     IjroImport,
     IjroOrgAlias,
     IjroPersonAlias,
@@ -47,7 +49,9 @@ __all__ = [
     "Comment",
     "Direction",
     "IjroAssignment",
+    "IjroControlMark",
     "IjroDocument",
+    "IjroExtension",
     "IjroImport",
     "IjroOrgAlias",
     "IjroPersonAlias",

@@ -21,9 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.attention import Row
 from app.domain.clock import local_date
 from app.domain.decisions import DecisionTarget
-from app.domain.pult import DECISIONS, MILESTONES, PROJECTS, TASKS, AuditEntry
+from app.domain.pult import DECISIONS, IJRO, MILESTONES, PROJECTS, TASKS, AuditEntry
 from app.repos.models import (
     AuditLog,
+    IjroAssignment,
+    IjroDocument,
     LeaderDecision,
     LeaderQuestion,
     Milestone,
@@ -40,6 +42,7 @@ SECTION_TARGET = {
     "projects": DecisionTarget.PROJECT.value,
     "milestones": DecisionTarget.MILESTONE.value,
     "tasks": DecisionTarget.TASK.value,
+    "ijro": DecisionTarget.IJRO_ASSIGNMENT.value,
 }
 
 # Вид объекта решения → таблица журнала.
@@ -47,6 +50,7 @@ TARGET_TABLE = {
     DecisionTarget.PROJECT.value: PROJECTS,
     DecisionTarget.MILESTONE.value: MILESTONES,
     DecisionTarget.TASK.value: TASKS,
+    DecisionTarget.IJRO_ASSIGNMENT.value: IJRO,
 }
 
 
@@ -121,6 +125,26 @@ async def row_details(
                 context=project_title,
                 original_due_on=local_date(original, zone) if original else None,
                 target=(DecisionTarget.TASK.value, task_id),
+            )
+
+    if ids := by_section.get("ijro"):
+        # Контекст поручения — где оно в документе: «ПҚ-312 · 4-банд». Само содержание —
+        # заголовок строки, а по номеру документа его узнаёт тот, кто готовит доклад.
+        result = await session.execute(
+            select(
+                IjroAssignment.id,
+                IjroDocument.number_raw,
+                IjroAssignment.band,
+                IjroAssignment.original_due_on,
+            )
+            .join(IjroDocument, IjroDocument.id == IjroAssignment.document_id)
+            .where(IjroAssignment.id.in_(ids))
+        )
+        for assignment_id, code, band, original in result:
+            found[("ijro", assignment_id)] = RowDetail(
+                context=f"{code} · {band}" if band else code,
+                original_due_on=original,
+                target=(DecisionTarget.IJRO_ASSIGNMENT.value, assignment_id),
             )
 
     if ids := by_section.get("decisions"):
@@ -205,6 +229,11 @@ async def titles(
         if ids := by_table.get(table):
             result = await session.execute(select(model.id, model.title).where(model.id.in_(ids)))
             found.update({(table, entity_id): title for entity_id, title in result})
+    if ids := by_table.get(IJRO):
+        result = await session.execute(
+            select(IjroAssignment.id, IjroAssignment.content).where(IjroAssignment.id.in_(ids))
+        )
+        found.update({(IJRO, entity_id): content for entity_id, content in result})
 
     if ids := by_table.get(DECISIONS):
         decision_rows = await session.execute(
@@ -337,6 +366,12 @@ async def target_responsible(
     elif kind == DecisionTarget.TASK.value:
         found = await session.execute(
             select(Task.id, Task.assignee_person_id).where(Task.id == target_id)
+        )
+    elif kind == DecisionTarget.IJRO_ASSIGNMENT.value:
+        found = await session.execute(
+            select(IjroAssignment.id, IjroAssignment.responsible_person_id).where(
+                IjroAssignment.id == target_id
+            )
         )
     else:
         return False, None
