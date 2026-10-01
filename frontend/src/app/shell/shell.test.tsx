@@ -89,9 +89,12 @@ describe('оболочка меняется вместе с устройство
 
     const sheet = screen.getByRole('dialog', { name: 'Все разделы' });
     expect(within(sheet).getAllByRole('link')).toHaveLength(MORE_SECTIONS.length);
-    // «Ижро» уже открывается; его соседи по блоку 2 — ещё нет.
+    // «Ижро» и «Взаимодействие» уже открываются; их соседи по блоку 2 — ещё нет.
     expect(within(sheet).getByRole('link', { name: /Ижро/ })).not.toHaveTextContent('блок');
-    expect(within(sheet).getByRole('link', { name: /Взаимодействие/ })).toHaveTextContent('блок 2');
+    expect(within(sheet).getByRole('link', { name: /Взаимодействие/ })).not.toHaveTextContent(
+      'блок',
+    );
+    expect(within(sheet).getByRole('link', { name: /Доклады/ })).toHaveTextContent('блок 2');
   });
 
   it('«Поиск» честно говорит, что его нет в плане блоков (V19)', () => {
