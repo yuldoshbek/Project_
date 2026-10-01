@@ -32,6 +32,7 @@ from app.repos.models.ijro import (
     IjroOrgAlias,
     IjroPersonAlias,
 )
+from app.repos.models.interaction import Agreement, Letter
 from app.repos.models.jobs import JobRun
 from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
@@ -43,6 +44,7 @@ from app.repos.models.tasks import Task
 
 __all__ = [
     "AccessLink",
+    "Agreement",
     "AuditLog",
     "Auditable",
     "Capture",
@@ -58,6 +60,7 @@ __all__ = [
     "JobRun",
     "LeaderDecision",
     "LeaderQuestion",
+    "Letter",
     "Milestone",
     "Notification",
     "Organization",

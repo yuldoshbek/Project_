@@ -107,7 +107,7 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import demo_ijro
+from app import demo_ijro, demo_interaction
 from app.domain.capture import CaptureKind
 from app.domain.clock import local_date
 from app.domain.cycles import CycleRule, horizon
@@ -1632,6 +1632,18 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         for spec in CYCLES
     )
 
+    # Письма и соглашения — после проектов и поручений: они на них ссылаются.
+    letters = await demo_interaction.load(
+        session,
+        now=now,
+        zone=zone,
+        people=people,
+        partner=partner,
+        center=center,
+        projects=projects,
+        assignments=assignments,
+    )
+
     users = dict((await session.execute(select(User.role, User.id))).tuples().all())
     captures = []
     for note in CAPTURES:
@@ -1665,6 +1677,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         "cycles": len(CYCLES),
         "captures": len(CAPTURES),
         "ijro_assignments": len(assignments),
+        "letters": letters,
     }
 
 

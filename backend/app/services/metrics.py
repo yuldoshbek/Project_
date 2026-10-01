@@ -51,6 +51,14 @@ from app.domain.ijro_control import Line as IjroLine
 from app.domain.ijro_control import WallDocument as IjroWall
 from app.domain.ijro_control import answers as ijro_answers_of
 from app.domain.ijro_control import wall as ijro_wall_of
+from app.domain.interaction import (
+    DEFAULT_SLEEPING_DAYS,
+    AgreementLine,
+    LetterLine,
+    OrganizationSpeed,
+)
+from app.domain.interaction import Answer as InteractionAnswer
+from app.domain.interaction import answers as interaction_answers_of
 from app.domain.programs import PACE_WINDOW_DAYS, Pace, days_left, in_window, window_start
 from app.domain.programs import pace as pace_of
 from app.domain.projects import (
@@ -81,6 +89,7 @@ DEFAULT_QUIET_DAYS = 14
 DEFAULT_MIN_CLOSED_FOR_PACE = 10
 DEFAULT_HOT_DAY_THRESHOLD = 3
 DEFAULT_HOT_WINDOW_DAYS = 28
+DEFAULT_MIN_LETTERS_FOR_SPEED = 5
 
 MOVES_PERIOD_DAYS = 30
 """«Держим ли мы свои сроки?» — за месяц: короче не видно привычки переносить, длиннее
@@ -100,6 +109,8 @@ class Thresholds:
     min_closed_for_pace: int = DEFAULT_MIN_CLOSED_FOR_PACE
     hot_day_threshold: int = DEFAULT_HOT_DAY_THRESHOLD
     hot_window_days: int = DEFAULT_HOT_WINDOW_DAYS
+    sleeping_days: int = DEFAULT_SLEEPING_DAYS
+    min_letters_for_speed: int = DEFAULT_MIN_LETTERS_FOR_SPEED
 
 
 async def load_thresholds(session: AsyncSession) -> Thresholds:
@@ -116,6 +127,10 @@ async def load_thresholds(session: AsyncSession) -> Thresholds:
         ),
         hot_day_threshold=int(stored.get(SettingKey.HOT_DAY_THRESHOLD, DEFAULT_HOT_DAY_THRESHOLD)),
         hot_window_days=int(stored.get(SettingKey.HOT_WINDOW_DAYS, DEFAULT_HOT_WINDOW_DAYS)),
+        sleeping_days=int(stored.get(SettingKey.SLEEPING_DAYS, DEFAULT_SLEEPING_DAYS)),
+        min_letters_for_speed=int(
+            stored.get(SettingKey.MIN_LETTERS_FOR_SPEED, DEFAULT_MIN_LETTERS_FOR_SPEED)
+        ),
     )
 
 
@@ -348,7 +363,7 @@ async def ladder(
 ) -> Ladder:
     """Лестница внимания по всем разделам — то, что показывает Пульт."""
     limits = thresholds or await load_thresholds(session)
-    items = await snapshot.load_items(session, zone=zone)
+    items = await snapshot.load_items(session, zone=zone, sleeping_days=limits.sleeping_days)
     return build_ladder(
         items, today=today, burn_days=limits.burn_days, quiet_days=limits.quiet_days
     )
@@ -365,6 +380,20 @@ def steps(items: Iterable[Item], *, today: date, thresholds: Thresholds) -> dict
         items, today=today, burn_days=thresholds.burn_days, quiet_days=thresholds.quiet_days
     )
     return {row.entity_id: row for row in ladder.rows}
+
+
+def interaction_answers(
+    letters: Sequence[LetterLine],
+    speeds: Sequence[OrganizationSpeed],
+    agreements: Sequence[AgreementLine],
+    *,
+    today: date,
+    thresholds: Thresholds,
+) -> list[InteractionAnswer]:
+    """Четыре ответа «Взаимодействия» (ТЗ 5) — по строкам в порядке лестницы."""
+    return interaction_answers_of(
+        letters, speeds, agreements, today=today, min_letters=thresholds.min_letters_for_speed
+    )
 
 
 def ijro_limits(thresholds: Thresholds) -> IjroLimits:
@@ -526,7 +555,7 @@ async def what_if(
     изменённых сроков, а не второго расчёта.
     """
     limits = thresholds or await load_thresholds(session)
-    items = await snapshot.load_items(session, zone=zone)
+    items = await snapshot.load_items(session, zone=zone, sleeping_days=limits.sleeping_days)
 
     def count(rows: Iterable[Item]) -> Ladder:
         return build_ladder(

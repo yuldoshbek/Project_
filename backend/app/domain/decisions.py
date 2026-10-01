@@ -87,6 +87,8 @@ class DecisionTarget(StrEnum):
     TASK = "task"
     MILESTONE = "milestone"
     IJRO_ASSIGNMENT = "ijro_assignment"
+    LETTER = "letter"
+    AGREEMENT = "agreement"
 
 
 def is_overdue(*, due_on: date | None, state: DecisionState, today: date) -> bool:
