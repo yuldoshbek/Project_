@@ -232,6 +232,26 @@ class TestPreviewAndApply:
         (bad,) = by_class(preview, "unrecognized")
         assert bad["raw"].startswith("5")
 
+    async def test_a_spelling_equal_to_the_full_name_is_recognized(
+        self, session: AsyncSession, assistant_api: AsyncClient
+    ) -> None:
+        """Буква в букву с ФИО — само; другой инициал — к человеку (ADR-0025, CLAUDE.md)."""
+        await make_person(session, "Юсупова Д.")
+        await make_person(session, "Арибжанов А.")
+        content = build(
+            TITLE,
+            [
+                row(1, DOCUMENT, ["8-банд. Саккизинчи."], "10 июль", ["Юсупова  Д."]),
+                row(2, DOCUMENT, ["9-банд. Тўққизинчи."], "11 июль", ["Ш. Арибжанов"]),
+            ],
+        )
+        preview = (await upload(assistant_api, content)).json()
+        unmatched = {each["band"]: each["unmatched"] for each in by_class(preview, "new")}
+
+        assert unmatched["8-банд"] is None
+        assert unmatched["9-банд"] is not None
+        assert unmatched["9-банд"]["raw"] == "Ш. Арибжанов"
+
     async def test_the_leader_does_not_upload(self, leader_api: AsyncClient) -> None:
         response = await upload(leader_api, table())
         assert response.status_code == 403

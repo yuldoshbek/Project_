@@ -178,8 +178,8 @@ async def preview(
     registry = await read_model.import_registry(session)
     comparison = compare(parsed.rows, [each.existing for each in registry], source=chosen.value)
     by_id = {each.existing.id: each for each in registry}
-    aliases = await read_model.person_aliases(session)
     people = await read_model.people(session)
+    aliases = await _people_keys(session, people)
     names = dict(people)
 
     def unmatched(change: Change) -> dict[str, Any] | None:
@@ -297,6 +297,29 @@ def _bad(row: BadRow) -> dict[str, Any]:
     }
 
 
+async def _people_keys(
+    session: AsyncSession, people: list[tuple[uuid.UUID, str]]
+) -> dict[str, uuid.UUID]:
+    """Написание → сотрудник: подтверждённые псевдонимы и ФИО справочника буква в букву.
+
+    Совпадение с ФИО после механического приведения (пробелы, `И.Фамилия`, латинские
+    омоглифы) сводится само — это ровно та граница, которую ADR-0025 отводит
+    автоматике. Всё, что сложнее («Ш. Арибжанов» против «А. Арибжанова»), подтверждает
+    человек. Два сотрудника с одним написанием — не совпадение, а вопрос к человеку.
+    """
+    keys: dict[str, uuid.UUID] = {}
+    taken: set[str] = set()
+    for person_id, name in people:
+        key = normalize_person_name(name)
+        if key in keys:
+            taken.add(key)
+        keys[key] = person_id
+    for key in taken:
+        del keys[key]
+    keys.update(await read_model.person_aliases(session))
+    return keys
+
+
 class _Resolver:
     """Сотрудники и ведомства по написанию — псевдонимы, справочник, новые ведомства."""
 
@@ -345,7 +368,8 @@ async def _resolver(session: AsyncSession) -> _Resolver:
         if short:
             organizations.setdefault(normalize_organization(short), org_id)
     organizations.update(await read_model.organization_aliases(session))
-    return _Resolver(session, await read_model.person_aliases(session), organizations)
+    people = await read_model.people(session)
+    return _Resolver(session, await _people_keys(session, people), organizations)
 
 
 def _source_fields(assignment: IjroAssignment, data: dict[str, Any]) -> bool:
