@@ -29,10 +29,12 @@ from app.domain.ijro import (
     OPEN_STATES,
     DuePrecision,
     ExtensionKind,
+    IjroState,
     ImportState,
     LifeSource,
 )
 from app.domain.ijro_control import LifeSign, sign_of_life
+from app.domain.ijro_import import Existing
 from app.repos.models import (
     Comment,
     IjroAssignment,
@@ -40,6 +42,8 @@ from app.repos.models import (
     IjroDocument,
     IjroExtension,
     IjroImport,
+    IjroOrgAlias,
+    IjroPersonAlias,
     Organization,
     Person,
     Task,
@@ -470,3 +474,101 @@ async def extension_history(
         )
         for extension, table_on in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Привоз таблицы
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RegistryRow:
+    """Строка реестра для сверки с таблицей: поля источника и сопоставленный сотрудник."""
+
+    existing: Existing
+    document_code: str
+    responsible_person_id: uuid.UUID | None
+
+
+async def import_registry(session: AsyncSession) -> list[RegistryRow]:
+    """Весь реестр одним запросом — с ключом повтора (документ, пункт, срок)."""
+    rows = await session.execute(
+        select(
+            IjroAssignment.id,
+            IjroDocument.code_norm,
+            IjroDocument.number_raw,
+            IjroDocument.source,
+            IjroAssignment.band,
+            IjroAssignment.due_on,
+            IjroAssignment.content,
+            IjroAssignment.mechanism,
+            IjroAssignment.responsible_raw,
+            IjroAssignment.responsible_person_id,
+            IjroAssignment.state,
+        ).join(IjroDocument, IjroDocument.id == IjroAssignment.document_id)
+    )
+    return [
+        RegistryRow(
+            existing=Existing(
+                id=assignment_id,
+                code_norm=code_norm,
+                band=band,
+                due_on=due_on,
+                content=content,
+                mechanism=mechanism,
+                responsible_raw=responsible_raw or "",
+                source=source,
+                removed=state == IjroState.REMOVED_FROM_CONTROL.value,
+            ),
+            document_code=number_raw,
+            responsible_person_id=person_id,
+        )
+        for (
+            assignment_id,
+            code_norm,
+            number_raw,
+            source,
+            band,
+            due_on,
+            content,
+            mechanism,
+            responsible_raw,
+            person_id,
+            state,
+        ) in rows
+    ]
+
+
+async def person_aliases(session: AsyncSession) -> dict[str, uuid.UUID]:
+    rows = await session.execute(select(IjroPersonAlias.alias_norm, IjroPersonAlias.person_id))
+    return dict(rows.tuples().all())
+
+
+async def organization_keys(session: AsyncSession) -> list[tuple[uuid.UUID, str, str | None]]:
+    """Ведомства справочника — имя и короткое имя — для сопоставления головного исполнителя."""
+    rows = await session.execute(
+        select(Organization.id, Organization.name, Organization.short_name)
+    )
+    return list(rows.tuples().all())
+
+
+async def organization_aliases(session: AsyncSession) -> dict[str, uuid.UUID]:
+    rows = await session.execute(select(IjroOrgAlias.alias_norm, IjroOrgAlias.organization_id))
+    return dict(rows.tuples().all())
+
+
+async def applied_import(session: AsyncSession, sha256: str) -> IjroImport | None:
+    """Применённая партия с тем же файлом — повтор ничего не меняет (ТЗ 7)."""
+    found: IjroImport | None = await session.scalar(
+        select(IjroImport).where(
+            IjroImport.sha256 == sha256, IjroImport.state == ImportState.APPLIED.value
+        )
+    )
+    return found
+
+
+async def document_by_code(session: AsyncSession, code_norm: str) -> IjroDocument | None:
+    found: IjroDocument | None = await session.scalar(
+        select(IjroDocument).where(IjroDocument.code_norm == code_norm)
+    )
+    return found

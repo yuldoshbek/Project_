@@ -6,7 +6,12 @@
 и `/questions` с `target_type = ijro_assignment`: кнопки те же, что на Пульте.
 
 Роль подписывает действие (V35): отметку и реплику ставят оба (`CurrentUser`); этап,
-проблему, «запрошено продление», сопоставление ФИО и задачу — помощник (`Assistant`).
+проблему, «запрошено продление», сопоставление ФИО, задачу и загрузку таблицы — помощник
+(`Assistant`).
+
+**Таблица приходит телом запроса**, а не формой `multipart`: файл в сотни килобайт сервер
+всё равно читает целиком, а `python-multipart` снят вместе с прежним стеком
+(`pyproject.toml`). Имя файла и источник — параметрами адреса.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import status
+from fastapi import Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep, is_demo
@@ -25,10 +30,18 @@ from app.api.security import Assistant, CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.clock import now_utc
 from app.domain.comments import BODY_MAX_LENGTH
-from app.domain.ijro import DuePrecision, IjroSource, IjroState, LifeSource, MarkKind
+from app.domain.ijro import (
+    DuePrecision,
+    ExtensionKind,
+    IjroSource,
+    IjroState,
+    LifeSource,
+    MarkKind,
+)
 from app.domain.ijro_control import TEXT_MAX_LENGTH
 from app.domain.people import Role
 from app.services import ijro as service
+from app.services import ijro_import as importer
 
 router = transactional_router(tags=["ижро"])
 
@@ -608,3 +621,157 @@ async def create_task(
         session, user=user, assignment_id=assignment_id, now=now_utc(), zone=_zone(settings)
     )
     return CreatedTaskOut(id=created.id, code=created.code)
+
+
+# --- привоз таблицы (ТЗ 7) ---
+
+
+class DiffOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    field: Literal["content", "mechanism", "responsible_raw"]
+    from_: str = Field(alias="from", serialization_alias="from")
+    to: str
+
+
+class DueMoveOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: date = Field(alias="from", serialization_alias="from")
+    to: date
+    suggested_kind: ExtensionKind
+
+
+class UnmatchedOut(BaseModel):
+    raw: str
+    suggestions: list[PersonOut]
+
+
+class PreviewRowOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    class_: ChangeClass = Field(alias="class", serialization_alias="class")
+    assignment_id: uuid.UUID | None
+    document_code: str | None
+    band: str | None
+    content: str
+    diff: DiffOut | None
+    due_move: DueMoveOut | None
+    unmatched: UnmatchedOut | None
+    raw: str | None
+
+
+class PreviewOut(BaseModel):
+    batch_id: uuid.UUID
+    file: str
+    source: IjroSource
+    table_year: int
+    table_on: date
+    counts: dict[ChangeClass, int]
+    rows: list[PreviewRowOut]
+    already_applied_on: date | None
+
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@router.post(
+    "/ijro/imports",
+    response_model=PreviewOut,
+    response_model_by_alias=True,
+    status_code=status.HTTP_201_CREATED,
+    summary="Предпросмотр таблицы Word: классы изменений, без записи в реестр",
+    openapi_extra={
+        "requestBody": {"content": {DOCX: {"schema": {"type": "string", "format": "binary"}}}}
+    },
+)
+async def create_import(
+    request: Request,
+    user: Assistant,
+    session: SessionDep,
+    settings: SettingsDep,
+    file: Annotated[str, Query(min_length=1, max_length=400)],
+    source: IjroSource | None = None,
+    table_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+) -> PreviewOut:
+    view = await importer.preview(
+        session,
+        user=user,
+        content=await request.body(),
+        filename=file,
+        source=source,
+        table_year=table_year,
+        now=now_utc(),
+        zone=_zone(settings),
+    )
+    return PreviewOut.model_validate(asdict(view))
+
+
+class ApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    due_moves: dict[str, ExtensionKind] = Field(default_factory=dict)
+    aliases: dict[str, uuid.UUID] = Field(default_factory=dict)
+    removed: list[str] = Field(default_factory=list)
+
+
+class AppliedOut(BaseModel):
+    outcome: Literal["applied"]
+    created: int
+    changed: int
+    vanished: int
+    removed: int
+    extensions: int
+    pending_extensions: int
+
+
+class AlreadyAppliedOut(BaseModel):
+    outcome: Literal["already_applied"]
+    applied_on: date
+
+
+class NoChangesOut(BaseModel):
+    outcome: Literal["no_changes"]
+
+
+ApplyResult = Annotated[
+    AppliedOut | AlreadyAppliedOut | NoChangesOut, Field(discriminator="outcome")
+]
+
+
+@router.post(
+    "/ijro/imports/{batch_id}/apply",
+    response_model=ApplyResult,
+    summary="Применить таблицу: поля источника и подтверждённые переносы",
+)
+async def apply_import(
+    batch_id: uuid.UUID,
+    body: ApplyRequest,
+    user: Assistant,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> Any:
+    view = await importer.apply(
+        session,
+        user=user,
+        batch_id=batch_id,
+        choices=importer.Choices(
+            due_moves=body.due_moves, aliases=body.aliases, removed=body.removed
+        ),
+        now=now_utc(),
+        zone=_zone(settings),
+    )
+    if view.outcome == "already_applied":
+        return AlreadyAppliedOut(outcome="already_applied", applied_on=view.applied_on)
+    if view.outcome == "no_changes":
+        return NoChangesOut(outcome="no_changes")
+    return AppliedOut(
+        outcome="applied",
+        created=view.created,
+        changed=view.changed,
+        vanished=view.vanished,
+        removed=view.removed,
+        extensions=view.extensions,
+        pending_extensions=view.pending_extensions,
+    )
