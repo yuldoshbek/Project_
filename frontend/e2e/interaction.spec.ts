@@ -1,6 +1,6 @@
 /**
- * Взаимодействие (`sections/interaction/`) — экран на утверждение, на вымышленных данных
- * (`demo.ts`).
+ * Взаимодействие (`sections/interaction/`) — экран, утверждённый 01.10.2026, на настоящем API
+ * (`/api/v1/interaction…`) и вымышленных данных базы (`backend/app/demo_interaction.py`).
  *
  * Что проверяется запуском:
  *
@@ -10,7 +10,8 @@
  * 3. ноутбук: таблица писем, организации со скоростью ответа, карточка организации;
  * 4. соглашения со «спящими».
  *
- * Снимки — в папку отчёта блока 2. База не меняется: раздел пока живёт в памяти вкладки.
+ * Снимки — в папку отчёта блока 2. Оценка ответа пишется в базу, поэтому сценарий проверяет
+ * переключение, а не заранее известное состояние: повторный прогон не должен падать.
  */
 
 import { expect, test, type Page } from '@playwright/test';
@@ -104,11 +105,10 @@ test('телефон руководителя: письма списком, ка
   await page.getByRole('button', { name: /О совместной рабочей группе по мониторингу/ }).click();
   const card = page.getByRole('dialog', { name: 'Карточка письма' });
   await expect(card.getByRole('heading', { name: 'Как ответили?' })).toBeVisible();
-  await card.getByRole('button', { name: 'по существу' }).click();
-  await expect(card.getByRole('button', { name: 'по существу' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  const substance = card.getByRole('button', { name: 'по существу' });
+  const before = await substance.getAttribute('aria-pressed');
+  await substance.click();
+  await expect(substance).toHaveAttribute('aria-pressed', before === 'true' ? 'false' : 'true');
   await touchTargets(page, '[role="dialog"]');
   await noOverflow(page);
   await page.screenshot({
@@ -134,7 +134,7 @@ test('ноутбук: письма таблицей, организации и �
     animations: 'disabled',
   });
 
-  await page.getByRole('button', { name: /^Минэкологии/ }).click();
+  await page.getByRole('button', { name: /^Министерство экологии/ }).click();
   const card = page.getByRole('dialog', { name: 'Карточка организации' });
   await expect(card.getByText('медиана 10 дн по 6 письмам')).toBeVisible();
   await page.screenshot({

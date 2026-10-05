@@ -1,9 +1,11 @@
 /**
- * Вымышленный сервер раздела «Взаимодействие» — пока экран не утверждён и API нет.
+ * Сервер «Взаимодействия» в памяти — для тестов экрана.
  *
- * Правило блока: сначала экран на вымышленных данных, заказчик смотрит, потом API под
- * утверждённый экран (CLAUDE.md, цикл блока). Изменённое во вкладке живёт до перезагрузки.
- * После утверждения файл становится сервером тестов, а данные переезжают в `app/demo.py`.
+ * Был вымышленным сервером экрана на утверждение (01.10.2026); после утверждения API написан
+ * под него (`backend/app/api/routes/interaction.py`), данные переехали в
+ * `backend/app/demo_interaction.py`, а этот файл отвечает на те же пути в тестах (`handle`).
+ * Сам сервер проверяют `backend/tests/test_interaction.py`; здесь — что экран делает с
+ * ответами.
  *
  * **Одни данные — все числа.** Ответы вопросов, списки, карточки считаются из одного набора
  * записей одними функциями (ТЗ 5, инвариант 2). Настоящий сервер считает то же в
@@ -513,7 +515,7 @@ interface StoredAgreement extends Omit<
   org_id: string;
 }
 
-export class DemoInteraction {
+export class FakeInteraction {
   private readonly now: () => Date;
   private letters: Letter[] = [];
   private agreements: StoredAgreement[] = [];
@@ -817,6 +819,7 @@ export class DemoInteraction {
       organizations,
       agreements,
       people: PEOPLE,
+      choices: ORGANIZATIONS.map((spec) => this.ref(spec.id)),
       is_demo: true,
     };
   }
@@ -893,4 +896,59 @@ export class DemoInteraction {
   }
 }
 
-export const demoInteraction = new DemoInteraction();
+type Reply = [number, unknown];
+
+/**
+ * Ответ на запрос экрана: те же пути и роли, что у сервера. `null` — путь не раздела, и
+ * отвечает следующая подмена теста.
+ */
+export function handle(
+  server: FakeInteraction,
+  method: string,
+  path: string,
+  body: Record<string, unknown> | undefined,
+  role: 'assistant' | 'leader',
+): Reply | null {
+  const BASE = '/api/v1/interaction';
+  if (!path.startsWith(BASE)) return null;
+  const rest = path.slice(BASE.length).split('/').filter(Boolean);
+  const input = body ?? {};
+  const refused: Reply = [403, { detail: 'Это действие другой роли' }];
+  try {
+    if (method === 'GET' && rest.length === 0) return [200, server.view()];
+    if (method === 'GET' && rest[0] === 'organizations' && rest[1]) {
+      return [200, server.organization(rest[1])];
+    }
+    if (rest[0] === 'letters') {
+      if (method === 'POST' && rest.length === 1) {
+        if (role !== 'assistant') return refused;
+        return [201, { id: server.add(input as unknown as NewLetter) }];
+      }
+      const id = String(rest[1]);
+      if (rest[2] === 'answer') {
+        if (role !== 'assistant') return refused;
+        server.answer(id, {
+          on: String(input.on),
+          number: (input.number as string | null) ?? null,
+        });
+        return [204, undefined];
+      }
+      if (rest[2] === 'rating') {
+        if (role !== 'leader') return refused;
+        server.rate(id, (input.rating as Rating | null) ?? null);
+        return [204, undefined];
+      }
+    }
+    if (rest[0] === 'agreements' && rest[2] === 'next-step') {
+      if (role !== 'assistant') return refused;
+      server.setNextStep(String(rest[1]), {
+        next_step: String(input.next_step ?? ''),
+        next_step_on: (input.next_step_on as string | null) ?? null,
+      });
+      return [204, undefined];
+    }
+    return [404, { detail: `нет пути ${method} ${path}` }];
+  } catch (error) {
+    return [422, { detail: error instanceof Error ? error.message : String(error) }];
+  }
+}

@@ -129,7 +129,11 @@ function Rating({ letter, viewer }: { letter: LetterRow; viewer: Role }) {
               aria-pressed={letter.rating === rating}
               disabled={rate.isPending}
               onClick={() =>
-                rate.mutate({ id: letter.id, rating: letter.rating === rating ? null : rating })
+                rate.mutate({
+                  id: letter.id,
+                  rating: letter.rating === rating ? null : rating,
+                  version: letter.version,
+                })
               }
             >
               {t(`interaction.ratings.${rating}`)}
@@ -163,7 +167,12 @@ function AnswerForm({ letter, today }: { letter: LetterRow; today: string }) {
         className="flex flex-col gap-2 sm:flex-row sm:items-end"
         onSubmit={(event) => {
           event.preventDefault();
-          answer.mutate({ id: letter.id, on, number: number.trim() || null });
+          answer.mutate({
+            id: letter.id,
+            on,
+            number: number.trim() || null,
+            version: letter.version,
+          });
         }}
       >
         <label className="flex flex-col gap-1 text-xs text-ink-muted">

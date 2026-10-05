@@ -600,6 +600,11 @@ export class FakeManagement {
         return AHEAD.filter(
           ([inDays, deadlines]) => inDays < value && deadlines >= this.value('hot_day_threshold'),
         ).length;
+      // Пороги «Взаимодействия» экран Управления в тестах не правит: числа считает сервер
+      // (`backend/app/services/management.py`).
+      case 'sleeping_days':
+      case 'min_letters_for_speed':
+        return null;
     }
   }
 

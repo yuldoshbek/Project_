@@ -290,7 +290,7 @@ function LetterForm({ view, onDone }: { view: InteractionView; onDone: () => voi
   const today = view.as_of.slice(0, 10);
   const [form, setForm] = useState<NewLetter>({
     direction: 'outgoing',
-    organization_id: view.organizations[0]?.id ?? '',
+    organization_id: view.choices[0]?.id ?? '',
     subject: '',
     number: null,
     sent_on: today,
@@ -328,7 +328,7 @@ function LetterForm({ view, onDone }: { view: InteractionView; onDone: () => voi
             value={form.organization_id}
             onChange={(event) => set({ organization_id: event.target.value })}
           >
-            {view.organizations.map((each) => (
+            {view.choices.map((each) => (
               <option key={each.id} value={each.id}>
                 {orgName(each)}
               </option>

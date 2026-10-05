@@ -147,7 +147,7 @@ function NextStepForm({ row, onDone }: { row: Agreement; onDone: () => void }) {
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate(
-          { id: row.id, next_step: text, next_step_on: on || null },
+          { id: row.id, next_step: text, next_step_on: on || null, version: row.version },
           { onSuccess: onDone },
         );
       }}

@@ -1,22 +1,22 @@
 /**
- * Правила вымышленного сервера «Взаимодействия» — те же, что посчитает настоящий: состояние
+ * Правила сервера «Взаимодействия» в памяти — те же, что считает настоящий: состояние
  * и ступень письма, скорость ответа (только при пяти письмах), «спящие» соглашения, ответы
  * четырёх вопросов и их списки. Главное обещание — одно вычисление на число и его список.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { DemoInteraction } from './demo';
+import { FakeInteraction } from './test-server';
 import type { QuestionAnswer } from './model';
 
 const NOW = new Date('2026-10-01T07:00:00Z');
 
 function server() {
-  return new DemoInteraction(() => NOW);
+  return new FakeInteraction(() => NOW);
 }
 
 function answer<K extends QuestionAnswer['key']>(
-  ijro: DemoInteraction,
+  ijro: FakeInteraction,
   key: K,
 ): Extract<QuestionAnswer, { key: K }> {
   const found = ijro.view().questions.find((each) => each.key === key);
