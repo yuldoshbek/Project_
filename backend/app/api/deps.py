@@ -13,6 +13,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.push import PushSender
+from app.adapters.storage import FileStorage, LocalStorage, NoStorage, S3Storage
 from app.api.transaction import SESSION_STATE_ATTRIBUTE
 from app.repos.database import new_session
 from app.settings import Settings
@@ -67,9 +68,35 @@ def get_push(request: Request) -> PushSender:
     return cast(PushSender, push)
 
 
+def get_storage(request: Request) -> FileStorage:
+    """Хранилище файлов по настройкам приложения (`Settings.storage_kind`, ADR-0009).
+
+    Тесты ставят своё на `app.state.storage`; иначе — по конфигу: диск, S3 или «не настроено».
+    """
+    storage = getattr(request.app.state, "storage", None)
+    if storage is not None:
+        return cast(FileStorage, storage)
+    settings = get_app_settings(request)
+    kind = settings.storage_kind
+    if kind == "local":
+        return LocalStorage(settings.storage_dir)
+    if kind == "s3" and settings.s3_endpoint and settings.s3_bucket and settings.s3_access_key:
+        assert settings.s3_secret_key is not None
+        return S3Storage(
+            endpoint=settings.s3_endpoint,
+            bucket=settings.s3_bucket,
+            region=settings.s3_region,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key.get_secret_value(),
+            path_style=settings.s3_path_style,
+        )
+    return NoStorage()
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 PushDep = Annotated[PushSender, Depends(get_push)]
+StorageDep = Annotated[FileStorage, Depends(get_storage)]
 
 
 def is_demo(settings: Settings) -> bool:

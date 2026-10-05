@@ -39,7 +39,7 @@ from app.repos.models import (
     Project,
 )
 from app.repos.preparations import PrepRecord, RequestRecord
-from app.services import metrics
+from app.services import files, metrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +249,7 @@ async def card(
         raise NotFoundError("Подготовка не найдена: её могли удалить")
     row = rows[0]
     return _public(row) | {
+        "versions": await files.versions(session, preparation_id=preparation_id, zone=zone),
         "items": [
             {"id": each.id, "text": each.text, "is_done": each.is_done, "version": each.version}
             for each in row["_items"]

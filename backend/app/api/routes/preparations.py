@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from fastapi import status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.deps import SessionDep, SettingsDep, is_demo
+from app.api.deps import SessionDep, SettingsDep, StorageDep, is_demo
 from app.api.security import Assistant, CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.clock import local_date, now_utc
@@ -28,7 +28,9 @@ from app.domain.preparations import (
     PreparationKind,
     PrepStage,
     SourceKind,
+    VersionState,
 )
+from app.services import files
 from app.services import preparations as service
 
 router = transactional_router(tags=["доклады"])
@@ -108,9 +110,38 @@ class InfoRequestOut(BaseModel):
     version: int
 
 
+class FileOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    size: int
+    content_type: str
+
+
+class SlideCommentOut(BaseModel):
+    id: uuid.UUID
+    slide: int
+    text: str
+    author: Literal["assistant", "leader"] | None
+    created_at: datetime
+    fixed_in: int | None
+    version: int
+
+
+class VersionOut(BaseModel):
+    id: uuid.UUID
+    number: int
+    state: VersionState
+    file: FileOut
+    uploaded_at: datetime
+    uploaded_by: Literal["assistant", "leader"] | None
+    comments: list[SlideCommentOut]
+    version: int
+
+
 class PreparationCardOut(PreparationOut):
     items: list[ItemOut]
     info_requests: list[InfoRequestOut]
+    versions: list[VersionOut]
 
 
 class NearestOut(BaseModel):
@@ -340,4 +371,139 @@ async def receive_request(
         received_on=body.received_on,
         version=body.version,
         today=local_date(now_utc(), ZoneInfo(settings.timezone)),
+    )
+
+
+# --- версии презентации и замечания на слайд (ТЗ 3.5) ---
+
+
+class NewVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=120)
+    size: int = Field(gt=0)
+
+
+class UploadOut(BaseModel):
+    url: str
+    method: str
+    headers: dict[str, str]
+
+
+class StartedVersionOut(BaseModel):
+    version_id: uuid.UUID
+    file_id: uuid.UUID
+    upload: UploadOut
+
+
+@router.post(
+    "/preparations/{preparation_id}/versions",
+    response_model=StartedVersionOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Новая версия презентации: ссылка на загрузку файла",
+)
+async def start_version(
+    preparation_id: uuid.UUID,
+    body: NewVersionRequest,
+    user: Assistant,
+    session: SessionDep,
+    storage: StorageDep,
+) -> StartedVersionOut:
+    started = await files.start_version(
+        session,
+        user=user,
+        storage=storage,
+        preparation_id=preparation_id,
+        name=body.name,
+        content_type=body.content_type,
+        size=body.size,
+    )
+    return StartedVersionOut(
+        version_id=started.version_id,
+        file_id=started.file_id,
+        upload=UploadOut(
+            url=started.upload.url, method=started.upload.method, headers=started.upload.headers
+        ),
+    )
+
+
+class VersionStateRequest(BaseModel):
+    state: VersionState
+    version: int
+
+
+@router.put(
+    "/preparations/{preparation_id}/versions/{version_id}/state",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Статус версии: на просмотре, на доработке, принята",
+)
+async def update_version_state(
+    preparation_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: VersionStateRequest,
+    user: CurrentUser,
+    session: SessionDep,
+) -> None:
+    await files.set_version_state(
+        session,
+        preparation_id=preparation_id,
+        version_id=version_id,
+        state=body.state,
+        version=body.version,
+    )
+
+
+class CommentRequest(BaseModel):
+    slide: int = Field(ge=1, le=999)
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@router.post(
+    "/preparations/{preparation_id}/versions/{version_id}/comments",
+    response_model=Created,
+    status_code=status.HTTP_201_CREATED,
+    summary="Замечание на слайд",
+)
+async def create_comment(
+    preparation_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: CommentRequest,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Created:
+    comment_id = await files.add_comment(
+        session,
+        user=user,
+        preparation_id=preparation_id,
+        version_id=version_id,
+        slide=body.slide,
+        text=body.text,
+    )
+    return Created(id=comment_id)
+
+
+class FixRequest(BaseModel):
+    fixed: bool
+    version: int
+
+
+@router.put(
+    "/preparations/{preparation_id}/comments/{comment_id}/fixed",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Замечание исправлено — в последней версии",
+)
+async def fix_comment(
+    preparation_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    body: FixRequest,
+    user: Assistant,
+    session: SessionDep,
+) -> None:
+    await files.fix_comment(
+        session,
+        preparation_id=preparation_id,
+        comment_id=comment_id,
+        fixed=body.fixed,
+        version=body.version,
     )

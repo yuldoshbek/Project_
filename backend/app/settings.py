@@ -106,6 +106,32 @@ class Settings(BaseSettings):
     # (`app.seed`). Прежние переменные ORBITA_WARN_DAYS, ORBITA_QUIET_DAYS и
     # ORBITA_SUMMARY_AT, оставшиеся в чьём-то .env, не читаются — `extra="ignore"`.
 
+    # --- Файлы (порт FileStorage, ADR-0009) ---
+    storage: Literal["local", "s3", "none"] | None = None
+    """Где лежат файлы. Пусто — в разработке и тестах на диске (`storage_dir`), в облаке —
+    нигде, пока не заданы ключи S3: диск функции Vercel только для чтения, и файл, «сохранённый»
+    туда, пропал бы со следующим запуском. Честное «хранилище не настроено» лучше."""
+
+    storage_dir: Path = REPO_ROOT / "uploads"
+    s3_endpoint: str | None = None
+    """Адрес S3-совместимого хранилища: AWS (Франкфурт), Cloudflare R2, сервер агентства."""
+
+    s3_region: str = "auto"
+    s3_bucket: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: SecretStr | None = None
+    s3_path_style: bool = True
+    """`https://хост/корзина/ключ`, а не `https://корзина.хост/ключ`: так работают R2 и
+    S3-совместимые серверы; у AWS — тоже, для корзин без точек в имени."""
+
+    @property
+    def storage_kind(self) -> Literal["local", "s3", "none"]:
+        if self.storage is not None:
+            return self.storage
+        if self.s3_bucket and self.s3_endpoint and self.s3_access_key and self.s3_secret_key:
+            return "s3"
+        return "local" if self.env in ("development", "test") else "none"
+
     # --- Наблюдаемость ---
     log_level: str = "INFO"
     # В разработке читаемый вывод, в остальных случаях JSON для сбора логов.

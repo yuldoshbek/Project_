@@ -23,6 +23,7 @@ from app.repos.models.dictionaries import (
     TaskStatusRef,
     TaskTypeRef,
 )
+from app.repos.models.files import PresentationVersion, SlideComment, StoredFile
 from app.repos.models.ijro import (
     IjroAssignment,
     IjroControlMark,
@@ -69,6 +70,7 @@ __all__ = [
     "Person",
     "Preparation",
     "PreparationItem",
+    "PresentationVersion",
     "Project",
     "ProjectOrganization",
     "ProjectStatusRef",
@@ -79,6 +81,8 @@ __all__ = [
     "RoundMark",
     "Session",
     "Setting",
+    "SlideComment",
+    "StoredFile",
     "Task",
     "TaskChecklistItem",
     "TaskStatusRef",

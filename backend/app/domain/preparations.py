@@ -49,6 +49,17 @@ class Addressee(StrEnum):
     OTHER = "other"
 
 
+class VersionState(StrEnum):
+    """Статус версии презентации (ТЗ 3.5): на просмотре, на доработке, принята."""
+
+    REVIEW = "review"
+    REWORK = "rework"
+    ACCEPTED = "accepted"
+
+
+COMMENT_MAX_LENGTH = 2000
+
+
 class RequestState(StrEnum):
     """Состояние запроса сведений — считается, не хранится (инвариант 1)."""
 
