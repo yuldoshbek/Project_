@@ -101,9 +101,38 @@ export interface PreparationRow {
   version: number;
 }
 
+/** Статус версии презентации (ТЗ 3.5). */
+export type VersionState = 'review' | 'rework' | 'accepted';
+
+export const VERSION_STATES: readonly VersionState[] = ['review', 'rework', 'accepted'];
+
+export interface SlideComment {
+  id: string;
+  slide: number;
+  text: string;
+  author: 'assistant' | 'leader' | null;
+  created_at: string;
+  /** Номер версии, в которой исправлено; `null` — ещё не исправлено. */
+  fixed_in: number | null;
+  version: number;
+}
+
+export interface PresentationVersion {
+  id: string;
+  number: number;
+  state: VersionState;
+  file: { id: string; name: string; size: number; content_type: string };
+  uploaded_at: string;
+  uploaded_by: 'assistant' | 'leader' | null;
+  comments: SlideComment[];
+  version: number;
+}
+
 export interface PreparationCard extends PreparationRow {
   items: ChecklistItem[];
   info_requests: InfoRequest[];
+  /** Загруженные версии презентации — новые первыми. */
+  versions: PresentationVersion[];
 }
 
 export const QUESTIONS = ['readiness', 'start_now'] as const;

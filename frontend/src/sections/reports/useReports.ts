@@ -9,7 +9,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { request } from '@/shared/api/client';
 
-import type { NewPreparation, NewRequest, PreparationCard, PrepStage, ReportsView } from './model';
+import type {
+  NewPreparation,
+  NewRequest,
+  PreparationCard,
+  PrepStage,
+  ReportsView,
+  VersionState,
+} from './model';
 
 const KEY = ['preparations'];
 const BASE = '/api/v1/preparations';
@@ -85,5 +92,75 @@ export function useReceive() {
         method: 'PUT',
         body: { received_on: input.received_on, version: input.version },
       }),
+  );
+}
+
+interface StartedVersion {
+  version_id: string;
+  file_id: string;
+  upload: { url: string; method: string; headers: Record<string, string> };
+}
+
+/**
+ * Новая версия презентации — три шага (ADR-0009): ссылка от API, файл — прямо в хранилище по
+ * этой ссылке, проверка. Ссылка S3 — на чужой адрес и без cookie; локальное хранилище — путь
+ * API, туда файл идёт с сессией.
+ */
+export function useUploadVersion() {
+  return useChange(async (input: { id: string; file: File }) => {
+    const started = await request<StartedVersion>(`${BASE}/${input.id}/versions`, {
+      method: 'POST',
+      body: {
+        name: input.file.name,
+        content_type: input.file.type || 'application/octet-stream',
+        size: input.file.size,
+      },
+    });
+    if (started.upload.url.startsWith('/')) {
+      await request<void>(started.upload.url, { method: 'PUT', body: input.file });
+    } else {
+      const response = await fetch(started.upload.url, {
+        method: started.upload.method,
+        headers: started.upload.headers,
+        body: input.file,
+      });
+      if (!response.ok) throw new Error(`upload ${response.status}`);
+    }
+    await request<void>(`/api/v1/files/${started.file_id}/complete`, { method: 'POST' });
+    return started.version_id;
+  });
+}
+
+/** Ссылка на просмотр: подписанная и короткоживущая, поэтому — по требованию, а не заранее. */
+export async function fileLink(fileId: string): Promise<string> {
+  const found = await request<{ url: string }>(`/api/v1/files/${fileId}/link`);
+  return found.url;
+}
+
+export function useVersionState() {
+  return useChange(
+    (input: { id: string; versionId: string; state: VersionState; version: number }) =>
+      request<void>(`${BASE}/${input.id}/versions/${input.versionId}/state`, {
+        method: 'PUT',
+        body: { state: input.state, version: input.version },
+      }),
+  );
+}
+
+export function useAddComment() {
+  return useChange((input: { id: string; versionId: string; slide: number; text: string }) =>
+    request<{ id: string }>(`${BASE}/${input.id}/versions/${input.versionId}/comments`, {
+      method: 'POST',
+      body: { slide: input.slide, text: input.text },
+    }),
+  );
+}
+
+export function useFixComment() {
+  return useChange((input: { id: string; commentId: string; fixed: boolean; version: number }) =>
+    request<void>(`${BASE}/${input.id}/comments/${input.commentId}/fixed`, {
+      method: 'PUT',
+      body: { fixed: input.fixed, version: input.version },
+    }),
   );
 }

@@ -129,6 +129,36 @@ describe('Доклады и мероприятия', () => {
     expect(await screen.findByText('О готовности наземной станции')).toBeVisible();
   });
 
+  it('замечание на слайд: руководитель пишет, помощник отмечает «исправлено»', async () => {
+    serve('leader');
+    renderSection();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть подготовку' }));
+    const card = await screen.findByRole('dialog', { name: 'Карточка подготовки' });
+    expect(await within(card).findByText('Версия 1')).toBeVisible();
+    expect(within(card).getByText('Карта без легенды')).toBeVisible();
+    // Загружает версию помощник: у руководителя кнопки загрузки нет.
+    expect(within(card).queryByLabelText('Загрузить версию')).toBeNull();
+
+    fireEvent.change(within(card).getByLabelText('Слайд'), { target: { value: '5' } });
+    fireEvent.change(within(card).getByLabelText('Замечание'), {
+      target: { value: 'Цифры за 2025 год' },
+    });
+    fireEvent.click(within(card).getByRole('button', { name: 'Добавить' }));
+    expect(await within(card).findByText('Цифры за 2025 год')).toBeVisible();
+
+    cleanup();
+    vi.restoreAllMocks();
+    serve('assistant');
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть подготовку' }));
+    const again = await screen.findByRole('dialog', { name: 'Карточка подготовки' });
+    const fixes = await within(again).findAllByRole('button', { name: 'Исправлено' });
+    expect(fixes).toHaveLength(2);
+    fireEvent.click(fixes[0]!);
+    expect(await within(again).findByText('исправлено в версии 1')).toBeVisible();
+  });
+
   it('«Что пора начинать готовить?» показывает те же подготовки', async () => {
     serve('leader');
     renderSection();

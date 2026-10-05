@@ -29,6 +29,7 @@ import {
 } from './model';
 import { PrepBadge } from './ReportsSection';
 import { delayText, missingText, reminderText } from './text';
+import { Versions } from './Versions';
 import {
   useAddItem,
   useAddRequest,
@@ -45,7 +46,7 @@ export function PrepPanel({ id, view, viewer }: { id: string; view: ReportsView;
   const card = usePreparation(id);
   if (card.isPending) return <Loading />;
   if (card.isError) return <Failure detail={describeError(card.error)} />;
-  return <Panel card={card.data} view={view} canEdit={viewer === 'assistant'} />;
+  return <Panel card={card.data} view={view} viewer={viewer} />;
 }
 
 function Block({
@@ -68,16 +69,9 @@ function Block({
   );
 }
 
-function Panel({
-  card,
-  view,
-  canEdit,
-}: {
-  card: PreparationCard;
-  view: ReportsView;
-  canEdit: boolean;
-}) {
+function Panel({ card, view, viewer }: { card: PreparationCard; view: ReportsView; viewer: Role }) {
   const { t } = useTranslation();
+  const canEdit = viewer === 'assistant';
   const stage = useStage();
 
   return (
@@ -135,6 +129,7 @@ function Panel({
       ) : null}
 
       <Requests card={card} view={view} canEdit={canEdit} />
+      <Versions card={card} viewer={viewer} />
       <Checklist card={card} canEdit={canEdit} />
     </div>
   );

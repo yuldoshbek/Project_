@@ -15,7 +15,9 @@ import type {
   PreparationCard,
   PreparationRow,
   PrepStage,
+  PresentationVersion,
   ReportsView,
+  VersionState,
 } from './model';
 
 const DAY_MS = 86_400_000;
@@ -90,6 +92,33 @@ export class FakeReports {
             -2,
           ),
         ],
+        versions: [
+          {
+            id: 'v1',
+            number: 1,
+            state: 'rework',
+            file: {
+              id: 'f1',
+              name: 'Доклад о засухе.pdf',
+              size: 2048,
+              content_type: 'application/pdf',
+            },
+            uploaded_at: `${on(-3)}T06:00:00Z`,
+            uploaded_by: 'assistant',
+            comments: [
+              {
+                id: 'c1',
+                slide: 3,
+                text: 'Карта без легенды',
+                author: 'leader',
+                created_at: `${on(-2)}T06:00:00Z`,
+                fixed_in: null,
+                version: 1,
+              },
+            ],
+            version: 1,
+          },
+        ],
         version: 1,
       },
       {
@@ -105,6 +134,7 @@ export class FakeReports {
         step: 'burning',
         items: [],
         info_requests: [],
+        versions: [],
         version: 1,
       },
       {
@@ -120,6 +150,7 @@ export class FakeReports {
         step: null,
         items: [],
         info_requests: [],
+        versions: [],
         version: 1,
       },
     ];
@@ -175,6 +206,7 @@ export class FakeReports {
       const row: Partial<PreparationCard> = { ...this.card(each.id) };
       delete row.items;
       delete row.info_requests;
+      delete row.versions;
       return row as PreparationRow;
     });
     const missing = rows.filter((each) => each.requests.total - each.requests.received > 0);
@@ -235,6 +267,7 @@ export class FakeReports {
       step: null,
       items: [],
       info_requests: [],
+      versions: [],
       version: 1,
     });
     return id;
@@ -260,6 +293,42 @@ export class FakeReports {
     return item.id;
   }
 
+  private version(id: string, versionId: string): PresentationVersion {
+    const found = this.find(id).versions.find((each) => each.id === versionId);
+    if (!found) throw new Error(`нет версии ${versionId}`);
+    return found;
+  }
+
+  setVersionState(id: string, versionId: string, state: VersionState): void {
+    const version = this.version(id, versionId);
+    version.state = state;
+    version.version += 1;
+  }
+
+  addComment(id: string, versionId: string, slide: number, text: string, role: Role): string {
+    this.counter += 1;
+    const comment = {
+      id: `c-new-${this.counter}`,
+      slide,
+      text: text.trim(),
+      author: role,
+      created_at: `${this.today}T07:00:00Z`,
+      fixed_in: null,
+      version: 1,
+    };
+    this.version(id, versionId).comments.push(comment);
+    return comment.id;
+  }
+
+  /** «Исправлено» запоминает последнюю версию — в ней замечание и исправили. */
+  fixComment(id: string, commentId: string, fixed: boolean): void {
+    const versions = this.find(id).versions;
+    const comment = versions.flatMap((each) => each.comments).find((each) => each.id === commentId);
+    if (!comment) throw new Error(`нет замечания ${commentId}`);
+    comment.fixed_in = fixed ? (versions[0]?.number ?? null) : null;
+    comment.version += 1;
+  }
+
   toggle(id: string, itemId: string, done: boolean): void {
     const item = this.find(id).items.find((each) => each.id === itemId);
     if (!item) throw new Error(`нет пункта ${itemId}`);
@@ -270,12 +339,14 @@ export class FakeReports {
 
 type Reply = [number, unknown];
 
+type Role = 'assistant' | 'leader';
+
 export function handle(
   server: FakeReports,
   method: string,
   path: string,
   body: Record<string, unknown> | undefined,
-  role: 'assistant' | 'leader',
+  role: Role,
 ): Reply | null {
   const BASE = '/api/v1/preparations';
   if (!path.startsWith(BASE)) return null;
@@ -284,6 +355,22 @@ export function handle(
   try {
     if (method === 'GET' && rest.length === 0) return [200, server.view()];
     if (method === 'GET' && rest.length === 1) return [200, server.card(String(rest[0]))];
+    // Статус версии и замечание на слайд — оба; остальное — помощник.
+    if (rest[1] === 'versions' && rest[3] === 'state') {
+      server.setVersionState(String(rest[0]), String(rest[2]), input.state as VersionState);
+      return [204, undefined];
+    }
+    if (rest[1] === 'versions' && rest[3] === 'comments') {
+      const slide = Number(input.slide);
+      const id = server.addComment(
+        String(rest[0]),
+        String(rest[2]),
+        slide,
+        String(input.text),
+        role,
+      );
+      return [201, { id }];
+    }
     if (role !== 'assistant') return [403, { detail: 'Это действие помощника' }];
     if (method === 'POST' && rest.length === 0) return [201, { id: server.create(input) }];
     const id = String(rest[0]);
@@ -296,6 +383,10 @@ export function handle(
     }
     if (rest[1] === 'items' && rest[2]) {
       server.toggle(id, rest[2], Boolean(input.done));
+      return [204, undefined];
+    }
+    if (rest[1] === 'comments' && rest[3] === 'fixed') {
+      server.fixComment(id, String(rest[2]), Boolean(input.fixed));
       return [204, undefined];
     }
     if (rest[1] === 'requests' && rest[3] === 'received') {
