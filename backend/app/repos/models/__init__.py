@@ -37,6 +37,7 @@ from app.repos.models.jobs import JobRun
 from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.people import Person, User
+from app.repos.models.preparations import InfoRequest, Preparation, PreparationItem
 from app.repos.models.projects import Project, ProjectOrganization
 from app.repos.models.push import PushSubscription
 from app.repos.models.round import RoundMark
@@ -57,6 +58,7 @@ __all__ = [
     "IjroImport",
     "IjroOrgAlias",
     "IjroPersonAlias",
+    "InfoRequest",
     "JobRun",
     "LeaderDecision",
     "LeaderQuestion",
@@ -65,6 +67,8 @@ __all__ = [
     "Notification",
     "Organization",
     "Person",
+    "Preparation",
+    "PreparationItem",
     "Project",
     "ProjectOrganization",
     "ProjectStatusRef",

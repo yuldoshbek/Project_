@@ -27,6 +27,7 @@ from app.domain.pult import (
     IJRO,
     LETTERS,
     MILESTONES,
+    PREPARATIONS,
     PROJECTS,
     TASKS,
     AuditEntry,
@@ -42,6 +43,7 @@ from app.repos.models import (
     Milestone,
     Organization,
     Person,
+    Preparation,
     Project,
     Task,
 )
@@ -57,6 +59,7 @@ SECTION_TARGET = {
     "ijro": DecisionTarget.IJRO_ASSIGNMENT.value,
     "letters": DecisionTarget.LETTER.value,
     "agreements": DecisionTarget.AGREEMENT.value,
+    "preparations": DecisionTarget.PREPARATION.value,
 }
 
 # Вид объекта решения → таблица журнала.
@@ -67,6 +70,7 @@ TARGET_TABLE = {
     DecisionTarget.IJRO_ASSIGNMENT.value: IJRO,
     DecisionTarget.LETTER.value: LETTERS,
     DecisionTarget.AGREEMENT.value: AGREEMENTS,
+    DecisionTarget.PREPARATION.value: PREPARATIONS,
 }
 
 
@@ -179,6 +183,20 @@ async def row_details(
                     context=short or name, original_due_on=None, target=(target, entity_id)
                 )
 
+    if ids := by_section.get("preparations"):
+        # Контекст подготовки — проект, к которому она относится; без проекта — ничего.
+        result = await session.execute(
+            select(Preparation.id, Project.title)
+            .outerjoin(Project, Project.id == Preparation.project_id)
+            .where(Preparation.id.in_(ids))
+        )
+        for prep_id, project_title in result:
+            found[("preparations", prep_id)] = RowDetail(
+                context=project_title,
+                original_due_on=None,
+                target=(DecisionTarget.PREPARATION.value, prep_id),
+            )
+
     if ids := by_section.get("decisions"):
         decision_rows = await session.execute(
             select(LeaderDecision.id, LeaderDecision.target_type, LeaderDecision.target_id).where(
@@ -269,6 +287,11 @@ async def titles(
     if ids := by_table.get(LETTERS):
         result = await session.execute(select(Letter.id, Letter.subject).where(Letter.id.in_(ids)))
         found.update({(LETTERS, entity_id): subject for entity_id, subject in result})
+    if ids := by_table.get(PREPARATIONS):
+        result = await session.execute(
+            select(Preparation.id, Preparation.title).where(Preparation.id.in_(ids))
+        )
+        found.update({(PREPARATIONS, entity_id): title for entity_id, title in result})
     if ids := by_table.get(AGREEMENTS):
         result = await session.execute(
             select(Agreement.id, Agreement.title).where(Agreement.id.in_(ids))
@@ -416,6 +439,12 @@ async def target_responsible(
     elif kind == DecisionTarget.LETTER.value:
         found = await session.execute(
             select(Letter.id, Letter.author_person_id).where(Letter.id == target_id)
+        )
+    elif kind == DecisionTarget.PREPARATION.value:
+        found = await session.execute(
+            select(Preparation.id, Preparation.responsible_person_id).where(
+                Preparation.id == target_id
+            )
         )
     elif kind == DecisionTarget.AGREEMENT.value:
         found = await session.execute(

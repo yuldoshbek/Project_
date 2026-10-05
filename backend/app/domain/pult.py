@@ -41,6 +41,7 @@ DECISIONS = "leader_decisions"
 IJRO = "ijro_assignments"
 LETTERS = "letters"
 AGREEMENTS = "agreements"
+PREPARATIONS = "preparations"
 
 # Поле срока у каждой сущности. У задачи срок — момент, у проекта и вехи — дата.
 DUE_FIELD = {PROJECTS: "due_on", MILESTONES: "due_on", TASKS: "due_at"}

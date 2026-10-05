@@ -107,7 +107,7 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import demo_ijro, demo_interaction
+from app import demo_ijro, demo_interaction, demo_preparations
 from app.domain.capture import CaptureKind
 from app.domain.clock import local_date
 from app.domain.cycles import CycleRule, horizon
@@ -1643,6 +1643,9 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         projects=projects,
         assignments=assignments,
     )
+    preparations = await demo_preparations.load(
+        session, now=now, zone=zone, people=people, projects=projects
+    )
 
     users = dict((await session.execute(select(User.role, User.id))).tuples().all())
     captures = []
@@ -1678,6 +1681,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         "captures": len(CAPTURES),
         "ijro_assignments": len(assignments),
         "letters": letters,
+        "preparations": preparations,
     }
 
 

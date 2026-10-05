@@ -28,7 +28,7 @@ from app.domain.clock import local_date
 from app.domain.decisions import DecisionState, DecisionTarget
 from app.domain.dictionaries import OrganizationRole, ProjectStatus, TaskStatus
 from app.domain.interaction import DEFAULT_SLEEPING_DAYS
-from app.repos import ijro, interaction
+from app.repos import ijro, interaction, preparations
 from app.repos.models import (
     LeaderDecision,
     LeaderQuestion,
@@ -64,6 +64,7 @@ async def load_items(
     items += await _ijro(session, zone, awaiting)
     items += await _letters(session, awaiting)
     items += await _agreements(session, zone, awaiting, sleeping_days)
+    items += await _preparations(session, zone, awaiting)
     return items
 
 
@@ -303,3 +304,14 @@ async def _agreements(
         )
         for record in records
     ]
+
+
+async def _preparations(
+    session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date]
+) -> list[Item]:
+    records = await preparations.records(session, zone=zone, open_only=True)
+    found = (
+        preparations.item_of(record, awaiting.get((DecisionTarget.PREPARATION.value, record.id)))
+        for record in records
+    )
+    return [item for item in found if item is not None]

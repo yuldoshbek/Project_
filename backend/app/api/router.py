@@ -9,7 +9,7 @@
 потребителя и ушли вместе со старой схемой (docs/audit/AUDIT-2026-09-20.md). Сейчас здесь
 справочники, Пульт со сводкой, Программы, Проекты, Задачи, Календарь, Захват, Управление
 и подписка на уведомления — экраны утверждены заказчиком 25–29.09.2026; Ижро — 30.09.2026;
-Взаимодействие — 01.10.2026.
+Взаимодействие — 01.10.2026; Доклады и мероприятия — 05.10.2026.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from app.api.routes import (
     ijro,
     interaction,
     management,
+    preparations,
     programs,
     projects,
     pult,
@@ -52,3 +53,4 @@ api_router.include_router(management.router)
 api_router.include_router(push.router)
 api_router.include_router(ijro.router)
 api_router.include_router(interaction.router)
+api_router.include_router(preparations.router)
