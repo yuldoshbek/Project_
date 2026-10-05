@@ -546,7 +546,7 @@ describe('доступ', () => {
     expect(
       calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/management'),
     ).toHaveLength(1);
-    expect(screen.getByText(/Загрузка таблиц Ижро — вместе с разделом Ижро/)).toBeInTheDocument();
+    expect(screen.getByText(/Таблицы Ижро загружаются в разделе «Ижро»/)).toBeInTheDocument();
   });
 
   it('ссылка руководителя: остаётся после смены вкладки, раздел перечитывается', async () => {

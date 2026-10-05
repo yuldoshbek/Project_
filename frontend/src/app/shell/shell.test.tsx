@@ -11,10 +11,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThemeProvider } from '@/app/theme';
 import { MORE_SECTIONS, PHONE_SECTIONS, SECTIONS } from '@/app/sections';
+import { applyLocale } from '@/shared/i18n';
 import { setViewport } from '@/test-setup';
 
 import { AppShell } from './AppShell';
@@ -56,6 +57,25 @@ function renderShell() {
     </QueryClientProvider>,
   );
 }
+
+describe('язык интерфейса', () => {
+  afterEach(async () => {
+    await applyLocale('ru');
+  });
+
+  it('выбор в меню переключает интерфейс сразу и сохраняет язык на сервере', async () => {
+    setViewport({ width: 1440 });
+    renderShell();
+    fireEvent.click(screen.getByRole('button', { name: /^Тема:/ }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Oʻzbekcha' }));
+
+    expect(await screen.findByRole('link', { name: 'Loyihalar' })).toBeInTheDocument();
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    const saved = calls.find(([url]) => String(url) === '/api/me/locale');
+    expect(saved?.[1]?.method).toBe('PUT');
+    expect(saved?.[1]?.body).toBe(JSON.stringify({ locale: 'uz_latn' }));
+  });
+});
 
 describe('оболочка меняется вместе с устройством', () => {
   it('на телефоне навигация внизу: Пульт · Календарь · (+) · Поиск · Ещё', () => {

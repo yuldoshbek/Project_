@@ -214,20 +214,22 @@ describe('Захват', () => {
     const calls = serve();
     renderCapture();
     fireEvent.click(await screen.findByLabelText('Идея'));
-    expect(screen.getByText(/раздел «Идеи и карты» появится в блоке 3/)).toBeInTheDocument();
+    expect(screen.getByText(/Ляжет наброском в «Идеи и карты»/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Текст записи' }), {
       target: { value: 'Мониторинг пастбищ для Минсельхоза' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Записать' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Идея во входящих.');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Идея записана наброском в «Идеях и картах».',
+    );
     expect(calls.some((call) => call.path === '/api/v1/tasks/parse')).toBe(false);
     expect(posted(calls)).toEqual([{ kind: 'idea', text: 'Мониторинг пастбищ для Минсельхоза' }]);
 
     await waitFor(() => {
       const first = within(recentList()).getAllByRole('listitem')[0]!;
       expect(first).toHaveTextContent('Мониторинг пастбищ для Минсельхоза');
-      expect(first).toHaveTextContent('во входящих до «Идей и карт»');
+      expect(first).toHaveTextContent('в «Идеях и картах»');
     });
   });
 
@@ -258,7 +260,7 @@ describe('Захват', () => {
     expect(items[0]).toHaveTextContent(
       'Помощник · 2 ч назад · ответ до 10.10.2026 · во входящих до «Взаимодействия»',
     );
-    expect(items[1]).toHaveTextContent('Руководитель · вчера · во входящих до «Идей и карт»');
+    expect(items[1]).toHaveTextContent('Руководитель · вчера · в «Идеях и картах»');
   });
 
   it('руководитель: два своих типа — просьба и идея; по умолчанию идея', async () => {
@@ -326,7 +328,9 @@ describe('Захват', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(await screen.findByRole('status')).toHaveTextContent('Идея во входящих.');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Идея записана наброском в «Идеях и картах».',
+    );
     expect(field).toHaveValue('');
   });
 
@@ -369,7 +373,9 @@ describe('Захват', () => {
     fireEvent.click(within(kinds).getByLabelText('Идея'));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Записать' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Идея во входящих.');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Идея записана наброском в «Идеях и картах».',
+    );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -420,12 +426,14 @@ describe('Захват', () => {
     expect(screen.queryByText('Вымышленные данные')).not.toBeInTheDocument();
   });
 
-  it('фото названо честно: кнопка есть и говорит, когда заработает', async () => {
+  it('фото названо честно: кнопка есть и говорит, почему недоступна', async () => {
     serve();
     renderCapture();
     const photo = await screen.findByRole('button', { name: 'Фото' });
     expect(photo).toBeDisabled();
-    expect(photo).toHaveAccessibleDescription('Фото — вместе с хранилищем файлов в блоке 2.');
+    expect(photo).toHaveAccessibleDescription(
+      'Фото к записи пока не прикладывается: файлы живут в карточках разделов.',
+    );
   });
 
   it('на телефоне — подсказка про диктовку', async () => {

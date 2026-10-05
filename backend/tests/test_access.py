@@ -209,6 +209,17 @@ class TestOpeningByLink:
         assert response.json()["role"] == Role.ASSISTANT.value
         assert response.json()["can_write"] is True
 
+    async def test_each_user_chooses_their_language(
+        self, assistant_api: AsyncClient, leader_api: AsyncClient
+    ) -> None:
+        """Язык — личная настройка: руководитель меняет свой и не трогает язык помощника."""
+        saved = await leader_api.put("/api/me/locale", json={"locale": "uz_cyrl"})
+        assert saved.status_code == 204
+        assert (await leader_api.get("/api/me")).json()["locale"] == "uz_cyrl"
+        assert (await assistant_api.get("/api/me")).json()["locale"] == "ru"
+        unknown = await leader_api.put("/api/me/locale", json={"locale": "en"})
+        assert unknown.status_code == 422
+
     async def test_unknown_link_is_a_plain_not_found(self, api: AsyncClient) -> None:
         """Ответ не объясняет, чем ссылка не подошла: подсказка помогала бы подбору."""
         response = await api.get("/api/access/явно-не-тот-токен", follow_redirects=False)

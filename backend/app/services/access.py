@@ -36,6 +36,7 @@ from app.domain.access import (
     visit_began,
 )
 from app.domain.errors import NotAuthenticatedError, NotFoundError, RuleViolationError
+from app.domain.people import Locale
 from app.repos.models import AccessLink, PushSubscription, Session, User
 
 
@@ -215,3 +216,10 @@ async def active_sessions(
         .order_by(Session.last_seen_at.desc().nullslast())
     )
     return list(rows)
+
+
+async def set_locale(session: AsyncSession, *, user: User, locale: Locale) -> None:
+    """Язык интерфейса — личная настройка: меняет его каждый себе, роль не важна."""
+    if user.locale != locale.value:
+        user.locale = locale.value
+        session.add(user)

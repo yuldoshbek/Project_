@@ -5,26 +5,34 @@
 
 import type { TFunction } from 'i18next';
 
+import { intlLocale } from '@/shared/i18n';
+
 import { KINDS, type CalendarItem, type CycleRuleFields, type HotDay } from './model';
-
-const weekdayDay = new Intl.DateTimeFormat('ru-RU', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'long',
-  timeZone: 'UTC',
-});
-
-const monthName = new Intl.DateTimeFormat('ru-RU', { month: 'long', timeZone: 'UTC' });
-
-const weekdayShort = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', timeZone: 'UTC' });
 
 const DAY_MS = 86_400_000;
 
-const dayMonth = new Intl.DateTimeFormat('ru-RU', {
-  day: 'numeric',
-  month: 'long',
-  timeZone: 'UTC',
-});
+// Названия дней и месяцев — на языке интерфейса; форматтер собирается один раз на язык.
+const formats = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(name: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const locale = intlLocale();
+  const key = `${locale}:${name}`;
+  let found = formats.get(key);
+  if (!found) {
+    found = new Intl.DateTimeFormat(locale, options);
+    formats.set(key, found);
+  }
+  return found;
+}
+
+const weekdayDay = () =>
+  formatter('weekdayDay', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+const monthName = () => formatter('monthName', { month: 'long', timeZone: 'UTC' });
+
+const weekdayShort = () => formatter('weekdayShort', { weekday: 'short', timeZone: 'UTC' });
+
+const dayMonth = () => formatter('dayMonth', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
 function utc(date: string): Date {
   return new Date(`${date.slice(0, 10)}T00:00:00Z`);
@@ -36,12 +44,12 @@ function capital(text: string): string {
 
 /** «Чт, 1 октября» — заголовок дня. */
 export function dayTitle(date: string): string {
-  return capital(weekdayDay.format(utc(date)));
+  return capital(weekdayDay().format(utc(date)));
 }
 
 /** «Сентябрь 2026» — заголовок месяца сетки. */
 export function monthTitle(month: string): string {
-  return `${capital(monthName.format(utc(`${month}-01`)))} ${month.slice(0, 4)}`;
+  return `${capital(monthName().format(utc(`${month}-01`)))} ${month.slice(0, 4)}`;
 }
 
 /**
@@ -54,9 +62,11 @@ export function monthTitle(month: string): string {
 export function dayOfYear(month: number, day: number): string {
   const last = new Date(Date.UTC(2000, month, 0)).getUTCDate();
   if (Number.isInteger(day) && day >= 1 && day <= last) {
-    return dayMonth.format(new Date(Date.UTC(2000, month - 1, day)));
+    return dayMonth().format(new Date(Date.UTC(2000, month - 1, day)));
   }
-  const genitive = dayMonth.format(new Date(Date.UTC(2000, month - 1, 1))).replace(/^1\s/, '');
+  const genitive = dayMonth()
+    .format(new Date(Date.UTC(2000, month - 1, 1)))
+    .replace(/^1\s/, '');
   return `${day} ${genitive}`;
 }
 
@@ -95,14 +105,14 @@ export function hotText(t: TFunction, hot: Pick<HotDay, 'count' | 'kinds'>): str
 export function weekdayNames(): string[] {
   // 1 января 2024 года — понедельник.
   return Array.from({ length: 7 }, (_, index) =>
-    capital(weekdayShort.format(new Date(Date.UTC(2024, 0, 1 + index)))),
+    capital(weekdayShort().format(new Date(Date.UTC(2024, 0, 1 + index)))),
   );
 }
 
 /** «Январь» … «Декабрь» — выбор месяца в форме цикла. */
 export function monthNames(): string[] {
   return Array.from({ length: 12 }, (_, index) =>
-    capital(monthName.format(new Date(Date.UTC(2001, index, 1)))),
+    capital(monthName().format(new Date(Date.UTC(2001, index, 1)))),
   );
 }
 

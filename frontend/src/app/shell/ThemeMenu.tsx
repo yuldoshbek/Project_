@@ -1,5 +1,5 @@
 /**
- * Выбор темы: светлая, приглушённая, как в системе.
+ * Выбор темы — светлая, приглушённая, как в системе — и языка интерфейса.
  *
  * Не круговой переключатель, и это решение из практики. При круговом порядке первое
  * нажатие из состояния «как в системе» на светлом экране ничего не меняет: режим стал
@@ -10,12 +10,16 @@
  * дело, и оно не должно оставаться висеть.
  */
 
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Moon, Sun, SunMoon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ThemeMode } from '@/app/themeContext';
 import { useTheme } from '@/app/useTheme';
+import { request } from '@/shared/api/client';
+import { currentUserQuery } from '@/shared/api/queries';
+import { applyLocale, currentServerLocale, LOCALES, type ServerLocale } from '@/shared/i18n';
 import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/Button';
 
@@ -33,6 +37,16 @@ export function ThemeMenu() {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const Icon = ICON[mode];
+  const client = useQueryClient();
+  // Язык включается сразу, а сохраняется на сервере вдогонку: экран не ждёт ответа.
+  const language = useMutation({
+    mutationFn: async (locale: ServerLocale) => {
+      await applyLocale(locale);
+      await request<void>('/api/me/locale', { method: 'PUT', body: { locale } });
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: currentUserQuery().queryKey }),
+  });
+  const chosen = currentServerLocale();
 
   useEffect(() => {
     if (!open) return;
@@ -96,6 +110,30 @@ export function ThemeMenu() {
               </button>
             );
           })}
+          <div role="group" aria-label={t('language.label')} className="border-t border-line py-1">
+            <p className="px-3 pt-1 text-xs text-ink-muted">{t('language.label')}</p>
+            {LOCALES.map((locale) => (
+              <button
+                key={locale.server}
+                type="button"
+                role="menuitemradio"
+                aria-checked={chosen === locale.server}
+                lang={locale.code}
+                className={cn(
+                  'flex w-full min-h-touch items-center gap-2.5 px-3 text-left text-sm',
+                  'transition-colors duration-[var(--motion-fast)] hover:bg-hover',
+                  chosen === locale.server ? 'text-accent-ink' : 'text-ink',
+                )}
+                onClick={() => {
+                  language.mutate(locale.server);
+                  setOpen(false);
+                }}
+              >
+                <span className="flex-1">{locale.label}</span>
+                {chosen === locale.server ? <Check className="size-4" /> : null}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

@@ -16,6 +16,7 @@ import { useCurrentUser } from '@/app/session';
 import { AppShell } from '@/app/shell/AppShell';
 import { ApiError, describeError } from '@/shared/api/client';
 import { issuedLinkQuery } from '@/shared/api/queries';
+import { applyLocale } from '@/shared/i18n';
 import { Failure, Loading } from '@/shared/ui/States';
 
 export function App() {
@@ -30,6 +31,12 @@ export function App() {
   useEffect(() => {
     if (role) client.removeQueries({ queryKey: issuedLinkQuery(role).queryKey, exact: true });
   }, [client, role, user.dataUpdatedAt]);
+
+  // Язык — у пользователя на сервере: тот же на любом устройстве, где открыта ORBITA.
+  const locale = user.data?.locale;
+  useEffect(() => {
+    if (locale) void applyLocale(locale);
+  }, [locale]);
 
   if (user.isPending) {
     return (
