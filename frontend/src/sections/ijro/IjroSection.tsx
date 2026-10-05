@@ -67,7 +67,7 @@ function Ijro({ view }: { view: IjroView }) {
   const viewer: Role = user.data?.role === 'leader' ? 'leader' : 'assistant';
   const tabs = TABS.filter((each) => each !== 'upload' || viewer === 'assistant');
 
-  const search: { view?: unknown } = useSearch({ strict: false });
+  const search: { view?: unknown; open?: unknown } = useSearch({ strict: false });
   const navigate = useNavigate();
   const wanted = isTab(search.view) ? search.view : 'questions';
   const tab: Tab = tabs.includes(wanted) ? wanted : 'questions';
@@ -79,7 +79,10 @@ function Ijro({ view }: { view: IjroView }) {
     });
 
   const [filter, setFilter] = useState<Filter>(NO_FILTER);
-  const [open, setOpen] = useState<string | null>(null);
+  // Карточка из ссылки — так её открывает Календарь.
+  const [open, setOpen] = useState<string | null>(() =>
+    typeof search.open === 'string' ? search.open : null,
+  );
   const [spravka, setSpravka] = useState(false);
 
   const showList = (patch: Partial<Filter>) => {

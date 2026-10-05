@@ -30,6 +30,8 @@ class CalendarKind(StrEnum):
     PROJECT = "project"
     TASK = "task"
     DECISION = "decision"
+    IJRO = "ijro"
+    PREPARATION = "preparation"
     CYCLE = "cycle"
 
     @property

@@ -15,6 +15,7 @@
  * оттуда карточку того, по чему оно принято.
  */
 
+import { useNavigate } from '@tanstack/react-router';
 import { CalendarDays, Plus, Repeat } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -132,6 +133,7 @@ function Calendar({
   const [listing, setListing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [card, setCard] = useState<{ kind: 'project' | 'task'; id: string } | null>(null);
   const [decision, setDecision] = useState<CalendarItem | null>(null);
   /** День, к которому прокрутить список телефона, когда он дорисуется. */
@@ -197,10 +199,14 @@ function Calendar({
     setSelected(date);
   };
 
-  // Касание даты: цикл — его лист, решение — свой лист, проект и задача — их карточка.
+  // Касание даты: цикл — его лист, решение — свой лист, проект и задача — их карточка;
+  // поручение Ижро и подготовка — их раздел с открытой карточкой.
   const open = (item: CalendarItem) => {
     const { kind, id } = item.target;
     if (kind === 'cycle') setCycle(id);
+    else if (kind === 'ijro')
+      void navigate({ to: '/ijro', search: { view: 'assignments', open: id } });
+    else if (kind === 'preparation') void navigate({ to: '/reports', search: { open: id } });
     else if (item.kind === 'decision' || kind === 'decision') setDecision(item);
     else setCard({ kind, id });
   };

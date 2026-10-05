@@ -584,7 +584,12 @@ class TestCalendar:
         # другой день загрузки могут добавить горячий день, но не убрать эти.
         hot = [day.date for day in view.hot_ahead]
         assert {loaded.today, loaded.on(10), loaded.on(20)} <= set(hot)
-        assert len(view.overdue) == 5
+        # Пять — даты блока 1 утверждённого экрана; поручения Ижро блока 2 — сверх них, и
+        # каждое — та же просрочка, что на Пульте.
+        block_one = [each for each in view.overdue if each.kind.value != "ijro"]
+        assert len(block_one) == 5
+        ijro = [each for each in view.overdue if each.kind.value == "ijro"]
+        assert ijro and all(each.step is not None for each in ijro)
         # Через 6 дней итоговая веха стажировок в день срока проекта — одна строка.
         interns = [
             item

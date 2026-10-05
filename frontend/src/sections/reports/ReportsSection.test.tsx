@@ -18,6 +18,10 @@ import type { CurrentUser } from '@/shared/api/orbita';
 import { ReportsSection } from './ReportsSection';
 import { FakeReports, handle } from './test-server';
 
+let search: Record<string, unknown> = {};
+
+vi.mock('@tanstack/react-router', () => ({ useSearch: () => search }));
+
 function user(role: 'assistant' | 'leader'): CurrentUser {
   return {
     id: `u-${role}`,
@@ -67,6 +71,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   server = new FakeReports();
+  search = {};
 });
 
 describe('Доклады и мероприятия', () => {
@@ -157,6 +162,17 @@ describe('Доклады и мероприятия', () => {
     expect(fixes).toHaveLength(2);
     fireEvent.click(fixes[0]!);
     expect(await within(again).findByText('исправлено в версии 1')).toBeVisible();
+  });
+
+  it('ссылка из Календаря открывает карточку подготовки', async () => {
+    search = { open: 'p-quarter' };
+    serve('leader');
+    renderSection();
+
+    const card = await screen.findByRole('dialog', { name: 'Карточка подготовки' });
+    expect(
+      await within(card).findByText('Ежеквартальная справка для Администрации Президента'),
+    ).toBeVisible();
   });
 
   it('«Что пора начинать готовить?» показывает те же подготовки', async () => {

@@ -7,6 +7,7 @@
  * Помощник заводит подготовку; руководитель смотрит и решает кнопками Пульта.
  */
 
+import { useSearch } from '@tanstack/react-router';
 import { Plus, Presentation } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -53,7 +54,11 @@ function Reports({ view }: { view: ReportsView }) {
   const device = useDevice();
   const user = useCurrentUser();
   const viewer: Role = user.data?.role === 'leader' ? 'leader' : 'assistant';
-  const [open, setOpen] = useState<string | null>(null);
+  // Карточка из ссылки — так её открывает Календарь.
+  const search: { open?: unknown } = useSearch({ strict: false });
+  const [open, setOpen] = useState<string | null>(() =>
+    typeof search.open === 'string' ? search.open : null,
+  );
   const [only, setOnly] = useState<string[] | null>(null);
   const [adding, setAdding] = useState(false);
   const freshness = t('reports.freshness', { when: formatDateTime(view.as_of) });

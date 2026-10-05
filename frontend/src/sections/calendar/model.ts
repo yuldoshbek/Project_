@@ -20,7 +20,15 @@ import type { DecisionKind, Step } from '@/sections/pult/model';
 export type { Ref };
 
 /** Откуда дата. Порядок — порядок показа в дне и в подписи горячего дня. */
-export const KINDS = ['milestone', 'project', 'task', 'decision', 'cycle'] as const;
+export const KINDS = [
+  'milestone',
+  'project',
+  'task',
+  'decision',
+  'ijro',
+  'preparation',
+  'cycle',
+] as const;
 
 export type ItemKind = (typeof KINDS)[number];
 
@@ -51,9 +59,13 @@ export interface CalendarItem {
   /**
    * Карточка, которую открывает касание: проект (у вехи — её проект), задача, цикл. У
    * решения — то, по чему оно принято: сначала открывается лист решения, из него — эта
-   * карточка; `decision` — только если записи нет (поручение Ижро, блок 2).
+   * карточка; `decision` — только если записи нет (поручение Ижро, блок 2). Поручение Ижро
+   * и подготовка открываются в своём разделе.
    */
-  target: { kind: 'project' | 'task' | 'decision' | 'cycle'; id: string };
+  target: {
+    kind: 'project' | 'task' | 'decision' | 'cycle' | 'ijro' | 'preparation';
+    id: string;
+  };
   responsible: Ref | null;
   /** Ступень лестницы — та же, что на Пульте; у цикла и закрытого — `null` (допущение V16). */
   step: Step | null;
