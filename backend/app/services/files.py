@@ -15,13 +15,15 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.storage import FileStorage, LocalStorage, UploadTarget
+from app.adapters.storage import LINK_SECONDS, FileStorage, LocalStorage, UploadTarget
+from app.domain.clock import now_utc
 from app.domain.errors import NotFoundError, RuleViolationError, check_version
 from app.domain.files import FileOwner, FileState, check_upload, storage_key
 from app.domain.preparations import COMMENT_MAX_LENGTH, VersionState
@@ -56,6 +58,7 @@ async def start_version(
     if await session.get(Preparation, preparation_id) is None:
         raise NotFoundError("Подготовка не найдена: её могли удалить")
     cleaned = check_upload(name=name, content_type=content_type, size=size)
+    await _drop_abandoned(session, preparation_id)
     last = await session.scalar(
         select(func.max(PresentationVersion.number)).where(
             PresentationVersion.preparation_id == preparation_id
@@ -93,6 +96,36 @@ async def start_version(
     )
     await session.flush()
     return StartedUpload(version_id=version_id, file_id=file_id, upload=target)
+
+
+ABANDONED_AFTER = timedelta(seconds=LINK_SECONDS * 2)
+"""Загрузка, не подтверждённая за два срока жизни ссылки, брошена: по просроченной ссылке
+файл уже не лечь."""
+
+
+async def _drop_abandoned(session: AsyncSession, preparation_id: uuid.UUID) -> None:
+    """Брошенные загрузки уходят, чтобы не занимать номер версии.
+
+    Иначе номер остаётся за версией, которую никто не увидит, и в карточке появляется дыра:
+    «Версия 6», а следом «Версия 8» (наблюдалось при проверке сборки сервера). Свежая
+    незавершённая загрузка не трогается — её, возможно, ещё грузят.
+    """
+    rows = await session.execute(
+        select(PresentationVersion, StoredFile)
+        .join(StoredFile, StoredFile.id == PresentationVersion.file_id)
+        .where(
+            PresentationVersion.preparation_id == preparation_id,
+            StoredFile.state == FileState.PENDING.value,
+            StoredFile.created_at < now_utc() - ABANDONED_AFTER,
+        )
+    )
+    abandoned = list(rows.tuples())
+    for version, _ in abandoned:
+        await session.delete(version)
+    await session.flush()
+    for _, stored in abandoned:
+        await session.delete(stored)
+    await session.flush()
 
 
 def write_local(storage: FileStorage, stored: StoredFile, content: bytes) -> None:
@@ -139,7 +172,13 @@ async def local_file(
     stored = await _file(session, file_id)
     if not isinstance(storage, LocalStorage) or stored.state != FileState.STORED.value:
         raise NotFoundError("Файл недоступен")
-    return str(storage.path(stored.storage_key)), stored.content_type, stored.name
+    path = storage.path(stored.storage_key)
+    # Запись есть, а файла на диске нет — так бывает после переезда, если базу перенесли без
+    # каталога файлов (наблюдалось при проверке сборки сервера на копии базы). Честный отказ
+    # вместо 500: человек видит, чего не хватает, а не «внутреннюю ошибку».
+    if not path.is_file():
+        raise NotFoundError("Файла нет в хранилище: его не перенесли вместе с базой")
+    return str(path), stored.content_type, stored.name
 
 
 async def set_version_state(

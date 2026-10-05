@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,11 +18,13 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import demo
 from app.adapters.storage import LocalStorage, NoStorage, presign
 from app.domain.clock import now_utc
+from app.repos.models import StoredFile
 
 TASHKENT = ZoneInfo("Asia/Tashkent")
 PDF = "application/pdf"
@@ -125,6 +128,26 @@ class TestVersions:
         assert opened.content == content
         assert opened.headers["content-disposition"].startswith("inline")
 
+    async def test_abandoned_upload_does_not_take_a_number(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Брошенная загрузка не оставляет дыры в номерах: «Версия 6», следом «Версия 8»."""
+        prep_id = await drought(assistant_api)
+        started = await assistant_api.post(
+            f"/api/v1/preparations/{prep_id}/versions",
+            json={"name": "брошено.pdf", "content_type": PDF, "size": 10},
+        )
+        abandoned = uuid.UUID(started.json()["file_id"])
+        await session.execute(
+            update(StoredFile)
+            .where(StoredFile.id == abandoned)
+            .values(created_at=now_utc() - timedelta(hours=1))
+        )
+        await upload(assistant_api, prep_id, b"%PDF next")
+        card = (await assistant_api.get(f"/api/v1/preparations/{prep_id}")).json()
+        assert [each["number"] for each in card["versions"]] == [1]
+        assert await session.get(StoredFile, abandoned) is None
+
     async def test_type_size_and_role_are_checked(
         self, assistant_api: AsyncClient, leader_api: AsyncClient
     ) -> None:
@@ -179,6 +202,22 @@ class TestVersions:
         card = (await assistant_api.get(f"/api/v1/preparations/{prep_id}")).json()
         old = next(each for each in card["versions"] if each["id"] == first["version_id"])
         assert old["comments"][0]["fixed_in"] == card["versions"][0]["number"]
+
+
+@pytest.mark.infra
+@pytest.mark.usefixtures("loaded")
+class TestMovedWithoutFiles:
+    async def test_missing_file_is_an_honest_not_found(
+        self, app: FastAPI, assistant_api: AsyncClient, tmp_path: Path
+    ) -> None:
+        """База переехала, а каталог файлов — нет: отказ словами, а не 500."""
+        prep_id = await drought(assistant_api)
+        body = await upload(assistant_api, prep_id, b"%PDF moved")
+        app.state.storage = LocalStorage(tmp_path / "other-disk")
+        link = (await assistant_api.get(f"/api/v1/files/{body['file_id']}/link")).json()
+        opened = await assistant_api.get(link["url"])
+        assert opened.status_code == 404
+        assert "не перенесли" in opened.text
 
 
 @pytest.mark.infra

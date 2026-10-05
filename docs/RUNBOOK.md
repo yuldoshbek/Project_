@@ -119,11 +119,86 @@ Vercel, его вводит заказчик ([SETUP](SETUP.md)). Каждое �
 
 ## Переезд на сервер агентства
 
-Порядок появится в блоке 3 вместе со сборкой Docker и проверкой на чистой машине. Что уже
-сделано для переезда: внешний мир спрятан за портами `FileStorage`, `Scheduler`,
-`PushSender`, `ReportRenderer`, `SetaGateway`; расписание вызывает те же обработчики, что
-и cron в контейнере; ничего специфичного для облачных площадок в сервисах и домене нет
-([ADR-0028](adr/ADR-0028-hosting.md)).
+Сборка — `deploy/server/` ([ADR-0028](adr/ADR-0028-hosting.md)): четыре контейнера из того
+же кода, что в облаке. **PostgreSQL** наружу не выставлена. **API** при каждом старте
+накатывает миграции и справочники. **Caddy** отдаёт интерфейс, проксирует `/api` и
+закрывает `/internal`. **cron** вызывает задачи по тому же расписанию, что
+`.github/workflows/jobs.yml`. Файлы лежат на диске сервера, в томе `uploads`.
+
+Проверено 05.10.2026 на машине разработки: образы собраны, стек поднят на копии базы,
+вход по ссылке, Пульт, Идеи, Календарь, загрузка и просмотр файла, задача по расписанию —
+работают (`docs/reports/BLOCK-3.md`).
+
+**Что нужно на сервере:** Docker с Compose v2, доменное имя, указывающее на сервер, открытые
+80 и 443. Без HTTPS вход не работает: cookie сессии `__Host-` браузер принимает только по
+защищённому соединению.
+
+1. **Код и окружение.**
+
+   ```bash
+   git clone https://github.com/yuldoshbek/Project_.git orbita && cd orbita/deploy/server
+   cp .env.example .env
+   ```
+
+   В `.env` — адрес (`ORBITA_BASE_URL`, `ORBITA_SITE_ADDRESS`) и три случайных значения:
+   пароль базы, секрет сессий (не короче 32), секрет задач (не короче 16). Генерировать
+   на сервере: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Файл `.env`
+   в `.gitignore` — в репозиторий он не попадает.
+
+2. **База и копия данных.** Сначала одна база:
+
+   ```bash
+   docker compose up -d postgres
+   ```
+
+   Копия из облака — снимок Neon (раздел «Копии и восстановление»): адрес ветки даёт
+   `scripts/neon.sh branch-uri snapshot-ГГГГ-ММ-ДД`, дамп —
+   `pg_dump --format=custom --no-owner "$URI" > backups/orbita.dump`. Восстановить:
+
+   ```bash
+   docker compose exec -T postgres pg_restore -U orbita -d orbita --no-owner --no-privileges /backups/orbita.dump
+   ```
+
+3. **Файлы — вместе с базой.** Запись о версии презентации без самого файла откроется
+   отказом «файла нет в хранилище» (проверено). Файлы облачного хранилища (V44) кладутся в
+   том `uploads` с теми же ключами, что в базе (`stored_files.storage_key`), например
+   `rclone copy облако:orbita /var/lib/docker/volumes/orbita-server_uploads/_data`.
+
+4. **Запуск.**
+
+   ```bash
+   docker compose up -d --build
+   docker compose ps
+   ```
+
+   Всё `healthy`, журнал API кончается строкой `Uvicorn running`. Если путь к каталогу
+   содержит не латиницу, сборка падает на `x-docker-expose-session-sharedkey` — собирать с
+   `COMPOSE_BAKE=false` по одному образу: `docker compose build api`, затем `web` и `cron`.
+
+5. **Ссылки доступа** — тем же средством, что в облаке (раздел «Ссылки доступа»):
+
+   ```bash
+   docker compose exec api python -m app.access_cli assistant --base-url https://orbita.agency.uz
+   ```
+
+   Ссылка выводится один раз; её не публикуют и не пересылают в общих чатах.
+
+6. **Расписание и копии.** Задачи вызывает контейнер `cron`; ручной запуск —
+   `docker compose exec cron run-job deadline-check`. Ночная копия базы на сервере — задача
+   cron хоста:
+
+   ```bash
+   0 1 * * * cd /srv/orbita/deploy/server && docker compose exec -T postgres pg_dump -U orbita -Fc orbita > backups/orbita-$(date +\%F).dump
+   ```
+
+7. **Обновление** — новая версия из `main`:
+
+   ```bash
+   git pull && docker compose up -d --build
+   ```
+
+   Миграции применятся при старте API. Откат — `git checkout <прежний коммит>` и тот же
+   `up -d --build`; миграции вниз — только по решению, после копии базы.
 
 ## Что делать нельзя
 
