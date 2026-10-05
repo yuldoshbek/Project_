@@ -23,7 +23,7 @@ const here = dirname(fileURLToPath(import.meta.url));
  */
 export const REPORT_DIR = resolve(
   here,
-  `../../docs/reports/${process.env.ORBITA_E2E_BLOCK ?? 'block-2'}`,
+  `../../docs/reports/${process.env.ORBITA_E2E_BLOCK ?? 'block-3'}`,
 );
 const backend = resolve(here, '../../backend');
 

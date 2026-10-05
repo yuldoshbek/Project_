@@ -332,8 +332,8 @@ class CaptureKind(StrEnum):
 
     @property
     def becomes_task(self) -> bool:
-        """Уходит ли запись в «Задачи» (V17). Идея, письмо и мероприятие ждут во входящих
-        своих разделов: письмо и мероприятие — блок 2, идея — блок 3."""
+        """Уходит ли запись в «Задачи» (V17). Идея становится наброском раздела «Идеи и
+        карты» (`app.services.captures.save`); письмо и мероприятие ждут во входящих."""
         return self in (CaptureKind.TASK, CaptureKind.REQUEST)
 
 

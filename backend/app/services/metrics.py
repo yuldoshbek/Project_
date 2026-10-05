@@ -43,6 +43,9 @@ from app.domain.calendar import CalendarKind, HotDay
 from app.domain.calendar import hot_days as hot_days_of
 from app.domain.calendar import window as hot_window_of
 from app.domain.dictionaries import ProjectStatus, SettingKey, TaskStatus
+from app.domain.ideas import Answer as IdeasAnswer
+from app.domain.ideas import Waiting as IdeaWaiting
+from app.domain.ideas import awaiting as ideas_awaiting_of
 from app.domain.ijro_control import NEAR_DUE_DAYS
 from app.domain.ijro_control import Answer as IjroAnswer
 from app.domain.ijro_control import BatchEffect as IjroBatch
@@ -428,6 +431,11 @@ def ijro_answers(
     return ijro_answers_of(
         lines, today=today, limits=ijro_limits(thresholds), documents=documents, batch=batch
     )
+
+
+def ideas_awaiting(ideas: Iterable[IdeaWaiting], *, today: date) -> IdeasAnswer:
+    """«Что ждёт моего „да“?» — идеи на рассмотрении, дольше всех ждущая первой (V46)."""
+    return ideas_awaiting_of(ideas, today)
 
 
 def holders(ladder: Ladder) -> list[Holder]:

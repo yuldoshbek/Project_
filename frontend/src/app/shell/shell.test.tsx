@@ -82,20 +82,16 @@ describe('оболочка меняется вместе с устройство
     expect(PHONE_SECTIONS.length + MORE_SECTIONS.length).toBe(SECTIONS.length);
   });
 
-  it('«Ещё» — все остальные разделы, неготовые с номером блока', () => {
+  it('«Ещё» — все остальные разделы, и каждый уже открывается', () => {
     setViewport({ width: 390 });
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'Ещё' }));
 
     const sheet = screen.getByRole('dialog', { name: 'Все разделы' });
-    expect(within(sheet).getAllByRole('link')).toHaveLength(MORE_SECTIONS.length);
-    // «Ижро» и «Взаимодействие» уже открываются; их соседи по блоку 2 — ещё нет.
-    expect(within(sheet).getByRole('link', { name: /Ижро/ })).not.toHaveTextContent('блок');
-    expect(within(sheet).getByRole('link', { name: /Взаимодействие/ })).not.toHaveTextContent(
-      'блок',
-    );
-    expect(within(sheet).getByRole('link', { name: /Доклады/ })).not.toHaveTextContent('блок');
-    expect(within(sheet).getByRole('link', { name: /Идеи/ })).toHaveTextContent('блок 3');
+    const links = within(sheet).getAllByRole('link');
+    expect(links).toHaveLength(MORE_SECTIONS.length);
+    // Номер блока подписывает только раздел без экрана; с блоком 3 таких не осталось.
+    for (const link of links) expect(link).not.toHaveTextContent('блок');
   });
 
   it('«Поиск» честно говорит, что его нет в плане блоков (V19)', () => {
