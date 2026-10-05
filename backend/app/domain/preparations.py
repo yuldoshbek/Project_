@@ -175,12 +175,16 @@ def answers(lines: Sequence[PrepLine], *, today: date) -> list[Answer]:
         for each in open_lines
         if each.stage is PrepStage.THESES and each.start_on is not None and each.start_on <= today
     ]
+    # Ближайшая подготовка, где сведений не хватает: о ней и спрашивает руководитель
+    # («не хватает N сведений; X задерживает M дн», ТЗ 5). Всё собрано — ближайшая вообще.
+    lacking = [each for each in upcoming if each.missing > 0]
+    nearest = lacking[0] if lacking else (upcoming[0] if upcoming else None)
     return [
         Answer(
             key=Question.READINESS,
             rows=tuple(each.id for each in missing),
             count=len(missing),
-            nearest=upcoming[0] if upcoming else None,
+            nearest=nearest,
         ),
         Answer(
             key=Question.START_NOW,

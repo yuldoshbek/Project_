@@ -75,8 +75,9 @@ class TestTheSection:
         quarter = item(body, QUARTER)
         assert (quarter["step"], quarter["deviation"], quarter["days_left"]) == ("burning", 3, 3)
         readiness = answer(body, "readiness")
-        assert readiness["nearest"]["title"] == QUARTER
-        assert readiness["nearest"]["missing"] == 0
+        assert readiness["nearest"]["title"] == DROUGHT
+        assert readiness["nearest"]["missing"] == 2
+        assert readiness["nearest"]["delay"]["days"] == 4
         assert readiness["count"] == 2
         start_now = answer(body, "start_now")
         assert start_now["rows"] == [item(body, SATELLITE)["id"]]

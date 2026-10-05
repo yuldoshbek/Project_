@@ -94,7 +94,8 @@ describe('оболочка меняется вместе с устройство
     expect(within(sheet).getByRole('link', { name: /Взаимодействие/ })).not.toHaveTextContent(
       'блок',
     );
-    expect(within(sheet).getByRole('link', { name: /Доклады/ })).toHaveTextContent('блок 2');
+    expect(within(sheet).getByRole('link', { name: /Доклады/ })).not.toHaveTextContent('блок');
+    expect(within(sheet).getByRole('link', { name: /Идеи/ })).toHaveTextContent('блок 3');
   });
 
   it('«Поиск» честно говорит, что его нет в плане блоков (V19)', () => {
