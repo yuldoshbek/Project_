@@ -1461,6 +1461,27 @@ export const ru = {
     },
   },
 
+  meeting: {
+    start: 'Совещание',
+    label: 'Совещание: один вопрос на экран',
+    overview: 'Обзор разделов',
+    open: 'Открыть раздел',
+    openSection: 'Открыть «{{section}}»',
+    empty: 'В повестке пока нет вопросов.',
+    close: 'Выйти из совещания',
+    closeHint: 'Esc — выйти',
+    counter: '{{at}} / {{total}}',
+    previous: 'Предыдущий вопрос',
+    next: 'Следующий вопрос',
+    pult: {
+      question: 'Что требует внимания?',
+      none: 'Ничего не горит и не ждёт решения',
+      onTrack_one: 'по плану — {{count}} запись',
+      onTrack_few: 'по плану — {{count}} записи',
+      onTrack_many: 'по плану — {{count}} записей',
+      onTrack_other: 'по плану — {{count}} записи',
+    },
+  },
   ideas: {
     freshness: 'на {{when}}',
     tabs: { label: 'Что показать', ideas: 'Идеи', maps: 'Карты' },
