@@ -110,3 +110,19 @@ test('отчёт недели: снимок и PDF', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Печать и PDF' })).toBeHidden();
   await expect(page.getByRole('navigation').first()).toBeHidden();
 });
+
+test('отчёт месяца: PDF того же вида, что неделя', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openPult(page);
+  await page.getByRole('tab', { name: 'Отчёт' }).click();
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Отчёт за месяц/ })).toBeVisible();
+  await page.emulateMedia({ media: 'print' });
+  const pdf = await page.pdf({
+    path: `${REPORT_DIR}/report-month.pdf`,
+    format: 'A4',
+    printBackground: true,
+    margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' },
+  });
+  expect(pdf.byteLength, 'PDF пустой').toBeGreaterThan(10_000);
+});

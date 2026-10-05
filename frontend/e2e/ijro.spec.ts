@@ -238,4 +238,14 @@ test('справка по проблемным поручениям открыв
     path: `${REPORT_DIR}/ijro-spravka-laptop-light.png`,
     animations: 'disabled',
   });
+  // PDF — как его сохранит браузер из «Печать»: на листе только справка.
+  await page.emulateMedia({ media: 'print' });
+  const pdf = await page.pdf({
+    path: `${REPORT_DIR}/ijro-spravka.pdf`,
+    format: 'A4',
+    printBackground: true,
+    margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' },
+  });
+  expect(pdf.byteLength, 'PDF пустой').toBeGreaterThan(10_000);
+  await expect(page.getByRole('button', { name: 'Печать' })).toBeHidden();
 });
