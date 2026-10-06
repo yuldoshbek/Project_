@@ -18,6 +18,23 @@
       "port": 8000
     },
     {
+      "name": "backend-e2e",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--directory",
+        "backend",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "env": { "ORBITA_DATABASE_URL": "", "ORBITA_DB_NAME": "orbita_e2e" },
+      "port": 8000
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "node",
       "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--port", "5173", "--strictPort"],
