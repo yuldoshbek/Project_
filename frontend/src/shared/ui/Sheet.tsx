@@ -5,6 +5,10 @@
  * щелчку мимо и по кнопке; поставить фокус внутрь при открытии; держать Tab внутри, пока
  * лист открыт, и вернуть фокус туда, откуда лист открыли. Тянуть ради них пакет с десятком
  * компонентов запрещено (CLAUDE.md, «Чего не делать»).
+ *
+ * Лист рисуется порталом в `body`: раздел появляется плавной прозрачностью, а элемент с
+ * прозрачностью меньше единицы — свой слой наложения. Лист, открытый при входе в раздел
+ * (`?open=` из Календаря), без портала первые 200 мс оказывался под липкой шапкой.
  */
 
 import { X } from 'lucide-react';
@@ -15,6 +19,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { cn } from '@/shared/lib/cn';
 
@@ -91,7 +96,7 @@ export function Sheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, focusClose]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end print:hidden">
       <div className="absolute inset-0 bg-ink-strong/30" onClick={onClose} aria-hidden="true" />
       <section
@@ -123,6 +128,7 @@ export function Sheet({
           {children}
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

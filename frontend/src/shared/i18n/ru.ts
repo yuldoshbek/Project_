@@ -141,6 +141,9 @@ export const ru = {
   },
   language: {
     label: 'Язык',
+    failed: 'Язык не сменился: {{detail}}',
+    notLoaded: 'не загрузился словарь — проверьте связь и обновите страницу',
+    dismiss: 'Понятно',
   },
 
   role: {
@@ -1031,6 +1034,7 @@ export const ru = {
       control_mark: 'отметка {{date}}',
       task_movement: 'задача {{date}}',
       interim_report: 'информация {{date}}',
+      seta: 'SETA {{date}}',
       none: 'движения не было',
     },
     questions: {
@@ -1470,6 +1474,7 @@ export const ru = {
     open: 'Открыть раздел',
     openSection: 'Открыть «{{section}}»',
     empty: 'В повестке пока нет вопросов.',
+    failed: 'Не удалось получить данные раздела',
     close: 'Выйти из совещания',
     closeHint: 'Esc — выйти',
     counter: '{{at}} / {{total}}',
@@ -1516,6 +1521,8 @@ export const ru = {
     list: { filtered: 'Ждут решения: {{count}}', clear: 'Показать все' },
     link: { project: 'Проект {{code}} · {{title}}', task: 'Задача {{code}} · {{title}}' },
     toReview: 'На рассмотрение',
+    decidedOn: 'решено {{date}}',
+    edit: { open: 'Изменить', label: 'Текст идеи', save: 'Сохранить', cancel: 'Отменить' },
     new: {
       title: 'Записать идею',
       hint: 'Одной-двумя фразами: путь до решения начинается с наброска',
@@ -1561,6 +1568,7 @@ export const ru = {
       addRoot: 'Новый узел верхнего уровня',
       addChild: 'Новый узел под «{{parent}}»',
       add: 'Добавить узел',
+      stale: 'Карта не обновилась: {{detail}}. На экране — последняя полученная версия.',
     },
     node: {
       label: 'Узел',

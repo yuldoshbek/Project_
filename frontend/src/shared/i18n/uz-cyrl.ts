@@ -132,6 +132,9 @@ export const uzCyrl = {
   },
   language: {
     label: 'Тил',
+    failed: 'Тил алмашмади: {{detail}}',
+    notLoaded: 'луғат юкланмади — алоқани текшириб, саҳифани янгиланг',
+    dismiss: 'Тушунарли',
   },
   role: {
     assistant: 'Ёрдамчи',
@@ -670,7 +673,7 @@ export const uzCyrl = {
     count: 'лойиҳалар: {{count}}',
     statuses: {
       in_progress: 'Ишда',
-      on_hold: 'Паузада',
+      on_hold: 'Тўхтатилган',
       done: 'Якунланган',
       cancelled: 'Бекор қилинган',
     },
@@ -994,6 +997,7 @@ export const uzCyrl = {
       control_mark: 'белги {{date}}',
       task_movement: 'вазифа {{date}}',
       interim_report: 'маълумот {{date}}',
+      seta: 'SETA {{date}}',
       none: 'ҳаракат бўлмаган',
     },
     questions: {
@@ -1446,6 +1450,7 @@ export const uzCyrl = {
     open: 'Бўлимни очиш',
     openSection: '«{{section}}»ни очиш',
     empty: 'Кун тартибида ҳозирча саволлар йўқ.',
+    failed: 'Бўлим маълумотларини олиб бўлмади',
     close: 'Мажлисдан чиқиш',
     closeHint: 'Esc — чиқиш',
     counter: '{{at}} / {{total}}',
@@ -1506,6 +1511,13 @@ export const uzCyrl = {
       task: 'Вазифа {{code}} · {{title}}',
     },
     toReview: 'Кўриб чиқишга',
+    decidedOn: '{{date}} ҳал қилинган',
+    edit: {
+      open: 'Таҳрирлаш',
+      label: 'Ғоя матни',
+      save: 'Сақлаш',
+      cancel: 'Бекор қилиш',
+    },
     new: {
       title: 'Ғояни ёзиш',
       hint: 'Бир-икки ибора билан: қароргача йўл қораламадан бошланади',
@@ -1550,6 +1562,7 @@ export const uzCyrl = {
       addRoot: 'Юқори даражадаги янги тугун',
       addChild: '«{{parent}}» остида янги тугун',
       add: 'Тугун қўшиш',
+      stale: 'Харита янгиланмади: {{detail}}. Экранда — охирги олинган версия.',
     },
     node: {
       label: 'Тугун',

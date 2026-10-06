@@ -5,6 +5,9 @@
  * идеи по шагам пути. Руководитель решает: в проект, в задачу или отложить — решение сразу
  * заводит настоящую запись (критерий 1 блока 3). Вкладка «Карты» — интеллект-карты:
  * полотно на ноутбуке, контур на телефоне, без правки на мониторе (ТЗ 6).
+ *
+ * На мониторе редактирования нет (ТЗ 6): ни записи идеи, ни правки текста, ни отправки на
+ * рассмотрение. Решение руководителя остаётся — это фиксация решения на разборе.
  */
 
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -14,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
 import { useCurrentUser } from '@/app/session';
-import { describeError } from '@/shared/api/client';
+import { ApiError, describeError } from '@/shared/api/client';
 import type { Role } from '@/shared/api/orbita';
 import { cn } from '@/shared/lib/cn';
 import { formatDate, formatDateTime } from '@/shared/time';
@@ -27,7 +30,7 @@ import { Signal } from '@/shared/ui/Signal';
 import { Maps } from './Maps';
 import type { Idea, IdeasView, Outcome } from './model';
 import { awaitingText, ideaMeta } from './text';
-import { useCreateIdea, useDecide, useIdeas, useToReview } from './useIdeas';
+import { useCreateIdea, useDecide, useEditIdea, useIdeas, useToReview } from './useIdeas';
 
 const FIELD =
   'min-h-touch min-w-0 rounded-[var(--radius)] border border-line-strong bg-card px-2 text-sm text-ink';
@@ -158,7 +161,7 @@ function IdeasTab({ view, viewer }: { view: IdeasView; viewer: Role }) {
             ) : null}
           </Card>
         ) : null}
-        <NewIdea />
+        {device === 'monitor' ? null : <NewIdea />}
       </div>
 
       {onlyWaiting ? (
@@ -191,6 +194,7 @@ function IdeasTab({ view, viewer }: { view: IdeasView; viewer: Role }) {
                   key={idea.id}
                   idea={idea}
                   viewer={viewer}
+                  editable={device !== 'monitor'}
                   onDecide={() => setDeciding(idea.id)}
                 />
               ))}
@@ -212,10 +216,28 @@ function IdeasTab({ view, viewer }: { view: IdeasView; viewer: Role }) {
   );
 }
 
-function IdeaRow({ idea, viewer, onDecide }: { idea: Idea; viewer: Role; onDecide: () => void }) {
+function IdeaRow({
+  idea,
+  viewer,
+  editable,
+  onDecide,
+}: {
+  idea: Idea;
+  viewer: Role;
+  editable: boolean;
+  onDecide: () => void;
+}) {
   const { t } = useTranslation();
   const review = useToReview();
+  const edit = useEditIdea();
+  // Правка помнит версию, с которой её начали: опрос принёс бы свежую, и чужая правка
+  // текста пропала бы молча (инвариант 15).
+  const [draft, setDraft] = useState<{ text: string; version: number } | null>(null);
   const open = idea.step !== 'decided' || idea.outcome === 'postponed';
+  // Править текст можно, пока идея не стала записью: у наброска и у отложенной. У идеи на
+  // рассмотрении текст — то, что руководитель уже читает.
+  const rewritable = editable && (idea.step === 'draft' || idea.outcome === 'postponed');
+  const failure = review.error ?? edit.error;
   return (
     <li className="flex min-w-0 flex-col gap-2 rounded-[var(--radius-lg)] border border-line bg-card p-4">
       <span className="inline-flex flex-wrap items-center gap-2">
@@ -234,24 +256,62 @@ function IdeaRow({ idea, viewer, onDecide }: { idea: Idea; viewer: Role; onDecid
             ? t(`ideas.outcomes.${idea.outcome}`)
             : t(`ideas.steps.${idea.step}`)}
         </Signal>
-        <span className="numeric text-xs text-ink-muted">
-          {ideaMeta(t, idea, formatDate(idea.created_at.slice(0, 10)))}
-        </span>
+        <span className="numeric text-xs text-ink-muted">{ideaMeta(t, idea, formatDate)}</span>
       </span>
-      <span className="text-ink-strong">{idea.text}</span>
+      {draft ? (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            edit.mutate(
+              { id: idea.id, text: draft.text, version: draft.version },
+              {
+                onSuccess: () => setDraft(null),
+                // Конфликт: правка не сохранена, строка показывает текст второго человека, а
+                // сообщение — что свою правку надо внести ещё раз.
+                onError: (error) => {
+                  if (error instanceof ApiError && error.status === 409) setDraft(null);
+                },
+              },
+            );
+          }}
+        >
+          <input
+            aria-label={t('ideas.edit.label')}
+            className={FIELD}
+            value={draft.text}
+            onChange={(event) => setDraft({ ...draft, text: event.target.value })}
+          />
+          <span className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              size="small"
+              look="primary"
+              disabled={edit.isPending || !draft.text.trim() || draft.text === idea.text}
+            >
+              {t('ideas.edit.save')}
+            </Button>
+            <Button size="small" look="quiet" onClick={() => setDraft(null)}>
+              {t('ideas.edit.cancel')}
+            </Button>
+          </span>
+        </form>
+      ) : (
+        <span className="text-ink-strong">{idea.text}</span>
+      )}
       {idea.link ? (
         <span className="text-sm text-ink">
           {t(`ideas.link.${idea.link.type}`, { code: idea.link.code, title: idea.link.title })}
         </span>
       ) : null}
-      {open ? (
+      {open && !draft ? (
         <span className="flex flex-wrap gap-2">
           {viewer === 'leader' ? (
             <Button size="small" look="primary" onClick={onDecide}>
               {t('ideas.decision.open')}
             </Button>
           ) : null}
-          {idea.step !== 'review' ? (
+          {editable && idea.step !== 'review' ? (
             <Button
               size="small"
               disabled={review.isPending}
@@ -260,11 +320,23 @@ function IdeaRow({ idea, viewer, onDecide }: { idea: Idea; viewer: Role; onDecid
               {t('ideas.toReview')}
             </Button>
           ) : null}
+          {rewritable ? (
+            <Button
+              size="small"
+              look="quiet"
+              onClick={() => {
+                edit.reset();
+                setDraft({ text: idea.text, version: idea.version });
+              }}
+            >
+              {t('ideas.edit.open')}
+            </Button>
+          ) : null}
         </span>
       ) : null}
-      {review.isError ? (
+      {failure ? (
         <p role="alert" className="text-sm text-burn-ink">
-          {describeError(review.error)}
+          {describeError(failure)}
         </p>
       ) : null}
     </li>
@@ -322,9 +394,7 @@ function Decision({ idea, view, onDone }: { idea: Idea; view: IdeasView; onDone:
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-xs text-ink-muted">
-          {ideaMeta(t, idea, formatDate(idea.created_at.slice(0, 10)))}
-        </p>
+        <p className="text-xs text-ink-muted">{ideaMeta(t, idea, formatDate)}</p>
         <p className="mt-1 text-lg leading-snug font-semibold text-ink-strong">{idea.text}</p>
       </div>
       <p className="text-sm text-ink-muted">{t('ideas.decision.hint')}</p>

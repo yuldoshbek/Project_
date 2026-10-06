@@ -8,33 +8,97 @@
 
 import { useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { cn } from '@/shared/lib/cn';
 import { Loading } from '@/shared/ui/States';
 
 import { useAgenda } from './useAgenda';
 
 const NEXT = new Set(['ArrowRight', 'ArrowDown', 'PageDown', ' ']);
 const PREVIOUS = new Set(['ArrowLeft', 'ArrowUp', 'PageUp']);
+const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Пробел на кнопке нажимает кнопку: листать вместо этого — отнять у неё клавиатуру. */
+function isControl(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('button, a[href], input, textarea') !== null;
+}
 
 export default function MeetingMode({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { slides, pending } = useAgenda();
-  const [index, setIndex] = useState(0);
+  const dialog = useRef<HTMLDivElement>(null);
+  // Кто был в фокусе до совещания — туда фокус и вернётся. Запоминается при первой
+  // отрисовке: к эффекту фокус уже внутри диалога.
+  const [opener] = useState(() =>
+    document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  );
+  // Позиция — вопрос, а не номер: если повестка изменится под открытым совещанием, экран
+  // останется на том же вопросе, а не перескочит на соседний.
+  const [current, setCurrent] = useState<string | null>(null);
+  const found = slides.findIndex((each) => each.key === current);
+  const at = found === -1 ? 0 : found;
   const last = Math.max(0, slides.length - 1);
-  const at = Math.min(index, last);
-  const slide = slides[at];
+  // Пока не пришли все разделы — загрузка, а не часть повестки: иначе счётчик меняется с
+  // «1 / 2» на «1 / 6» под руками ведущего, а «второй вопрос» сам становится другим.
+  const slide = pending ? undefined : slides[at];
 
   const go = useCallback(
-    (step: number) => setIndex((current) => Math.min(last, Math.max(0, current + step))),
-    [last],
+    (step: number) => {
+      // Пока повестка грузится, листать нечего: нажатие сдвинуло бы невидимую позицию.
+      if (pending) return;
+      const next = slides[Math.min(last, Math.max(0, at + step))];
+      if (next) setCurrent(next.key);
+    },
+    [pending, slides, at, last],
   );
 
   useEffect(() => {
+    const node = dialog.current;
+    node?.focus();
+    return () => {
+      // Проверка — на следующем витке: StrictMode снимает и ставит эффекты заново, не убирая
+      // диалог. Диалог убран, фокус упал на body — возвращаем на кнопку, которая его открыла.
+      setTimeout(() => {
+        if (node?.isConnected || !opener?.isConnected) return;
+        if (document.activeElement && document.activeElement !== document.body) return;
+        opener.focus();
+      }, 0);
+    };
+  }, [opener]);
+
+  useEffect(() => {
+    // Tab не уходит за диалог: шапка и боковая панель под ним в документе остаются, и Enter
+    // на невидимой ссылке увёл бы в другой раздел (aria-modal).
+    const keepInside = (event: KeyboardEvent) => {
+      const node = dialog.current;
+      if (!node) return;
+      const focusable = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const first = focusable[0];
+      const end = focusable.at(-1);
+      const active = document.activeElement;
+      const inside = active !== node && active instanceof Node && node.contains(active);
+      if (!first || !end) {
+        event.preventDefault();
+        node.focus();
+      } else if (!inside) {
+        event.preventDefault();
+        (event.shiftKey ? end : first).focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        end.focus();
+      } else if (!event.shiftKey && active === end) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
+      else if (event.key === 'Tab') keepInside(event);
+      else if (event.key === ' ' && isControl(event.target)) return;
       else if (NEXT.has(event.key)) {
         event.preventDefault();
         go(1);
@@ -49,12 +113,16 @@ export default function MeetingMode({ onClose }: { onClose: () => void }) {
 
   return (
     <div
+      ref={dialog}
       role="dialog"
       aria-modal="true"
       aria-label={t('meeting.label')}
-      className="fixed inset-0 z-50 flex flex-col bg-app text-ink"
+      tabIndex={-1}
+      // Рамка фокуса вокруг всего экрана ничего не говорит: фокус на диалоге — чтобы пробел
+      // пульта листал, а не нажимал кнопку «Выйти».
+      className="fixed inset-0 z-50 flex flex-col bg-app text-ink outline-none"
     >
-      {pending && !slide ? (
+      {pending ? (
         <div className="grid flex-1 place-items-center">
           <Loading />
         </div>
@@ -70,11 +138,10 @@ export default function MeetingMode({ onClose }: { onClose: () => void }) {
             {slide.question}
           </h2>
           <p
-            className={
-              slide.empty
-                ? 'text-[clamp(2rem,4.4vw,6rem)] leading-tight font-bold text-calm-ink'
-                : 'text-[clamp(2rem,4.4vw,6rem)] leading-tight font-bold text-ink-strong'
-            }
+            className={cn(
+              'text-[clamp(2rem,4.4vw,6rem)] leading-tight font-bold',
+              slide.failed ? 'text-burn-ink' : slide.empty ? 'text-calm-ink' : 'text-ink-strong',
+            )}
           >
             {slide.main}
           </p>
@@ -84,13 +151,15 @@ export default function MeetingMode({ onClose }: { onClose: () => void }) {
           {slide.lines.length > 0 ? (
             <ul className="flex flex-col gap-[1vh] text-[clamp(1rem,1.7vw,2.25rem)] text-ink">
               {slide.lines.map((line) => (
-                <li key={line} className="truncate">
-                  {line}
+                <li key={line.key} className="truncate">
+                  {line.text}
                 </li>
               ))}
             </ul>
           ) : null}
-          <p className="text-[clamp(0.875rem,1.2vw,1.5rem)] text-ink-muted">{slide.freshness}</p>
+          {slide.freshness ? (
+            <p className="text-[clamp(0.875rem,1.2vw,1.5rem)] text-ink-muted">{slide.freshness}</p>
+          ) : null}
           <div>
             <button
               type="button"
@@ -121,13 +190,13 @@ export default function MeetingMode({ onClose }: { onClose: () => void }) {
           {t('meeting.closeHint')}
         </button>
         <span className="numeric text-sm" aria-live="polite">
-          {slides.length > 0 ? t('meeting.counter', { at: at + 1, total: slides.length }) : null}
+          {slide ? t('meeting.counter', { at: at + 1, total: slides.length }) : null}
         </span>
         <span className="inline-flex gap-1">
           <button
             type="button"
             onClick={() => go(-1)}
-            disabled={at === 0}
+            disabled={!slide || at === 0}
             aria-label={t('meeting.previous')}
             className="grid size-11 place-items-center rounded-[var(--radius)] hover:text-ink disabled:opacity-40"
           >
@@ -136,7 +205,7 @@ export default function MeetingMode({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={() => go(1)}
-            disabled={at === last}
+            disabled={!slide || at === last}
             aria-label={t('meeting.next')}
             className="grid size-11 place-items-center rounded-[var(--radius)] hover:text-ink disabled:opacity-40"
           >

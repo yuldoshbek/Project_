@@ -16,10 +16,24 @@ test.beforeAll(() => {
   leader = issueLink('leader');
 });
 
+/**
+ * Выбрать язык и дождаться, пока он записан у пользователя. Интерфейс переключается сразу,
+ * а сохранение уходит вдогонку: переход по адресу до ответа обрывал его, и страница
+ * открывалась на прежнем языке — так прогон 05.10 упал на «Ғоялар ва хариталар», показав
+ * раздел латиницей.
+ */
 async function choose(page: Page, label: string) {
   await page.getByRole('button', { name: /^(Тема|Mavzu|Мавзу):/ }).click();
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/me/locale') && response.request().method() === 'PUT',
+  );
   await page.getByRole('menuitemradio', { name: label }).click();
+  expect((await saved).ok(), 'язык сохранён на сервере').toBe(true);
 }
+
+/** Названия статусов проекта в наполнении (`app.seed`) — по-русски. */
+const RUSSIAN_STATUSES = /^(В работе|На паузе|Завершён|Отменён)$/;
 
 test.afterEach(async ({ page }) => {
   await page.request.put('/api/me/locale', { data: { locale: 'ru' } });
@@ -54,6 +68,16 @@ test('латиница и кириллица: меню, сохранение, р
   });
 
   // Ни одного пропущенного ключа на экране: пропуск виден как ⟨ключ⟩.
+  await expect(page.getByText(/⟨[\w.]+⟩/)).toHaveCount(0);
+
+  // Статусы приходят из справочника, а не из словаря: полнота словарей их не видит, и
+  // доска оставалась русской. Пропущенный узбекский ключ тоже показал бы русскую строку,
+  // а не ⟨ключ⟩, поэтому ищется сам русский текст.
+  await page.goto('/projects');
+  await expect(page.getByRole('heading', { name: 'Лойиҳалар', level: 1 })).toBeVisible();
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'Ишда', level: 2 })).toBeVisible();
+  await expect(main.getByText(RUSSIAN_STATUSES)).toHaveCount(0);
   await expect(page.getByText(/⟨[\w.]+⟩/)).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });

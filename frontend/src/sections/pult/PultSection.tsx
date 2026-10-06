@@ -19,7 +19,7 @@
 
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Gauge, Presentation } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, startTransition, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
@@ -540,6 +540,17 @@ function Counters({
   );
 }
 
+/**
+ * Сколько строк лестницы рисуется первым заходом; остальные — сразу следом, несрочным
+ * заходом, без кнопки. Замер первого экрана на телефоне (критерий 4 блока 3): все 77 строк
+ * вымышленной базы рисовались одним заходом почти секунду на медленном процессоре — дольше,
+ * чем шли оба запроса к серверу. Прятать хвост за кнопкой нельзя: ТЗ 4 сворачивает только
+ * норму, а просроченное и горящее в конце длинной лестницы — такие же строки тревоги.
+ */
+const FIRST_ROWS = 20;
+/** На телефоне экран вмещает около пяти строк: десяти хватает с запасом на прокрутку. */
+const FIRST_ROWS_PHONE = 10;
+
 function LadderCard({
   rows,
   onTrack,
@@ -572,6 +583,13 @@ function LadderCard({
   compact: boolean;
 }) {
   const { t } = useTranslation();
+  const [whole, setWhole] = useState(false);
+  useEffect(() => {
+    // Эффект идёт после первой отрисовки, а переход уступает касаниям: верх лестницы уже
+    // на экране, хвост дорисовывается, не задерживая его.
+    startTransition(() => setWhole(true));
+  }, []);
+  const shown = whole ? rows : rows.slice(0, compact ? FIRST_ROWS_PHONE : FIRST_ROWS);
   const filterLabel = filter
     ? filter.kind === 'step'
       ? t(`pult.steps.${filter.step}`)
@@ -597,7 +615,7 @@ function LadderCard({
         <p className="py-4 text-sm text-calm-ink">{t('pult.ladder.allClear')}</p>
       ) : (
         <ol className="flex flex-col gap-2">
-          {rows.map((row) => {
+          {shown.map((row) => {
             const key = rowKey(row);
             return (
               <LadderRow

@@ -5,12 +5,20 @@
  * полнота проверяется здесь, ключ за ключом; из множественных форм русского (`_one`,
  * `_few`, `_many`, `_other`) узбекскому нужны `_one` и `_other`. Подстановки `{{…}}` —
  * те же, что в русском: потерянная подстановка — это пустое место вместо числа.
+ *
+ * Полнота словарей не видит слов, которые собирает не словарь: месяцы дают `Intl`, названия
+ * статусов — справочник. Так узбекский интерфейс жил с русскими месяцами в Ижро, Программах
+ * и на таймлайне при зелёных проверках, поэтому эти слова проверяются отдельно.
  */
 
 import i18next from 'i18next';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyLocale } from '.';
+import { dayOfYear, monthTitle as calendarMonth } from '@/sections/calendar/text';
+import { dueLabel } from '@/sections/ijro/text';
+import { monthTitle as programMonth } from '@/sections/programs/text';
+
+import { applyLocale, localName } from '.';
 import { ru } from './ru';
 import { uzCyrl } from './uz-cyrl';
 import { uzLatn } from './uz-latn';
@@ -92,5 +100,72 @@ describe('переключение языка', () => {
   it('неизвестный язык — русский', async () => {
     await applyLocale('en');
     expect(i18next.language).toBe('ru');
+  });
+
+  it('пока грузится словарь, выбрали другой язык — побеждает последний выбор', async () => {
+    i18next.removeResourceBundle('uz-Latn', 'translation');
+    const slow = applyLocale('uz_latn');
+    const last = applyLocale('ru');
+
+    expect(await last).toBe(true);
+    expect(await slow).toBe(false);
+    expect(i18next.language).toBe('ru');
+    expect(document.documentElement.lang).toBe('ru');
+    // Догруженный словарь не выбрасывается: следующий выбор не идёт за ним в сеть.
+    expect(i18next.hasResourceBundle('uz-Latn', 'translation')).toBe(true);
+  });
+
+  it('два словаря грузятся одновременно — язык того, что выбран последним', async () => {
+    i18next.removeResourceBundle('uz-Latn', 'translation');
+    i18next.removeResourceBundle('uz-Cyrl', 'translation');
+    const first = applyLocale('uz_cyrl');
+    const last = applyLocale('uz_latn');
+
+    await Promise.all([first, last]);
+    expect(i18next.language).toBe('uz-Latn');
+  });
+});
+
+describe('слова из Intl и справочников — на языке интерфейса', () => {
+  const t = i18next.t.bind(i18next);
+  const RUSSIAN_MONTH =
+    /январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр/i;
+
+  it('месяц в сроке Ижро, в «до конца года» Программ и в календаре — не русский', async () => {
+    await applyLocale('uz_latn');
+    expect(dueLabel(t, { due_on: '2026-10-15', due_precision: 'month' })).toBe('2026-yil oktabr');
+    expect(programMonth('2026-10-01')).toBe('Oktabr');
+    expect(calendarMonth('2026-10')).toBe('Oktabr 2026');
+    expect(dayOfYear(1, 20)).not.toMatch(RUSSIAN_MONTH);
+
+    await applyLocale('uz_cyrl');
+    expect(dueLabel(t, { due_on: '2026-10-15', due_precision: 'month' })).toBe('2026-йил октябр');
+    expect(programMonth('2026-11-01')).toBe('Ноябр');
+
+    await applyLocale('ru');
+    expect(dueLabel(t, { due_on: '2026-10-15', due_precision: 'month' })).toBe('октябрь 2026');
+    expect(programMonth('2026-10-01')).toBe('Октябрь');
+  });
+
+  it('несуществующий день правила цикла: число на месте дня, без склейки «30 1-fevral»', async () => {
+    await applyLocale('uz_latn');
+    expect(dayOfYear(2, 30)).toBe('30-fevral');
+    expect(dayOfYear(2, 29)).toBe('29-fevral');
+
+    await applyLocale('uz_cyrl');
+    expect(dayOfYear(2, 30)).toBe('30 феврал');
+
+    await applyLocale('ru');
+    expect(dayOfYear(2, 30)).toBe('30 февраля');
+  });
+
+  it('название из справочника — на текущем языке, пустое — русское', async () => {
+    const names = { ru: 'В работе', uz_latn: 'Ishda', uz_cyrl: 'Ишда' };
+    expect(localName(names)).toBe('В работе');
+
+    await applyLocale('uz_latn');
+    expect(localName(names)).toBe('Ishda');
+    expect(localName({ ...names, uz_latn: '' })).toBe('В работе');
+    expect(localName(names, 'uz-Cyrl')).toBe('Ишда');
   });
 });

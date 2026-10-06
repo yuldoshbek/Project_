@@ -14,6 +14,7 @@
 import { ArrowLeft, Plus } from 'lucide-react';
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -24,7 +25,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
 import { STEP_SIGNAL } from '@/sections/pult/model';
-import { describeError } from '@/shared/api/client';
+import { ApiError, describeError } from '@/shared/api/client';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 import { Button } from '@/shared/ui/Button';
@@ -41,6 +42,7 @@ import {
   type MapMode,
   type MapNode,
 } from './model';
+import { branchStamp } from './stamp';
 import { descendants } from './text';
 import {
   useAddNode,
@@ -106,7 +108,7 @@ export function Maps({
                     {t(`ideas.modes.${each.mode}`)}
                   </Signal>
                   <span className="numeric text-xs text-ink-muted">
-                    {formatDate(each.changed_at.slice(0, 10))}
+                    {formatDate(each.changed_at)}
                   </span>
                 </span>
                 <span className="font-semibold text-ink-strong">{each.title}</span>
@@ -165,7 +167,9 @@ function MapScreen({ id, onBack }: { id: string; onBack: () => void }) {
   const device = useDevice();
   const board = useMap(id);
   if (board.isPending) return <Loading />;
-  if (board.isError) {
+  // Сбой фонового опроса не прячет полотно: неудачный повтор оставляет прежние данные, а с
+  // полотном ушли бы выбор узла и недописанная подпись.
+  if (!board.data) {
     return <Failure detail={describeError(board.error)} onRetry={() => void board.refetch()} />;
   }
   const editable = device === 'laptop';
@@ -188,6 +192,11 @@ function MapScreen({ id, onBack }: { id: string; onBack: () => void }) {
         )}
       </div>
       <p className="text-sm text-ink-muted">{t(`ideas.modes.${board.data.mode}Hint`)}</p>
+      {board.isError ? (
+        <p role="status" className="text-sm text-wait-ink">
+          {t('ideas.canvas.stale', { detail: describeError(board.error) })}
+        </p>
+      ) : null}
       {device === 'phone' ? (
         <Outline board={board.data} />
       ) : (
@@ -224,24 +233,124 @@ function ModeSwitch({ board }: { board: MapCard }) {
 // Полотно
 // --------------------------------------------------------------------------------------
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+/** Место узла и версия, при которой оно такое на сервере. */
+interface Spot extends Point {
+  version: number;
+}
+
+/** Масштаб и сдвиг полотна. */
+interface Frame {
+  shiftX: number;
+  shiftY: number;
+  scale: number;
+}
+
 interface Drag {
   id: string;
   startX: number;
   startY: number;
   dx: number;
   dy: number;
+  /** Откуда узел взяли: он идёт за указателем от этого места, что бы ни принёс опрос. */
+  origin: Point;
+  /**
+   * Версия, с которой начался перенос; `null` — перенос продолжает свои же, ещё не
+   * подтверждённые сервером шаги.
+   */
+  version: number | null;
+  /**
+   * Масштаб и сдвиг на время перетаскивания стоят: иначе узел за краем сдвигал бы всю карту, а
+   * масштаб менялся бы под пальцем.
+   */
+  frame: Frame;
+}
+
+/** Перенос узла, ещё не дошедший до карты с сервера. */
+interface Placed extends Spot {
+  /** Запрос в пути: место показывается, что бы ни принёс опрос. */
+  busy: boolean;
+}
+
+/**
+ * Переносы узлов — по очереди на узел.
+ *
+ * Сервер сверяет версию узла на каждом переносе (инвариант 15), а версия в карте обновится
+ * только с перечитыванием. Два быстрых нажатия стрелки с одной версией дали бы второму ложное
+ * «запись уже изменили». Поэтому у узла в пути не больше одного запроса; шаги, сделанные за
+ * это время, копятся в одну последнюю цель и уходят следом — с версией, которую сервер дал
+ * после предыдущего шага. Сервер поднимает версию, только когда место правда изменилось
+ * (`services.ideas.move_node`), — так же считается и здесь.
+ */
+function useMover(mapId: string) {
+  const move = useMoveNode();
+  const [placed, setPlaced] = useState<Record<string, Placed>>({});
+  const [failure, setFailure] = useState<unknown>(null);
+  const queued = useRef(new Map<string, Point | null>());
+
+  const send = (id: string, from: Point, to: Point, version: number) => {
+    move.mutateAsync({ mapId, id, x: to.x, y: to.y, version }).then(
+      () => {
+        const after = from.x === to.x && from.y === to.y ? version : version + 1;
+        const next = queued.current.get(id);
+        if (next) {
+          queued.current.set(id, null);
+          send(id, to, next, after);
+          return;
+        }
+        queued.current.delete(id);
+        setPlaced((current) => {
+          const local = current[id];
+          return local ? { ...current, [id]: { ...local, version: after, busy: false } } : current;
+        });
+      },
+      (error: unknown) => {
+        queued.current.delete(id);
+        setFailure(error);
+        // Несохранённое место не остаётся на экране: узел встаёт туда, где он на сервере.
+        setPlaced((current) => {
+          const rest = { ...current };
+          delete rest[id];
+          return rest;
+        });
+      },
+    );
+  };
+
+  /** Где узел сейчас для человека — с его переносами, которых карта с сервера ещё не знает. */
+  const spot = (node: MapNode): Spot => {
+    const local = placed[node.id];
+    return local && (local.busy || node.version < local.version) ? local : node;
+  };
+
+  /** Перенос от `from` — места и версии, которые человек видел, начиная перенос. */
+  const place = (id: string, from: Spot, to: Point) => {
+    setFailure(null);
+    setPlaced((current) => ({
+      ...current,
+      [id]: { x: to.x, y: to.y, version: from.version, busy: true },
+    }));
+    if (queued.current.has(id)) {
+      queued.current.set(id, to);
+      return;
+    }
+    queued.current.set(id, null);
+    send(id, { x: from.x, y: from.y }, to, from.version);
+  };
+
+  return { spot, place, busy: (id: string) => queued.current.has(id), failure };
 }
 
 function Board({ board, editable }: { board: MapCard; editable: boolean }) {
   const { t } = useTranslation();
-  const move = useMoveNode();
+  const mover = useMover(board.id);
+  const describedBy = useId();
   const [selected, setSelected] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
-  // Место, куда узел уже перенесён, пока сервер не ответил: иначе узел прыгнул бы назад до
-  // следующего опроса. Запоминается с версией — новая версия с сервера его отменяет.
-  const [placed, setPlaced] = useState<Record<string, { x: number; y: number; version: number }>>(
-    {},
-  );
   const moved = useRef(false);
   const frame = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
@@ -257,32 +366,28 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
     return () => observer.disconnect();
   }, []);
 
-  const position = (node: MapNode) => {
-    const local = placed[node.id];
-    const base = local && local.version === node.version ? local : node;
-    if (drag?.id === node.id) return { x: base.x + drag.dx, y: base.y + drag.dy };
-    return { x: base.x, y: base.y };
+  const position = (node: MapNode): Point => {
+    if (drag?.id === node.id) return { x: drag.origin.x + drag.dx, y: drag.origin.y + drag.dy };
+    const { x, y } = mover.spot(node);
+    return { x, y };
   };
 
+  // Вписывается карта по местам без перетаскиваемого узла, а пока его тянут, масштаб и
+  // сдвиг стоят такими, какими были при касании.
+  const fitted = ((): Frame => {
+    const spots = board.node_list.map(mover.spot);
+    const shiftX = MARGIN - Math.min(0, ...spots.map((each) => each.x));
+    const shiftY = MARGIN - Math.min(0, ...spots.map((each) => each.y));
+    const extentX = Math.max(...spots.map((each) => each.x + shiftX + NODE_WIDTH + MARGIN), 0);
+    const extentY = Math.max(...spots.map((each) => each.y + shiftY + NODE_HEIGHT + MARGIN), 0);
+    const scale =
+      box.width && extentX && extentY
+        ? Math.min(1, Math.max(MIN_SCALE, Math.min(box.width / extentX, box.height / extentY)))
+        : 1;
+    return { shiftX, shiftY, scale };
+  })();
+  const { shiftX, shiftY, scale } = drag?.frame ?? fitted;
   const points = board.node_list.map(position);
-  const minX = Math.min(0, ...points.map((each) => each.x));
-  const minY = Math.min(0, ...points.map((each) => each.y));
-  const shiftX = MARGIN - minX;
-  const shiftY = MARGIN - minY;
-  // Масштаб — по местам с сервера, не по перетаскиваемому узлу: иначе полотно дышало бы
-  // под пальцем.
-  const extentX = Math.max(
-    ...board.node_list.map((node) => node.x + shiftX + NODE_WIDTH + MARGIN),
-    0,
-  );
-  const extentY = Math.max(
-    ...board.node_list.map((node) => node.y + shiftY + NODE_HEIGHT + MARGIN),
-    0,
-  );
-  const scale =
-    box.width && extentX && extentY
-      ? Math.min(1, Math.max(MIN_SCALE, Math.min(box.width / extentX, box.height / extentY)))
-      : 1;
   const width = Math.max(
     box.width / scale,
     ...points.map((each) => each.x + shiftX + NODE_WIDTH + MARGIN),
@@ -293,28 +398,40 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
   );
   const byId = new Map(board.node_list.map((node) => [node.id, node]));
 
-  const place = (node: MapNode, x: number, y: number) => {
-    setPlaced((current) => ({ ...current, [node.id]: { x, y, version: node.version } }));
-    move.mutate({ mapId: board.id, id: node.id, x, y, version: node.version });
-  };
-
   const onPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, node: MapNode) => {
     if (!editable) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     moved.current = false;
-    setDrag({ id: node.id, startX: event.clientX, startY: event.clientY, dx: 0, dy: 0 });
+    const from = mover.spot(node);
+    setDrag({
+      id: node.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      dx: 0,
+      dy: 0,
+      origin: { x: from.x, y: from.y },
+      version: mover.busy(node.id) ? null : from.version,
+      frame: fitted,
+    });
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!drag) return;
-    const dx = (event.clientX - drag.startX) / scale;
-    const dy = (event.clientY - drag.startY) / scale;
+    const dx = (event.clientX - drag.startX) / drag.frame.scale;
+    const dy = (event.clientY - drag.startY) / drag.frame.scale;
     if (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) moved.current = true;
     setDrag({ ...drag, dx, dy });
   };
   const onPointerUp = (node: MapNode) => {
-    if (drag && moved.current) {
-      const from = position({ ...node, x: node.x, y: node.y });
-      place(node, Math.round(from.x), Math.round(from.y));
+    if (drag?.id === node.id && moved.current) {
+      const to = {
+        x: Math.round(drag.origin.x + drag.dx),
+        y: Math.round(drag.origin.y + drag.dy),
+      };
+      // Версия — та, при которой узел взяли: чужой перенос, пришедший опросом посреди
+      // перетаскивания, даёт честный конфликт, а не «чужое место плюс моё смещение».
+      const from =
+        drag.version === null ? mover.spot(node) : { ...drag.origin, version: drag.version };
+      mover.place(node.id, from, to);
     }
     setDrag(null);
   };
@@ -328,8 +445,8 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
     }[event.key];
     if (!delta) return;
     event.preventDefault();
-    const from = position(node);
-    place(node, from.x + delta[0]!, from.y + delta[1]!);
+    const from = mover.spot(node);
+    mover.place(node.id, from, { x: from.x + delta[0]!, y: from.y + delta[1]! });
   };
 
   const chosen = selected ? byId.get(selected) : undefined;
@@ -379,12 +496,23 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
                   key={node.id}
                   type="button"
                   aria-pressed={selected === node.id}
+                  // Имя — подпись узла, а код записи и ступень Пульта звучат описанием: без
+                  // них скринридер не слышал бы главного сигнала режима «Структура».
                   aria-label={node.text}
+                  aria-describedby={
+                    board.mode === 'structure' ? `${describedBy}-${node.id}` : undefined
+                  }
                   onPointerDown={(event) => onPointerDown(event, node)}
                   onPointerMove={onPointerMove}
                   onPointerUp={() => onPointerUp(node)}
-                  onClick={() => {
-                    if (!moved.current) setSelected(selected === node.id ? null : node.id);
+                  onPointerCancel={() => setDrag(null)}
+                  onClick={(event) => {
+                    // Щелчок после перетаскивания — не выбор. Enter, Space и скринридер дают
+                    // щелчок без указателя (detail = 0): он выбирает всегда, а признак
+                    // перетаскивания гасится на любом щелчке, а не только на следующем касании.
+                    const dragged = moved.current && event.detail !== 0;
+                    moved.current = false;
+                    if (!dragged) setSelected(selected === node.id ? null : node.id);
                   }}
                   onKeyDown={(event) => onKeyDown(event, node)}
                   style={{
@@ -404,7 +532,9 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
                   )}
                 >
                   <span className="text-ink-strong">{node.text}</span>
-                  {board.mode === 'structure' ? <NodeLink node={node} /> : null}
+                  {board.mode === 'structure' ? (
+                    <NodeLink node={node} id={`${describedBy}-${node.id}`} />
+                  ) : null}
                 </button>
               );
             })}
@@ -424,9 +554,9 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
           ) : (
             <p className="text-sm text-ink-muted">{t('ideas.canvas.pick')}</p>
           )}
-          {move.isError ? (
+          {mover.failure ? (
             <p role="alert" className="text-sm text-burn-ink">
-              {describeError(move.error)}
+              {describeError(mover.failure)}
             </p>
           ) : null}
         </aside>
@@ -435,12 +565,16 @@ function Board({ board, editable }: { board: MapCard; editable: boolean }) {
   );
 }
 
-function NodeLink({ node }: { node: MapNode }) {
+function NodeLink({ node, id }: { node: MapNode; id?: string }) {
   const { t } = useTranslation();
   if (!node.link)
-    return <span className="text-xs text-ink-muted">{t('ideas.canvas.unlinked')}</span>;
+    return (
+      <span id={id} className="text-xs text-ink-muted">
+        {t('ideas.canvas.unlinked')}
+      </span>
+    );
   return (
-    <span className="inline-flex flex-wrap items-center gap-1 text-xs text-ink-muted">
+    <span id={id} className="inline-flex flex-wrap items-center gap-1 text-xs text-ink-muted">
       <span className="numeric">{node.link.code}</span>
       {node.step ? (
         <Signal state={STEP_SIGNAL[node.step]}>{t(`pult.steps.${node.step}`)}</Signal>
@@ -494,7 +628,11 @@ function NodePanel({ board, node, onGone }: { board: MapCard; node: MapNode; onG
   const parent = useSetParent();
   const convert = useConvertNode();
   const remove = useDeleteNode();
-  const [text, setText] = useState(node.text);
+  // Черновик подписи помнит версию, с которой человек начал печатать. Опрос раз в 5 с
+  // приносит свежий узел, и его версия в запросе молча затёрла бы чужую правку (инвариант
+  // 15). Пока поле не трогали, оно показывает подпись с сервера.
+  const [draft, setDraft] = useState<{ text: string; version: number } | null>(null);
+  const text = draft?.text ?? node.text;
   const [type, setType] = useState(board.project_types[0]?.code ?? '');
   const [confirming, setConfirming] = useState(false);
   const branch = useMemo(() => descendants(board.node_list, node.id), [board.node_list, node.id]);
@@ -509,17 +647,34 @@ function NodePanel({ board, node, onGone }: { board: MapCard; node: MapNode; onG
         className="flex flex-col gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          edit.mutate({ mapId: board.id, id: node.id, text, version: node.version });
+          if (!draft) return;
+          edit.mutate(
+            { mapId: board.id, id: node.id, text: draft.text, version: draft.version },
+            {
+              onSuccess: () => setDraft(null),
+              // Конфликт: правка не сохранена, поле показывает подпись второго человека, а
+              // сообщение говорит, что внести свою надо ещё раз.
+              onError: (error) => {
+                if (error instanceof ApiError && error.status === 409) setDraft(null);
+              },
+            },
+          );
         }}
       >
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
           {t('ideas.node.text')}
-          <input className={FIELD} value={text} onChange={(event) => setText(event.target.value)} />
+          <input
+            className={FIELD}
+            value={text}
+            onChange={(event) =>
+              setDraft({ text: event.target.value, version: draft?.version ?? node.version })
+            }
+          />
         </label>
         <Button
           type="submit"
           size="small"
-          disabled={edit.isPending || !text.trim() || text === node.text}
+          disabled={edit.isPending || !draft || !text.trim() || text === node.text}
         >
           {t('ideas.node.save')}
         </Button>
@@ -617,7 +772,13 @@ function NodePanel({ board, node, onGone }: { board: MapCard; node: MapNode; onG
             disabled={remove.isPending}
             onClick={() =>
               remove.mutate(
-                { mapId: board.id, id: node.id, version: node.version },
+                // Отпечаток — та ветвь, что стоит в вопросе перед глазами человека.
+                {
+                  mapId: board.id,
+                  id: node.id,
+                  version: node.version,
+                  branch: branchStamp(board.node_list.filter((each) => branch.has(each.id))),
+                },
                 { onSuccess: onGone },
               )
             }

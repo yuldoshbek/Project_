@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { request } from '@/shared/api/client';
+import { pollEvery } from '@/shared/api/queries';
 
 import type { IdeasView, MapCard, MapMode, Outcome } from './model';
 
@@ -27,7 +28,8 @@ export function useMap(id: string, live = true) {
   return useQuery({
     queryKey: [...MAP_KEY, id],
     queryFn: () => request<MapCard>(`/api/v1/maps/${id}`),
-    refetchInterval: live ? MAP_POLL_MS : false,
+    // Чаще умолчания, но по тому же правилу: на 401/403 опрос встаёт (queries.ts).
+    refetchInterval: live ? pollEvery(MAP_POLL_MS) : false,
   });
 }
 
@@ -47,6 +49,15 @@ function useChange<T, R = void>(perform: (input: T) => Promise<R>) {
 export function useCreateIdea() {
   return useChange((text: string) =>
     request<{ id: string }>('/api/v1/ideas', { method: 'POST', body: { text } }),
+  );
+}
+
+export function useEditIdea() {
+  return useChange((input: { id: string; text: string; version: number }) =>
+    request<void>(`/api/v1/ideas/${input.id}`, {
+      method: 'PUT',
+      body: { text: input.text, version: input.version },
+    }),
   );
 }
 
@@ -124,10 +135,16 @@ export function useSetParent() {
   );
 }
 
+/**
+ * Узел уходит с ветвью. `branch` — отпечаток ветви, какой её видел человек (`branchStamp`):
+ * версия корня не меняется, когда под него добавляют или в нём правят узлы, и без отпечатка
+ * сервер унёс бы чужую правку молча (инвариант 15). Расхождение — 409, как у версии.
+ */
 export function useDeleteNode() {
-  return useChange((input: { mapId: string; id: string; version: number }) =>
-    request<{ deleted: number }>(`${nodes(input.mapId)}/${input.id}?version=${input.version}`, {
+  return useChange((input: { mapId: string; id: string; version: number; branch: string }) =>
+    request<{ deleted: number }>(`${nodes(input.mapId)}/${input.id}`, {
       method: 'DELETE',
+      query: { version: input.version, branch: input.branch },
     }),
   );
 }

@@ -5,41 +5,24 @@
 
 import type { TFunction } from 'i18next';
 
-import { intlLocale } from '@/shared/i18n';
+import { capital, dateFormat } from '@/shared/i18n/format';
 
 import { KINDS, type CalendarItem, type CycleRuleFields, type HotDay } from './model';
 
 const DAY_MS = 86_400_000;
 
-// Названия дней и месяцев — на языке интерфейса; форматтер собирается один раз на язык.
-const formats = new Map<string, Intl.DateTimeFormat>();
-
-function formatter(name: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const locale = intlLocale();
-  const key = `${locale}:${name}`;
-  let found = formats.get(key);
-  if (!found) {
-    found = new Intl.DateTimeFormat(locale, options);
-    formats.set(key, found);
-  }
-  return found;
-}
-
+// Названия дней и месяцев — на языке интерфейса (`shared/i18n/format`).
 const weekdayDay = () =>
-  formatter('weekdayDay', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  dateFormat({ weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' });
 
-const monthName = () => formatter('monthName', { month: 'long', timeZone: 'UTC' });
+const monthName = () => dateFormat({ month: 'long', timeZone: 'UTC' });
 
-const weekdayShort = () => formatter('weekdayShort', { weekday: 'short', timeZone: 'UTC' });
+const weekdayShort = () => dateFormat({ weekday: 'short', timeZone: 'UTC' });
 
-const dayMonth = () => formatter('dayMonth', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+const dayMonth = () => dateFormat({ day: 'numeric', month: 'long', timeZone: 'UTC' });
 
 function utc(date: string): Date {
   return new Date(`${date.slice(0, 10)}T00:00:00Z`);
-}
-
-function capital(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** «Чт, 1 октября» — заголовок дня. */
@@ -58,16 +41,19 @@ export function monthTitle(month: string): string {
  * Год — високосный, чтобы 29 февраля осталось 29 февраля. Дня, которого нет в месяце
  * (30 февраля), через дату не показать — она перекатится в март и спрячет опечатку, которую
  * человек должен увидеть: такой день пишется числом и месяцем как есть.
+ *
+ * Число подставляется в части подписи первого дня месяца, а не приклеивается к ней строкой:
+ * по-русски «1 февраля», а на латинице «1-fevral», и склейка давала «30 1-fevral».
  */
 export function dayOfYear(month: number, day: number): string {
   const last = new Date(Date.UTC(2000, month, 0)).getUTCDate();
   if (Number.isInteger(day) && day >= 1 && day <= last) {
     return dayMonth().format(new Date(Date.UTC(2000, month - 1, day)));
   }
-  const genitive = dayMonth()
-    .format(new Date(Date.UTC(2000, month - 1, 1)))
-    .replace(/^1\s/, '');
-  return `${day} ${genitive}`;
+  return dayMonth()
+    .formatToParts(new Date(Date.UTC(2000, month - 1, 1)))
+    .map((part) => (part.type === 'day' ? String(day) : part.value))
+    .join('');
 }
 
 /** «ежегодно, 20 января», «ежеквартально, 5-го числа», «раз в 3 года, 1 марта, с 2027». */

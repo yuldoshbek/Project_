@@ -135,6 +135,9 @@ export const uzLatn = {
   },
   language: {
     label: 'Til',
+    failed: 'Til almashmadi: {{detail}}',
+    notLoaded: 'lugʻat yuklanmadi — aloqani tekshirib, sahifani yangilang',
+    dismiss: 'Tushunarli',
   },
   role: {
     assistant: 'Yordamchi',
@@ -674,7 +677,7 @@ export const uzLatn = {
     count: 'loyihalar: {{count}}',
     statuses: {
       in_progress: 'Ishda',
-      on_hold: 'Pauzada',
+      on_hold: 'Toʻxtatilgan',
       done: 'Yakunlangan',
       cancelled: 'Bekor qilingan',
     },
@@ -999,6 +1002,7 @@ export const uzLatn = {
       control_mark: 'belgi {{date}}',
       task_movement: 'vazifa {{date}}',
       interim_report: 'maʼlumot {{date}}',
+      seta: 'SETA {{date}}',
       none: 'harakat boʻlmagan',
     },
     questions: {
@@ -1452,6 +1456,7 @@ export const uzLatn = {
     open: 'Boʻlimni ochish',
     openSection: '«{{section}}»ni ochish',
     empty: 'Kun tartibida hozircha savollar yoʻq.',
+    failed: 'Boʻlim maʼlumotlarini olib boʻlmadi',
     close: 'Majlisdan chiqish',
     closeHint: 'Esc — chiqish',
     counter: '{{at}} / {{total}}',
@@ -1512,6 +1517,13 @@ export const uzLatn = {
       task: 'Vazifa {{code}} · {{title}}',
     },
     toReview: 'Koʻrib chiqishga',
+    decidedOn: '{{date}} hal qilingan',
+    edit: {
+      open: 'Tahrirlash',
+      label: 'Gʻoya matni',
+      save: 'Saqlash',
+      cancel: 'Bekor qilish',
+    },
     new: {
       title: 'Gʻoyani yozish',
       hint: 'Bir-ikki ibora bilan: qarorgacha yoʻl qoralamadan boshlanadi',
@@ -1556,6 +1568,7 @@ export const uzLatn = {
       addRoot: 'Yuqori darajadagi yangi tugun',
       addChild: '«{{parent}}» ostida yangi tugun',
       add: 'Tugun qoʻshish',
+      stale: 'Xarita yangilanmadi: {{detail}}. Ekranda — oxirgi olingan versiya.',
     },
     node: {
       label: 'Tugun',

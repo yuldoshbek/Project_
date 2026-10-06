@@ -14,6 +14,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { STEP_SIGNAL } from '@/sections/pult/model';
+import { dateFormat } from '@/shared/i18n/format';
 import { cn } from '@/shared/lib/cn';
 import { formatDate } from '@/shared/time';
 
@@ -27,7 +28,10 @@ const AHEAD_DAYS = 365;
 /** Цвет полосы — ступень лестницы; классы целиком, чтобы Tailwind их нашёл. */
 const BAR = { call: 'bg-call', burn: 'bg-burn', wait: 'bg-wait' } as const;
 
-const monthFormat = new Intl.DateTimeFormat('ru-RU', { month: 'short', timeZone: 'UTC' });
+/** «сент», «Sen», «сен» — подпись месяца шкалы на языке интерфейса, без точки сокращения. */
+function monthLabel(date: Date): string {
+  return dateFormat({ month: 'short', timeZone: 'UTC' }).format(date).replace('.', '');
+}
 
 function dayOf(date: string): number {
   return Math.round(Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / DAY_MS);
@@ -74,7 +78,7 @@ export function Timeline({ items, today, onOpen }: TimelineProps) {
     const date = new Date(day * DAY_MS);
     months.push({
       day,
-      label: monthFormat.format(date).replace('.', ''),
+      label: monthLabel(date),
       year: date.getUTCMonth() === 0 || day === from ? date.getUTCFullYear() : null,
     });
   }

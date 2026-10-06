@@ -42,6 +42,27 @@
         document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
+    <!--
+      Первые запросы — до загрузки кода. «Кто вошёл» нужен на любом экране, данные Пульта —
+      на главном. Пока телефон по 4G тянет основной кусок сборки, ответы уже приходят, и
+      приложение берёт их из предзагрузки: режим и учётные данные совпадают с `fetch`
+      клиента (`same-origin`, shared/api/client.ts). Замер первого экрана (критерий 4
+      блока 3): запросы стартовали только через ~1,7 с, после исполнения кода.
+    -->
+    <script>
+      (function () {
+        var paths = ['/api/me'];
+        if (window.location.pathname === '/') paths.push('/api/v1/pult');
+        paths.forEach(function (path) {
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'fetch';
+          link.crossOrigin = 'anonymous';
+          link.href = path;
+          document.head.appendChild(link);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -10,6 +10,8 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
+import { branchStamp } from '../src/sections/ideas/stamp';
+
 import { REPORT_DIR, issueLink } from './link';
 
 const SIZES = [
@@ -51,15 +53,48 @@ async function noOverflow(page: Page) {
   expect(overflow, 'горизонтальная прокрутка').toBeLessThanOrEqual(1);
 }
 
-/** Узел, заведённый сценарием, убирается за собой: снимки следующего прогона — без него. */
-async function removeNode(page: Page, mapId: string | null, text: string) {
+interface BoardNode {
+  id: string;
+  parent_id: string | null;
+  text: string;
+  x: number;
+  version: number;
+}
+
+async function readBoard(page: Page, mapId: string | null): Promise<BoardNode[]> {
   const board = (await (await page.request.get(`/api/v1/maps/${mapId}`)).json()) as {
-    node_list: { id: string; text: string; version: number }[];
+    node_list: BoardNode[];
   };
-  const node = board.node_list.find((each) => each.text === text);
-  if (node) {
-    await page.request.delete(`/api/v1/maps/${mapId}/nodes/${node.id}?version=${node.version}`);
+  return board.node_list;
+}
+
+/**
+ * Узел, заведённый сценарием, убирается за собой — и когда сценарий упал (вызов стоит в
+ * `finally`): снимки следующего прогона — без него. Проверка мягкая: сбой уборки виден в
+ * отчёте, но не заслоняет ошибку самого сценария.
+ */
+async function removeNode(page: Page, mapId: string | null, text: string) {
+  const nodes = await readBoard(page, mapId);
+  const node = nodes.find((each) => each.text === text);
+  if (!node) return;
+  // Сервер убирает ветвь, только если она такая, какой её видели: узлы и их версии.
+  const branch = new Set([node.id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const each of nodes) {
+      if (each.parent_id && branch.has(each.parent_id) && !branch.has(each.id)) {
+        branch.add(each.id);
+        grew = true;
+      }
+    }
   }
+  const response = await page.request.delete(`/api/v1/maps/${mapId}/nodes/${node.id}`, {
+    params: {
+      version: node.version,
+      branch: branchStamp(nodes.filter((each) => branch.has(each.id))),
+    },
+  });
+  expect.soft(response.ok(), `узел «${text}» не убран: ${response.status()}`).toBe(true);
 }
 
 for (const size of SIZES) {
@@ -86,6 +121,13 @@ for (const size of SIZES) {
   }
 }
 
+// Идея и выросший из неё проект остаются в базе разработки: в API нет удаления ни идей, ни
+// проектов (`backend/app/api/routes/ideas.py`, `projects.py`) — решение и запись, которую оно
+// завело, история не теряет (инвариант 5). Снимки раздела в этом файле идут раньше (порядок
+// файла, один исполнитель), поэтому первый прогон снимает раздел без следов сценария; на
+// повторных прогонах строки «Снимки для учебников географии …» копятся в «Решено». Чистую
+// картину даёт база, заведённая заново (`make reset`, миграции, справочники, `make demo`), а
+// не уборка из сценария.
 test('идея превращается в проект одним действием — с телефона руководителя', async ({
   browser,
 }) => {
@@ -131,69 +173,75 @@ test('ноутбук: узел добавляется под выбранным 
   await page.getByRole('button', { name: new RegExp(MAP) }).click();
   const canvas = page.getByRole('region', { name: 'Полотно карты' });
   await expect(canvas.getByText('не связан').first()).toBeVisible();
-
-  const text = `Узел ${Date.now()}`;
-  await canvas.getByRole('button', { name: 'Пастбища', exact: true }).click();
-  await page.getByLabel('Новый узел под «Пастбища»').fill(text);
-  await page.getByRole('button', { name: 'Добавить узел' }).click();
-  const node = canvas.getByRole('button', { name: text, exact: true });
-  await expect(node).toBeVisible();
-  const start = { x: 0 };
-  {
-    const mapId = new URL(page.url()).searchParams.get('map');
-    const board = (await (await page.request.get(`/api/v1/maps/${mapId}`)).json()) as {
-      node_list: { text: string; x: number }[];
-    };
-    start.x = board.node_list.find((each) => each.text === text)?.x ?? 0;
-  }
-
-  await node.scrollIntoViewIfNeeded();
-  const before = await node.boundingBox();
-  if (!before) throw new Error('узла нет на полотне');
-  await page.mouse.move(before.x + 20, before.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(before.x + 140, before.y + 80, { steps: 8 });
-  await page.mouse.up();
-  await expect.poll(async () => (await node.boundingBox())?.x ?? 0).toBeGreaterThan(before.x + 100);
-
-  // Место узла сохранено на сервере, а не только на экране.
   const mapId = new URL(page.url()).searchParams.get('map');
-  const saved = async () => {
-    const board = (await (await page.request.get(`/api/v1/maps/${mapId}`)).json()) as {
-      node_list: { text: string; x: number }[];
-    };
-    return board.node_list.find((each) => each.text === text)?.x ?? 0;
-  };
-  await expect.poll(saved).toBeGreaterThan(start.x + 100);
-  await page.screenshot({
-    path: `${REPORT_DIR}/ideas-canvas-laptop-light.png`,
-    animations: 'disabled',
-  });
-  await removeNode(page, mapId, text);
+  const text = `Узел ${Date.now()}`;
+
+  try {
+    await canvas.getByRole('button', { name: 'Пастбища', exact: true }).click();
+    await page.getByLabel('Новый узел под «Пастбища»').fill(text);
+    await page.getByRole('button', { name: 'Добавить узел' }).click();
+    const node = canvas.getByRole('button', { name: text, exact: true });
+    await expect(node).toBeVisible();
+
+    // «Под выбранным» — родитель ушёл в запрос, а не только стоит в подписи поля.
+    const nodes = await readBoard(page, mapId);
+    const added = nodes.find((each) => each.text === text);
+    const pasture = nodes.find((each) => each.text === 'Пастбища');
+    expect(added?.parent_id, 'родитель нового узла').toBe(pasture?.id);
+    const start = added?.x ?? 0;
+
+    await node.scrollIntoViewIfNeeded();
+    const before = await node.boundingBox();
+    if (!before) throw new Error('узла нет на полотне');
+    await page.mouse.move(before.x + 20, before.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(before.x + 140, before.y + 80, { steps: 8 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => (await node.boundingBox())?.x ?? 0)
+      .toBeGreaterThan(before.x + 100);
+
+    // Место узла сохранено на сервере, а не только на экране.
+    const saved = async () =>
+      (await readBoard(page, mapId)).find((each) => each.text === text)?.x ?? 0;
+    await expect.poll(saved).toBeGreaterThan(start + 100);
+    await page.screenshot({
+      path: `${REPORT_DIR}/ideas-canvas-laptop-light.png`,
+      animations: 'disabled',
+    });
+  } finally {
+    await removeNode(page, mapId, text);
+  }
 });
 
 test('правка помощника видна руководителю без перезагрузки', async ({ browser }) => {
   const watcher = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await open(watcher, leader, '/ideas?view=maps');
-  await watcher.getByRole('button', { name: /Космическое образование/ }).click();
-  const watched = watcher.getByRole('region', { name: 'Полотно карты' });
-  await expect(
-    watched.getByRole('button', { name: 'Космическое образование', exact: true }),
-  ).toBeVisible();
-
   const editor = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await open(editor, assistant, '/ideas?view=maps');
-  await editor.getByRole('button', { name: /Космическое образование/ }).click();
   const text = `Живая правка ${Date.now()}`;
-  await editor.getByLabel('Новый узел верхнего уровня').fill(text);
-  await editor.getByRole('button', { name: 'Добавить узел' }).click();
-  await expect(editor.getByRole('button', { name: text })).toBeVisible();
+  let mapId: string | null = null;
+  try {
+    await open(watcher, leader, '/ideas?view=maps');
+    await watcher.getByRole('button', { name: /Космическое образование/ }).click();
+    const watched = watcher.getByRole('region', { name: 'Полотно карты' });
+    await expect(
+      watched.getByRole('button', { name: 'Космическое образование', exact: true }),
+    ).toBeVisible();
 
-  // Опрос раз в 5 с (ADR-0034): узел появляется у второго без перезагрузки.
-  await expect(watched.getByRole('button', { name: text })).toBeVisible({ timeout: 12_000 });
-  await removeNode(editor, new URL(editor.url()).searchParams.get('map'), text);
-  await watcher.close();
-  await editor.close();
+    await open(editor, assistant, '/ideas?view=maps');
+    await editor.getByRole('button', { name: /Космическое образование/ }).click();
+    await expect(editor.getByRole('region', { name: 'Полотно карты' })).toBeVisible();
+    mapId = new URL(editor.url()).searchParams.get('map');
+    await editor.getByLabel('Новый узел верхнего уровня').fill(text);
+    await editor.getByRole('button', { name: 'Добавить узел' }).click();
+    await expect(editor.getByRole('button', { name: text })).toBeVisible();
+
+    // Опрос раз в 5 с (ADR-0034): узел появляется у второго без перезагрузки.
+    await expect(watched.getByRole('button', { name: text })).toBeVisible({ timeout: 12_000 });
+  } finally {
+    if (mapId) await removeNode(editor, mapId, text);
+    await watcher.close();
+    await editor.close();
+  }
 });
 
 test('телефон — контур, монитор — без правки', async ({ page }) => {
@@ -210,4 +258,11 @@ test('телефон — контур, монитор — без правки', 
   await page.setViewportSize({ width: 2560, height: 1440 });
   await expect(page.getByRole('region', { name: 'Полотно карты' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Добавить узел' })).toHaveCount(0);
+
+  // Идеи на мониторе: решение руководителя есть, записи и правки нет (ТЗ 6).
+  await page.getByRole('tab', { name: 'Идеи' }).click();
+  await expect(page.getByRole('heading', { name: 'Что ждёт моего «да»?' })).toBeVisible();
+  await expect(page.getByLabel('Идея', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'На рассмотрение' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Изменить' })).toHaveCount(0);
 });

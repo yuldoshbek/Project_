@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { Device } from '@/app/device';
 import { useCurrentUser, useHealth } from '@/app/session';
+import { HeaderParticles } from '@/app/shell/HeaderParticles';
 import { ThemeMenu } from '@/app/shell/ThemeMenu';
 import { Button } from '@/shared/ui/Button';
 import { Signal } from '@/shared/ui/Signal';
@@ -41,7 +42,9 @@ export function TopBar({ device, onCapture }: { device: Device; onCapture: () =>
           <span className="hidden text-sm text-ink-muted sm:inline">{t('app.tagline')}</span>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-2">
+        {isPhone ? <span className="flex-1" /> : <HeaderParticles />}
+
+        <div className="flex items-center gap-2">
           {health.data && health.data.env !== 'production' ? (
             <Signal state="wait">
               {t(`management.state.envNames.${health.data.env}`, health.data.env)}

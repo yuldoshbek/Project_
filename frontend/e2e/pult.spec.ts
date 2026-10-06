@@ -88,6 +88,36 @@ test('решение в одно касание и «Отменить» — че
   await expect(awaiting.getByText(/^\d+$/)).toHaveText(String(before));
 });
 
+/**
+ * PDF отчёта — так, как его сохранит браузер из «Печать»: стили печати, лист A4. На листе
+ * только отчёт: заголовок виден, а «Печать и PDF», выбор периода и навигация — нет.
+ * Проверка одна на неделю и месяц: вид листа у них общий, и размер файла сам по себе не
+ * говорит ничего — любой лист A4 со шрифтами тяжелее порога.
+ */
+async function printReport(page: Page, heading: RegExp, file: string): Promise<void> {
+  const print = page.getByRole('button', { name: 'Печать и PDF' });
+  const period = page.getByRole('button', { name: 'Месяц', exact: true });
+  const navigation = page.getByRole('navigation').first();
+  // На экране служебное есть — иначе «скрыто на листе» ниже было бы правдой ни о чём.
+  await expect(print).toBeVisible();
+  await expect(period).toBeVisible();
+  await expect(navigation).toBeVisible();
+
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+  await expect(print).toBeHidden();
+  await expect(period).toBeHidden();
+  await expect(navigation).toBeHidden();
+
+  const pdf = await page.pdf({
+    path: `${REPORT_DIR}/${file}`,
+    format: 'A4',
+    printBackground: true,
+    margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' },
+  });
+  expect(pdf.byteLength, 'PDF пустой').toBeGreaterThan(10_000);
+}
+
 test('отчёт недели: снимок и PDF', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openPult(page);
@@ -96,19 +126,7 @@ test('отчёт недели: снимок и PDF', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /Отчёт за неделю/ })).toBeVisible();
   await page.screenshot({ path: `${REPORT_DIR}/report-week-laptop-light.png`, fullPage: true });
 
-  // PDF — так, как его сохранит браузер из «Печать»: стили печати, лист A4.
-  await page.emulateMedia({ media: 'print' });
-  const pdf = await page.pdf({
-    path: `${REPORT_DIR}/report-week.pdf`,
-    format: 'A4',
-    printBackground: true,
-    margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' },
-  });
-  expect(pdf.byteLength, 'PDF пустой').toBeGreaterThan(10_000);
-
-  // Служебное на листе не печатается: только отчёт.
-  await expect(page.getByRole('button', { name: 'Печать и PDF' })).toBeHidden();
-  await expect(page.getByRole('navigation').first()).toBeHidden();
+  await printReport(page, /Отчёт за неделю/, 'report-week.pdf');
 });
 
 test('отчёт месяца: PDF того же вида, что неделя', async ({ page }) => {
@@ -117,12 +135,6 @@ test('отчёт месяца: PDF того же вида, что неделя',
   await page.getByRole('tab', { name: 'Отчёт' }).click();
   await page.getByRole('button', { name: 'Месяц', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Отчёт за месяц/ })).toBeVisible();
-  await page.emulateMedia({ media: 'print' });
-  const pdf = await page.pdf({
-    path: `${REPORT_DIR}/report-month.pdf`,
-    format: 'A4',
-    printBackground: true,
-    margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' },
-  });
-  expect(pdf.byteLength, 'PDF пустой').toBeGreaterThan(10_000);
+
+  await printReport(page, /Отчёт за месяц/, 'report-month.pdf');
 });

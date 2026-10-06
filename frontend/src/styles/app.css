@@ -68,15 +68,17 @@
 }
 
 /*
- * Движение «космоса» — два приёма из четырёх разрешённых (ТЗ 6, PLAN-10X):
- * вспышка изменившегося числа и медленные орбиты в шапке раздела на ноутбуке и мониторе.
- * Под цифрами и текстом не бывает ни того ни другого; `prefers-reduced-motion` гасит оба
- * правилом ниже.
+ * Движение «космоса» — все четыре разрешённых приёма (ТЗ 6): вспышка изменившегося числа,
+ * медленные орбиты в шапке раздела и мягкие частицы в шапке приложения — на ноутбуке и
+ * мониторе, — и плавное появление раздела при переходе. Под цифрами и текстом не бывает
+ * ни орбит, ни частиц; `prefers-reduced-motion` гасит всё правилом ниже.
  */
 @theme {
   --animate-flash: flash 900ms ease-out;
   --animate-orbit: orbit 120s linear infinite;
   --animate-orbit-reverse: orbit 180s linear infinite reverse;
+  --animate-twinkle: twinkle 7s ease-in-out infinite;
+  --animate-enter: enter 200ms ease-out;
 
   @keyframes flash {
     0% {
@@ -91,6 +93,28 @@
   @keyframes orbit {
     to {
       transform: rotate(360deg);
+    }
+  }
+
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+
+    50% {
+      opacity: 0.55;
+      transform: translateY(-2px);
+    }
+  }
+
+  /* Только прозрачность, без сдвига: обёртка раздела с transform становится опорой для
+     position: fixed, и лист карточки, открытый из ?open= в первые 200 мс, рисовался в
+     колонке контента под шапкой, а не на весь экран. */
+  @keyframes enter {
+    from {
+      opacity: 0;
     }
   }
 }
@@ -133,8 +157,10 @@
     outline-offset: 2px;
   }
 
-  /* Кто попросил меньше движения — тот его не получает. Не «поменьше», а нисколько:
-     Motion переведён в режим reducedMotion="user", а это правило закрывает CSS-переходы. */
+  /* Кто попросил меньше движения — тот его не получает. Не «поменьше», а нисколько.
+     Правило гасит только CSS-анимации и переходы, а всё движение сейчас и есть CSS:
+     MotionConfig убран вместе с последним импортом Motion. JS-анимации Motion оно не
+     гасит — вернётся Motion, вернётся и MotionConfig reducedMotion="user" (ADR-0030). */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

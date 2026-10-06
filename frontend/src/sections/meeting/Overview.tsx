@@ -26,14 +26,14 @@ export default function Overview() {
         <Card
           key={slide.key}
           title={slide.question}
-          freshness={slide.freshness}
+          freshness={slide.freshness ?? undefined}
           className="flex flex-col"
         >
           <p className="text-xs text-ink-muted">{t(`sections.${slide.section}`)}</p>
           <p
             className={cn(
               'mt-1 text-lg leading-snug font-semibold',
-              slide.empty ? 'text-calm-ink' : 'text-ink-strong',
+              slide.failed ? 'text-burn-ink' : slide.empty ? 'text-calm-ink' : 'text-ink-strong',
             )}
           >
             {slide.main}

@@ -18,10 +18,16 @@ export function awaitingText(
   };
 }
 
-/** Подпись идеи: автор, дата записи, сколько ждёт. */
-export function ideaMeta(t: TFunction, idea: Idea, date: string): string {
-  const parts = [t(`role.${idea.author}`), date];
+/**
+ * Подпись идеи: автор, дата записи, сколько ждёт или когда решено. `date` получает полную
+ * метку времени: день считается по Ташкенту, а не по UTC (инвариант 8).
+ */
+export function ideaMeta(t: TFunction, idea: Idea, date: (moment: string) => string): string {
+  const parts = [t(`role.${idea.author}`), date(idea.created_at)];
   if (idea.step === 'review') parts.push(t('ideas.waiting', { count: idea.waiting_days }));
+  if (idea.step === 'decided' && idea.decided_at) {
+    parts.push(t('ideas.decidedOn', { date: date(idea.decided_at) }));
+  }
   return parts.join(' · ');
 }
 

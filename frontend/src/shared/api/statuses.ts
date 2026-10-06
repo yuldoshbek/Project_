@@ -12,6 +12,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { localName } from '@/shared/i18n';
+
 import { dictionariesQuery } from './queries';
 
 type StatusKind = 'project_statuses' | 'task_statuses';
@@ -22,14 +24,17 @@ const SECTION: Record<StatusKind, 'projects' | 'tasks'> = {
 };
 
 export function useStatuses(kind: StatusKind) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const entries = useQuery(dictionariesQuery()).data?.[kind];
+  const language = i18n.language;
 
+  // Название — на языке интерфейса: справочник отдаёт все три написания.
   const name = useCallback(
-    (code: string): string =>
-      entries?.find((entry) => entry.code === code)?.name.ru ??
-      t(`${SECTION[kind]}.statuses.${code}`),
-    [entries, kind, t],
+    (code: string): string => {
+      const entry = entries?.find((each) => each.code === code);
+      return entry ? localName(entry.name, language) : t(`${SECTION[kind]}.statuses.${code}`);
+    },
+    [entries, kind, t, language],
   );
 
   /** Коды в порядке справочника; без справочника — в том порядке, в каком пришли. */

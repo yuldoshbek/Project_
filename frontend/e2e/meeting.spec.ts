@@ -10,6 +10,19 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { REPORT_DIR, issueLink } from './link';
 
+/**
+ * Повестка — ровно шесть вопросов по порядку (V48). Порог «не меньше пяти» пропустил бы
+ * раздел, чей запрос упал: такой вопрос обязан остаться в повестке слайдом «не удалось».
+ */
+const AGENDA = [
+  'Что требует внимания?',
+  'Что горит и что просрочено?',
+  'Готовы ли к дате и кто задерживает?',
+  'Кто нам не отвечает?',
+  'Что ждёт моего «да»?',
+  'Где неделя перегружена?',
+] as const;
+
 let leader: string;
 
 test.beforeAll(() => {
@@ -55,9 +68,15 @@ for (const theme of ['light', 'dim'] as const) {
   }) => {
     await page.setViewportSize({ width: 2560, height: 1440 });
     await open(page, theme);
-    await page.getByRole('button', { name: 'Совещание' }).click();
+    await page.getByRole('button', { name: 'Совещание', exact: true }).click();
     const meeting = page.getByRole('dialog', { name: 'Совещание: один вопрос на экран' });
-    await expect(meeting.getByRole('heading', { name: 'Что требует внимания?' })).toBeVisible();
+    // Счётчик появляется, когда пришли все разделы: до этого — загрузка. Ждём его, а не
+    // читаем один раз — иначе тест застал бы повестку на полпути.
+    const counter = meeting.getByText(/^\d+ \/ \d+$/);
+    await expect(counter).toHaveText(`1 / ${AGENDA.length}`);
+    await expect(meeting.getByRole('heading', { name: AGENDA[0] })).toBeVisible();
+    // Фокус — в диалоге: клавиши идут совещанию, а не приложению под ним.
+    await expect(meeting).toBeFocused();
 
     // Экран закрывает приложение целиком: боковая панель и шапка под ним.
     const box = await meeting.boundingBox();
@@ -68,17 +87,19 @@ for (const theme of ['light', 'dim'] as const) {
     });
     expect(covered, 'боковая панель видна поверх совещания').toBe(true);
 
-    const counter = meeting.getByText(/^\d+ \/ \d+$/);
-    const total = Number((await counter.textContent())?.split('/')[1]);
-    expect(total).toBeGreaterThanOrEqual(5);
+    await expect(meeting.getByText('Не удалось получить данные раздела')).toHaveCount(0);
     await page.screenshot({
       path: `${REPORT_DIR}/meeting-1-monitor-${theme}.png`,
       animations: 'disabled',
     });
 
-    for (let at = 2; at <= total; at += 1) {
+    for (const [index, question] of AGENDA.slice(1).entries()) {
+      const at = index + 2;
       await page.keyboard.press('ArrowRight');
-      await expect(counter).toHaveText(`${at} / ${total}`);
+      await expect(counter).toHaveText(`${at} / ${AGENDA.length}`);
+      await expect(meeting.getByRole('heading', { name: question })).toBeVisible();
+      // Настоящий API отвечает всеми разделами: слайд «не удалось» здесь — поломка.
+      await expect(meeting.getByText('Не удалось получить данные раздела')).toHaveCount(0);
       if (at === 2) {
         await page.screenshot({
           path: `${REPORT_DIR}/meeting-2-monitor-${theme}.png`,
@@ -89,5 +110,7 @@ for (const theme of ['light', 'dim'] as const) {
     await page.keyboard.press('Escape');
     await expect(meeting).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Пульт', level: 1 })).toBeVisible();
+    // Фокус вернулся туда, откуда совещание открыли.
+    await expect(page.getByRole('button', { name: 'Совещание', exact: true })).toBeFocused();
   });
 }

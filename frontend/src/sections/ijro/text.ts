@@ -8,11 +8,21 @@
 import type { TFunction } from 'i18next';
 
 import { deviationText } from '@/sections/pult/text';
+import { intlLocale } from '@/shared/i18n';
+import { dateFormat } from '@/shared/i18n/format';
 import { formatDate } from '@/shared/time';
 
 import type { AssignmentRow, QuestionAnswer } from './model';
 
-const MONTH = new Intl.DateTimeFormat('ru-RU', { month: 'long', timeZone: 'UTC' });
+/**
+ * «октябрь» — месяц внутри фразы срока, со строчной: отдельно стоящий месяц узбекский
+ * `Intl` пишет с заглавной («Oktabr»), а во фразе «2026-yil oktabr» она лишняя.
+ */
+function monthInPhrase(date: string): string {
+  return dateFormat({ month: 'long', timeZone: 'UTC' })
+    .format(new Date(`${date}T00:00:00Z`))
+    .toLocaleLowerCase(intlLocale());
+}
 
 /** Первая строка содержания для списка: текст источника не правится, только обрезается. */
 export function firstLine(content: string, limit = 96): string {
@@ -28,7 +38,7 @@ export function dueLabel(
   const year = row.due_on.slice(0, 4);
   if (row.due_precision === 'end_of_year') return t('ijro.due.yearEnd', { year });
   if (row.due_precision === 'month') {
-    return t('ijro.due.month', { month: MONTH.format(new Date(`${row.due_on}T00:00:00Z`)), year });
+    return t('ijro.due.month', { month: monthInPhrase(row.due_on), year });
   }
   return t('ijro.due.day', { date: formatDate(row.due_on) });
 }
