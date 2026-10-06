@@ -158,11 +158,14 @@ class ExtensionKind(StrEnum):
 
 
 class LifeSource(StrEnum):
-    """Откуда признак жизни поручения (ТЗ 4): самое свежее из трёх событий."""
+    """Откуда признак жизни поручения (ТЗ 4): самое свежее из событий — трёх своих и SETA."""
 
     CONTROL_MARK = "control_mark"
     TASK_MOVEMENT = "task_movement"
     INTERIM_REPORT = "interim_report"
+    SETA = "seta"
+    """Событие SETA по поручению — принято, начато, сдано, продлено (ТЗ 10,
+    `app.domain.seta`). Пока SETA не подключена, этого источника не бывает."""
 
 
 class DueYearSource(StrEnum):

@@ -20,10 +20,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import demo
+from app.domain.audit import AuditAction
 from app.domain.clock import now_utc
 from app.domain.errors import RuleViolationError
-from app.domain.ideas import awaiting, check_parent, subtree
-from app.repos.models import AuditLog, Idea, MapNode, Project, Task
+from app.domain.ideas import awaiting, branch_stamp, check_parent, subtree
+from app.repos.models import AuditLog, MapNode, Project, Task
 
 TASHKENT = ZoneInfo("Asia/Tashkent")
 IDEAS = "/api/v1/ideas"
@@ -39,6 +40,18 @@ async def loaded(session: AsyncSession) -> None:
 
 def by_text(items: list[dict[str, Any]], start: str) -> dict[str, Any]:
     return next(each for each in items if each["text"].startswith(start))
+
+
+async def decisions_in_journal(session: AsyncSession, idea_id: str) -> list[dict[str, Any]]:
+    """Записи журнала о решении по идее — правки, которые перевели её в «решено»."""
+    changes = await session.scalars(
+        select(AuditLog.changes).where(
+            AuditLog.entity_type == "ideas",
+            AuditLog.entity_id == uuid.UUID(idea_id),
+            AuditLog.action == AuditAction.UPDATED.value,
+        )
+    )
+    return [each for each in changes if each.get("step", {}).get("to") == "decided"]
 
 
 async def map_id(api: AsyncClient, title: str) -> str:
@@ -82,6 +95,9 @@ class TestIdeas:
         idea = by_text(body["items"], "Открытый каталог снимков")
         path = f"{IDEAS}/{idea['id']}/decision"
         decision = {"outcome": "project", "type_code": "industry_pilot", "version": idea["version"]}
+        # Демо-данные уже оставили в журнале запись «создана»: решение ищется по содержимому,
+        # иначе проверка проходила бы и без записи о нём.
+        assert await decisions_in_journal(session, idea["id"]) == []
 
         assert (await assistant_api.post(path, json=decision)).status_code == 403
         no_type = {**decision, "type_code": None}
@@ -98,12 +114,10 @@ class TestIdeas:
         after = by_text((await leader_api.get(IDEAS)).json()["items"], "Открытый каталог снимков")
         assert (after["step"], after["outcome"]) == ("decided", "project")
         assert after["link"]["id"] == created
-        journal = await session.scalar(
-            select(func.count())
-            .select_from(AuditLog)
-            .where(AuditLog.entity_type == "ideas", AuditLog.entity_id == uuid.UUID(idea["id"]))
-        )
-        assert journal
+        (journal,) = await decisions_in_journal(session, idea["id"])
+        assert journal["step"] == {"from": "review", "to": "decided"}
+        assert journal["outcome"] == {"from": None, "to": "project"}
+        assert journal["project_id"] == {"from": None, "to": created}
         # Решённую в проект не отправить на рассмотрение снова.
         again = await leader_api.put(
             f"{IDEAS}/{idea['id']}/review", json={"version": after["version"]}
@@ -152,6 +166,9 @@ class TestIdeas:
         assert edit.status_code == 204
         stale = await assistant_api.put(f"{IDEAS}/{idea_id}", json={"text": "Другое", "version": 1})
         assert stale.status_code == 409
+        # Нулевой символ из вставки — отказ словами, а не ошибка базы.
+        broken = await assistant_api.post(IDEAS, json={"text": "Идея\x00 из выгрузки"})
+        assert broken.status_code == 422
 
 
 @pytest.mark.infra
@@ -208,7 +225,28 @@ class TestMaps:
         )
         assert ring.status_code == 422
 
-        deleted = await assistant_api.delete(f"{nodes}/{child}", params={"version": 2})
+        # Удаляют ветвь только такой, какой её видел человек. Видел без внука — конфликт;
+        # видел внука до правки второго пользователя — тоже конфликт: число узлов то же,
+        # но подпись внука уже другая.
+        child_id, grandchild_id = uuid.UUID(child), uuid.UUID(grandchild)
+        without_grandchild = branch_stamp([(child_id, 2)])
+        stale = await assistant_api.delete(
+            f"{nodes}/{child}", params={"version": 2, "branch": without_grandchild}
+        )
+        assert stale.status_code == 409
+        seen = branch_stamp([(child_id, 2), (grandchild_id, 1)])
+        renamed = await assistant_api.put(
+            f"{nodes}/{grandchild}", json={"text": "Программа смены", "version": 1}
+        )
+        assert renamed.status_code == 204
+        edited = await assistant_api.delete(
+            f"{nodes}/{child}", params={"version": 2, "branch": seen}
+        )
+        assert edited.status_code == 409
+        fresh = branch_stamp([(child_id, 2), (grandchild_id, 2)])
+        deleted = await assistant_api.delete(
+            f"{nodes}/{child}", params={"version": 2, "branch": fresh}
+        )
         assert deleted.json() == {"deleted": 2}
         left = await session.scalar(
             select(func.count()).select_from(MapNode).where(MapNode.map_id == uuid.UUID(board_id))
@@ -233,9 +271,7 @@ class TestMaps:
         twice = await leader_api.post(path, json={"kind": "task", "version": again["version"]})
         assert twice.status_code == 422
 
-    async def test_new_map_and_mode(
-        self, assistant_api: AsyncClient, session: AsyncSession
-    ) -> None:
+    async def test_new_map_and_mode(self, assistant_api: AsyncClient) -> None:
         created = await assistant_api.post(MAPS, json={"title": "Партнёры"})
         board_id = created.json()["id"]
         edit = await assistant_api.put(
@@ -249,7 +285,12 @@ class TestMaps:
             "structure",
             [],
         )
-        assert await session.scalar(select(func.count()).select_from(Idea))
+        # Список карт раздела показывает новую карту с новым режимом, а не прежнее название.
+        listed = {
+            each["id"]: (each["title"], each["mode"], each["nodes"], each["linked"])
+            for each in (await assistant_api.get(IDEAS)).json()["maps"]
+        }
+        assert listed[board_id] == ("Партнёры агентства", "structure", 0, 0)
 
 
 class TestRules:
@@ -262,6 +303,14 @@ class TestRules:
         with pytest.raises(RuleViolationError):
             check_parent(a, uuid.uuid4(), parents)
 
+    def test_branch_stamp_matches_the_interface(self) -> None:
+        # Тот же вектор проверяет `frontend/src/sections/ideas/stamp.test.ts`: расчёт один.
+        a = uuid.UUID("00000000-0000-0000-0000-00000000000a")
+        b = uuid.UUID("00000000-0000-0000-0000-00000000000b")
+        assert branch_stamp([(b, 2), (a, 1)]) == branch_stamp([(a, 1), (b, 2)])
+        assert branch_stamp([(a, 1), (b, 2)]) == "fe20735f"
+        assert branch_stamp([]) == "811c9dc5"
+
     def test_subtree_takes_all_descendants(self) -> None:
         a, b, c, d = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         parents: dict[uuid.UUID, uuid.UUID | None] = {a: None, b: a, c: b, d: a}
@@ -269,15 +318,43 @@ class TestRules:
         assert subtree(a, parents) == {a, b, c, d}
 
     def test_awaiting_oldest_first(self) -> None:
-        from datetime import date
+        from datetime import UTC, date, datetime
 
         from app.domain.ideas import Waiting
 
         old, new = uuid.uuid4(), uuid.uuid4()
         answer = awaiting(
-            [Waiting(id=new, since=date(2026, 10, 3)), Waiting(id=old, since=date(2026, 9, 25))],
+            [
+                Waiting(
+                    id=new, since=date(2026, 10, 3), sent_at=datetime(2026, 10, 3, 5, tzinfo=UTC)
+                ),
+                Waiting(
+                    id=old, since=date(2026, 9, 25), sent_at=datetime(2026, 9, 25, 5, tzinfo=UTC)
+                ),
+            ],
             date(2026, 10, 5),
         )
         assert (answer.count, answer.oldest_days, answer.rows) == (2, 10, [old, new])
+        # Возраст строки — из того же ответа, что «дольше всех»: у старшей они совпадают.
+        assert answer.days == {old: 10, new: 2}
+        # В один день — по моменту отправки, а не по идентификатору: утренняя раньше вечерней.
+        morning = uuid.UUID(int=2**128 - 1)
+        evening = uuid.UUID(int=0)
+        same_day = awaiting(
+            [
+                Waiting(
+                    id=evening,
+                    since=date(2026, 10, 3),
+                    sent_at=datetime(2026, 10, 3, 12, tzinfo=UTC),
+                ),
+                Waiting(
+                    id=morning,
+                    since=date(2026, 10, 3),
+                    sent_at=datetime(2026, 10, 3, 4, tzinfo=UTC),
+                ),
+            ],
+            date(2026, 10, 5),
+        )
+        assert same_day.oldest_id == morning
         empty = awaiting([], date(2026, 10, 5))
-        assert (empty.count, empty.oldest_days, empty.oldest_id) == (0, 0, None)
+        assert (empty.count, empty.oldest_days, empty.oldest_id, empty.days) == (0, 0, None, {})

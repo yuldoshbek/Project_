@@ -54,8 +54,10 @@ Actions → «Выкладка» → действие `rollback`. Возвращ
 2. Neon восстанавливает ветку на состояние того момента; глубина — 7 дней.
 3. Проверить данные и сообщить заказчику, что именно потерялось за интервал.
 
-**Посмотреть данные из снимка, ничего не меняя:** `scripts/neon.sh branch-uri snapshot-ГГГГ-ММ-ДД`
-и подключиться этим адресом. Снимок только читают — работать в нём нельзя, это копия.
+**Посмотреть данные из снимка, ничего не меняя:** у снимка нет вычислителя, и строки
+подключения Neon ему не выдаёт. Neon → Branches → `snapshot-ГГГГ-ММ-ДД` → добавить
+вычислитель, подключиться его адресом, после просмотра вычислитель удалить. Снимок только
+читают — работать в нём нельзя, это копия.
 
 ## Задачи по расписанию
 
@@ -131,18 +133,28 @@ Vercel, его вводит заказчик ([SETUP](SETUP.md)). Каждое �
 
 **Что нужно на сервере:** Docker с Compose v2, доменное имя, указывающее на сервер, открытые
 80 и 443. Без HTTPS вход не работает: cookie сессии `__Host-` браузер принимает только по
-защищённому соединению.
+защищённому соединению. Если сервер во внутренней сети без публичного имени, Caddy не
+получит сертификат сам: нужен сертификат, которому доверяют iPhone руководителя и ноутбук
+помощника (выпущенный центром сертификации агентства), — это решается с администратором до
+переезда. Сертификат, которому iPhone не доверяет, ломает и вход, и PWA, и уведомления.
 
-1. **Код и окружение.**
+1. **Код и окружение.** Каталог — `/srv/orbita`: на него же ссылается ночная копия (шаг 6).
+   Он принадлежит оператору, а не root: иначе `cp`, дамп в `backups/` и `git pull` при
+   обновлении упрутся в права. Каталог копий создаётся сразу — его не должен создать Docker
+   от root при первом запуске.
 
    ```bash
-   git clone https://github.com/yuldoshbek/Project_.git orbita && cd orbita/deploy/server
-   cp .env.example .env
+   sudo install -d -o "$USER" /srv/orbita
+   git clone https://github.com/yuldoshbek/Project_.git /srv/orbita && cd /srv/orbita/deploy/server
+   cp .env.example .env && mkdir -p backups
    ```
 
    В `.env` — адрес (`ORBITA_BASE_URL`, `ORBITA_SITE_ADDRESS`) и три случайных значения:
    пароль базы, секрет сессий (не короче 32), секрет задач (не короче 16). Генерировать
-   на сервере: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Файл `.env`
+   на сервере: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Ключ
+   уведомлений (`ORBITA_VAPID_PRIVATE_KEY`, [ADR-0036](adr/ADR-0036-web-push.md)) — новый:
+   подписку браузер оформляет для адреса сайта, и на новом адресе руководитель всё равно
+   включает уведомления заново (шаг 7). Файл `.env`
    в `.gitignore` — в репозиторий он не попадает.
 
 2. **База и копия данных.** Сначала одна база:
@@ -151,20 +163,25 @@ Vercel, его вводит заказчик ([SETUP](SETUP.md)). Каждое �
    docker compose up -d postgres
    ```
 
-   Копия из облака — снимок Neon (раздел «Копии и восстановление»): адрес ветки даёт
-   `scripts/neon.sh branch-uri snapshot-ГГГГ-ММ-ДД`, дамп —
-   `pg_dump --format=custom --no-owner "$URI" > backups/orbita.dump`. Восстановить:
+   Копия снимается с рабочей ветки Neon **в момент переезда**, а не из ночного снимка:
+   иначе всё внесённое после 01:00 потеряется молча. Порядок:
+
+   - договориться с помощником и руководителем о времени, с которого ввод в облаке
+     прекращается;
+   - взять строку подключения ветки `production` **без пула** (Neon → `production` →
+     Connect, пул выключен — в имени хоста нет `-pooler`): `pg_dump` через пул теряет
+     настройки своего сеанса;
+   - снять дамп клиентом из контейнера базы (той же версии PostgreSQL), не оставляя адрес
+     в истории оболочки:
 
    ```bash
+   read -rs URI && export URI
+   docker compose exec -T -e URI postgres sh -c 'pg_dump --format=custom --no-owner "$URI" > /backups/orbita.dump'
+   unset URI
    docker compose exec -T postgres pg_restore -U orbita -d orbita --no-owner --no-privileges /backups/orbita.dump
    ```
 
-3. **Файлы — вместе с базой.** Запись о версии презентации без самого файла откроется
-   отказом «файла нет в хранилище» (проверено). Файлы облачного хранилища (V44) кладутся в
-   том `uploads` с теми же ключами, что в базе (`stored_files.storage_key`), например
-   `rclone copy облако:orbita /var/lib/docker/volumes/orbita-server_uploads/_data`.
-
-4. **Запуск.**
+3. **Запуск.**
 
    ```bash
    docker compose up -d --build
@@ -175,6 +192,17 @@ Vercel, его вводит заказчик ([SETUP](SETUP.md)). Каждое �
    содержит не латиницу, сборка падает на `x-docker-expose-session-sharedkey` — собирать с
    `COMPOSE_BAKE=false` по одному образу: `docker compose build api`, затем `web` и `cron`.
 
+4. **Файлы — вместе с базой.** Запись о версии презентации без самого файла откроется
+   отказом «файла нет в хранилище» (проверено). Файлы облачного хранилища (V44) кладутся в
+   том `uploads` с теми же ключами, что в базе (`stored_files.storage_key`), и отдаются
+   пользователю, от которого работает API: скопированное от root он прочтёт, но новую
+   версию рядом не создаст.
+
+   ```bash
+   sudo rclone copy облако:orbita /var/lib/docker/volumes/orbita-server_uploads/_data
+   docker compose exec --user root api chown -R orbita /data/uploads
+   ```
+
 5. **Ссылки доступа** — тем же средством, что в облаке (раздел «Ссылки доступа»):
 
    ```bash
@@ -184,14 +212,42 @@ Vercel, его вводит заказчик ([SETUP](SETUP.md)). Каждое �
    Ссылка выводится один раз; её не публикуют и не пересылают в общих чатах.
 
 6. **Расписание и копии.** Задачи вызывает контейнер `cron`; ручной запуск —
-   `docker compose exec cron run-job deadline-check`. Ночная копия базы на сервере — задача
-   cron хоста:
+   `docker compose exec cron run-job deadline-check`. Ночная копия — `deploy/server/backup.sh`
+   из cron хоста: дамп базы и архив файлов, проверка, неделя хранения и копия за пределами
+   сервера (ТЗ: «ночная копия хранится отдельно»). Куда копировать — решает администратор
+   агентства; адрес rclone задаётся в строке cron:
 
    ```bash
-   0 1 * * * cd /srv/orbita/deploy/server && docker compose exec -T postgres pg_dump -U orbita -Fc orbita > backups/orbita-$(date +\%F).dump
+   0 1 * * * ORBITA_BACKUP_REMOTE=agency-backup:orbita /srv/orbita/deploy/server/backup.sh >> /var/log/orbita-backup.log 2>&1
    ```
 
-7. **Обновление** — новая версия из `main`:
+   Без `ORBITA_BACKUP_REMOTE` копия остаётся только на диске сервера, и скрипт пишет об этом
+   в журнал каждую ночь. Восстановление на произвольный момент между копиями — архивом
+   журнала PostgreSQL, это система копирования агентства (V51). Восстановить из копии:
+
+   ```bash
+   docker compose exec -T postgres pg_restore -U orbita -d orbita --clean --if-exists --no-owner --no-privileges /backups/orbita-ГГГГ-ММ-ДД.dump
+   docker compose exec -T --user root api sh -c 'rm -rf /data/uploads/* && tar -xzf - -C /data' < backups/uploads-ГГГГ-ММ-ДД.tar.gz
+   docker compose exec --user root api chown -R orbita /data/uploads
+   ```
+
+7. **Выключить облако** — когда помощник и руководитель вошли по новым ссылкам и увидели
+   свои данные. Пока облако живо, расписание GitHub шлёт руководителю сводки по
+   замороженной облачной базе, а старая PWA открывает облако, и внесённое там в рабочую
+   систему не попадает.
+
+   ```bash
+   gh workflow disable jobs.yml
+   gh workflow disable deploy.yml
+   gh workflow disable backup.yml
+   ```
+
+   Облачный API — Vercel → проект → Settings → General → Delete Project. Базу Neon оставить
+   копией на месяц и удалить по решению заказчика. Руководитель удаляет с экрана «Домой»
+   старую ORBITA, ставит новую с нового адреса (Safari → Поделиться → На экран «Домой») и
+   включает уведомления заново.
+
+8. **Обновление** — новая версия из `main`:
 
    ```bash
    git pull && docker compose up -d --build

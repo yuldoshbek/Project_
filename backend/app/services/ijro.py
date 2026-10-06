@@ -335,7 +335,9 @@ async def _snapshot(
     ids: list[uuid.UUID] | None = None,
 ) -> _Snapshot:
     """Строки реестра со ступенями — фиксированным числом запросов на весь реестр."""
-    records = await read_model.records(session, zone=zone, ids=ids)
+    records = await read_model.records(
+        session, zone=zone, ids=ids, seta=await metrics.seta_life(zone=zone)
+    )
     documents = {document.id: document for document in await read_model.documents(session)}
     people = dict(await read_model.people(session))
     organizations = await read_model.organizations(

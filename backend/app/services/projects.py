@@ -540,15 +540,17 @@ async def detail(
 # --------------------------------------------------------------------------------------
 
 
-async def create(
-    session: AsyncSession, *, user: User, data: NewProject, today: date, locale: str
-) -> uuid.UUID:
+async def create(session: AsyncSession, *, user: User, data: NewProject, today: date) -> uuid.UUID:
     """Новый проект за два обязательных поля — название и тип (ТЗ 3.1, 7).
 
     Вехи подставляются из шаблона типа: помощник выбирает «нормативный акт» и получает
     разработку, согласование, внесение готовыми строками, а не вспоминает их. Срок, если
     его не назвали, — по последней вехе шаблона. Исходный срок равен сроку: переносов у
     нового проекта нет.
+
+    Вехи пишутся на основном языке, а не на языке интерфейса того, кто заводит: это данные,
+    они не переводятся (V49). С выбором языка в блоке 3 руководитель с узбекским интерфейсом
+    иначе записал бы вехи на узбекском, и помощник видел бы их так навсегда.
     """
     title = validate_title(data.title)
     kinds = await read_model.project_types(session, codes=[data.type_code])
@@ -613,7 +615,7 @@ async def create(
         session.add(
             Milestone(
                 project_id=project.id,
-                title=_name(step.names, locale) or step.names.ru,
+                title=step.names.ru,
                 due_on=planned,
                 original_due_on=planned,
                 sort_order=(index + 1) * 10,

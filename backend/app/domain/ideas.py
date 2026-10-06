@@ -20,10 +20,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from app.domain.errors import RuleViolationError
+from app.domain.projects import validate_text
 
 TEXT_MAX_LENGTH = 1000
 """Идея — одна-две фразы, как запись Захвата (`app.domain.capture.TEXT_MAX_LENGTH`)."""
@@ -63,6 +64,7 @@ class Question(StrEnum):
 
 
 def clean_text(text: str, *, limit: int = TEXT_MAX_LENGTH) -> str:
+    validate_text(text, what="Текст")
     cleaned = " ".join(text.split())
     if not cleaned:
         raise RuleViolationError("Текст не может быть пустым")
@@ -138,10 +140,29 @@ def subtree(root: uuid.UUID, parents: dict[uuid.UUID, uuid.UUID | None]) -> set[
     return found
 
 
+def branch_stamp(nodes: Iterable[tuple[uuid.UUID, int]]) -> str:
+    """Отпечаток ветви — узлы и их версии; ветвь удаляется, только если человек видел её такой.
+
+    Одного числа узлов мало: переименованный или подменённый вторым пользователем узел
+    оставлял число прежним и уходил молча (инвариант 15). FNV-1a на 32 бита по строке
+    «id:версия» через запятую в порядке id — защищаемся от гонки, а не от подделки; тот же
+    расчёт в интерфейсе — `frontend/src/sections/ideas/stamp.ts`.
+    """
+    line = ",".join(f"{node}:{version}" for node, version in sorted(nodes, key=lambda n: str(n[0])))
+    stamp = 0x811C9DC5
+    for byte in line.encode():
+        stamp = ((stamp ^ byte) * 0x01000193) & 0xFFFFFFFF
+    return f"{stamp:08x}"
+
+
 @dataclass(frozen=True, slots=True)
 class Waiting:
     id: uuid.UUID
     since: date
+    """День отправки по Ташкенту — от него считаются дни ожидания."""
+    sent_at: datetime
+    """Точный момент отправки: две идеи, отправленные в один день, встают по нему, а не по
+    случайному порядку идентификаторов."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,16 +172,22 @@ class Answer:
     oldest_days: int
     oldest_id: uuid.UUID | None
     rows: list[uuid.UUID]
+    days: dict[uuid.UUID, int]
+    """Сколько дней ждёт каждая идея из `rows`. Считается здесь же, где `oldest_days`:
+    «дольше всех — N дн.» в ответе и «ждёт N дн.» у строки списка стоят на одном экране, и
+    правка правила V46 в одном месте без другого развела бы их."""
 
 
 def awaiting(ideas: Iterable[Waiting], today: date) -> Answer:
     """Идеи на рассмотрении — старшие первыми: дольше всех ждёт — первым и решается (V46)."""
-    ordered: Sequence[Waiting] = sorted(ideas, key=lambda each: (each.since, str(each.id)))
+    ordered: Sequence[Waiting] = sorted(ideas, key=lambda each: (each.sent_at, str(each.id)))
+    days = {each.id: (today - each.since).days for each in ordered}
     oldest = ordered[0] if ordered else None
     return Answer(
         key=Question.AWAITING,
         count=len(ordered),
-        oldest_days=(today - oldest.since).days if oldest else 0,
+        oldest_days=days[oldest.id] if oldest else 0,
         oldest_id=oldest.id if oldest else None,
         rows=[each.id for each in ordered],
+        days=days,
     )

@@ -35,7 +35,7 @@ from app.api.security import Assistant
 from app.domain.access import SESSION_COOKIE, fingerprint, needs_touch
 from app.domain.errors import RuleViolationError
 from app.domain.people import Role
-from app.repos.models import AccessLink, PushSubscription, User
+from app.repos.models import AccessLink, AuditLog, PushSubscription, User
 from app.repos.models import Session as SessionRecord
 from app.services import access
 from app.settings import Settings
@@ -210,15 +210,35 @@ class TestOpeningByLink:
         assert response.json()["can_write"] is True
 
     async def test_each_user_chooses_their_language(
-        self, assistant_api: AsyncClient, leader_api: AsyncClient
+        self, assistant_api: AsyncClient, leader_api: AsyncClient, session: AsyncSession
     ) -> None:
-        """Язык — личная настройка: руководитель меняет свой и не трогает язык помощника."""
+        """Язык — личная настройка: руководитель меняет свой и не трогает язык помощника.
+
+        Смена — в журнале: кто и когда переключил язык, видно и тогда, когда ссылкой
+        воспользовались с другого устройства (инвариант 5).
+        """
         saved = await leader_api.put("/api/me/locale", json={"locale": "uz_cyrl"})
         assert saved.status_code == 204
         assert (await leader_api.get("/api/me")).json()["locale"] == "uz_cyrl"
         assert (await assistant_api.get("/api/me")).json()["locale"] == "ru"
         unknown = await leader_api.put("/api/me/locale", json={"locale": "en"})
         assert unknown.status_code == 422
+        # Тот же язык ещё раз — не изменение, и записи о нём нет.
+        same = await leader_api.put("/api/me/locale", json={"locale": "uz_cyrl"})
+        assert same.status_code == 204
+
+        leader = await session.scalar(select(User).where(User.role == Role.LEADER.value))
+        assert leader is not None
+        journal = (
+            await session.execute(
+                select(AuditLog.actor_id, AuditLog.action, AuditLog.changes).where(
+                    AuditLog.entity_type == "users", AuditLog.entity_id == leader.id
+                )
+            )
+        ).all()
+        assert [tuple(row) for row in journal] == [
+            (leader.id, "updated", {"locale": {"from": "ru", "to": "uz_cyrl"}})
+        ]
 
     async def test_unknown_link_is_a_plain_not_found(self, api: AsyncClient) -> None:
         """Ответ не объясняет, чем ссылка не подошла: подсказка помогала бы подбору."""

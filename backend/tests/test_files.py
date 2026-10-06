@@ -141,12 +141,38 @@ class TestVersions:
         await session.execute(
             update(StoredFile)
             .where(StoredFile.id == abandoned)
-            .values(created_at=now_utc() - timedelta(hours=1))
+            .values(created_at=now_utc() - timedelta(hours=2))
         )
         await upload(assistant_api, prep_id, b"%PDF next")
         card = (await assistant_api.get(f"/api/v1/preparations/{prep_id}")).json()
         assert [each["number"] for each in card["versions"]] == [1]
         assert await session.get(StoredFile, abandoned) is None
+
+    async def test_landed_but_unconfirmed_upload_is_kept(
+        self, assistant_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Файл лёг, а подтверждение не дошло: загрузка завершается при следующей, а не
+        удаляется (файл стал бы сиротой) и не висит невидимой версией с дырой в номерах."""
+        prep_id = await drought(assistant_api)
+        started = (
+            await assistant_api.post(
+                f"/api/v1/preparations/{prep_id}/versions",
+                json={"name": "лёг.pdf", "content_type": PDF, "size": 9},
+            )
+        ).json()
+        put = await assistant_api.put(
+            started["upload"]["url"], content=b"%PDF lost", headers={"Content-Type": PDF}
+        )
+        assert put.status_code == 204
+        landed = uuid.UUID(started["file_id"])
+        await session.execute(
+            update(StoredFile)
+            .where(StoredFile.id == landed)
+            .values(created_at=now_utc() - timedelta(hours=2))
+        )
+        await upload(assistant_api, prep_id, b"%PDF next")
+        card = (await assistant_api.get(f"/api/v1/preparations/{prep_id}")).json()
+        assert sorted(each["number"] for each in card["versions"]) == [1, 2]
 
     async def test_type_size_and_role_are_checked(
         self, assistant_api: AsyncClient, leader_api: AsyncClient

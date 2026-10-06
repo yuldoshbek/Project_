@@ -415,7 +415,7 @@ class TestLadder:
     async def test_finished_and_cancelled_are_not_in_the_ladder(
         self, session: AsyncSession, loaded: Loaded
     ) -> None:
-        items = await snapshot.load_items(session, zone=TASHKENT)
+        items = await snapshot.load_items(session, zone=TASHKENT, seta={})
         in_snapshot = {loaded.key_of(item.entity_id) for item in items}
         assert {"glossary", "hydro", "legacy"}.isdisjoint(in_snapshot)
         # Пауза — не конец работы: снег в снимке есть и идёт по плану.

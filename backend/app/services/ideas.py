@@ -21,7 +21,13 @@ from app.domain import ideas as rules
 from app.domain.attention import Attention
 from app.domain.clock import local_date
 from app.domain.dictionaries import localized_name
-from app.domain.errors import NotFoundError, RuleViolationError, check_version
+from app.domain.errors import (
+    STALE_VERSION_MESSAGE,
+    NotFoundError,
+    RuleViolationError,
+    StaleVersionError,
+    check_version,
+)
 from app.domain.ideas import IdeaStep, MapMode, Outcome
 from app.repos import ideas as read_model
 from app.repos import projects as project_model
@@ -34,7 +40,8 @@ from app.services import metrics, projects, tasks
 class IdeaView:
     row: IdeaRow
     waiting_days: int
-    """Сколько дней ждёт руководителя (V46); у не отправленной — 0."""
+    """Сколько дней ждёт руководителя — из ответа `metrics.ideas_awaiting` (V46); у не
+    отправленной — 0."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,19 +98,15 @@ async def load(
     today = local_date(now, zone)
     rows = await read_model.ideas(session)
     waiting = [
-        rules.Waiting(id=row.id, since=local_date(row.review_at, zone))
+        rules.Waiting(id=row.id, since=local_date(row.review_at, zone), sent_at=row.review_at)
         for row in rows
         if row.step == IdeaStep.REVIEW.value and row.review_at is not None
     ]
     answer = metrics.ideas_awaiting(waiting, today=today)
-    since = {each.id: each.since for each in waiting}
     return IdeasView(
         as_of=now,
         questions=[answer],
-        items=[
-            IdeaView(row=row, waiting_days=(today - since[row.id]).days if row.id in since else 0)
-            for row in rows
-        ],
+        items=[IdeaView(row=row, waiting_days=answer.days.get(row.id, 0)) for row in rows],
         maps=await read_model.maps(session),
         project_types=await _types(session, locale),
         is_demo=is_demo,
@@ -155,7 +158,6 @@ async def _create_work(
     type_code: str | None,
     now: datetime,
     zone: ZoneInfo,
-    locale: str,
 ) -> uuid.UUID:
     """Проект или задача из идеи или узла — тем же сценарием, что в разделе.
 
@@ -178,7 +180,6 @@ async def _create_work(
                 is_multiyear=False,
             ),
             today=local_date(now, zone),
-            locale=locale,
         )
     return await tasks.create(
         session,
@@ -211,7 +212,6 @@ async def decide(
     version: int,
     now: datetime,
     zone: ZoneInfo,
-    locale: str,
 ) -> uuid.UUID | None:
     """Решение руководителя: проект, задача или «отложено» — одним действием (критерий 1)."""
     idea = await _idea(session, idea_id)
@@ -227,7 +227,6 @@ async def decide(
             type_code=type_code,
             now=now,
             zone=zone,
-            locale=locale,
         )
     idea.step = IdeaStep.DECIDED.value
     idea.outcome = outcome.value
@@ -242,11 +241,21 @@ async def decide(
 # --------------------------------------------------------------------------------------
 
 
-async def _map(session: AsyncSession, map_id: uuid.UUID) -> IdeaMap:
-    found = await session.get(IdeaMap, map_id)
+async def _map(session: AsyncSession, map_id: uuid.UUID, *, lock: bool = False) -> IdeaMap:
+    found = await session.get(IdeaMap, map_id, with_for_update=lock)
     if found is None:
         raise NotFoundError("Карта не найдена")
     return found
+
+
+async def _lock_tree(session: AsyncSession, map_id: uuid.UUID) -> None:
+    """Правки дерева одной карты — по очереди: строка карты блокируется до конца транзакции.
+
+    Проверка кольца и состав удаляемой ветви читают родителей снимком. Без очереди два
+    одновременных переноса (X под Y и Y под X) проходят обе проверки и замыкают кольцо,
+    а удаление ветви каскадом базы уносит узел, добавленный в ту же секунду, мимо журнала.
+    """
+    await _map(session, map_id, lock=True)
 
 
 async def _node(session: AsyncSession, map_id: uuid.UUID, node_id: uuid.UUID) -> MapNode:
@@ -314,7 +323,7 @@ async def add_node(
     x: int,
     y: int,
 ) -> uuid.UUID:
-    await _map(session, map_id)
+    await _lock_tree(session, map_id)
     rules.check_point(x, y)
     rules.check_parent(None, parent_id, await read_model.parents(session, map_id))
     node = MapNode(
@@ -357,6 +366,7 @@ async def set_parent(
     parent_id: uuid.UUID | None,
     version: int,
 ) -> None:
+    await _lock_tree(session, map_id)
     node = await _node(session, map_id, node_id)
     check_version(expected=version, actual=node.version)
     rules.check_parent(node_id, parent_id, await read_model.parents(session, map_id))
@@ -365,20 +375,34 @@ async def set_parent(
 
 
 async def delete_node(
-    session: AsyncSession, *, map_id: uuid.UUID, node_id: uuid.UUID, version: int
+    session: AsyncSession,
+    *,
+    map_id: uuid.UUID,
+    node_id: uuid.UUID,
+    version: int,
+    branch: str,
 ) -> int:
     """Узел уходит вместе с ветвью (`rules.subtree`); проекты и задачи остаются — карта
-    только ссылается на них."""
+    только ссылается на них.
+
+    `branch` — отпечаток ветви, которую видел человек (`rules.branch_stamp`). Версия корня не
+    меняется, когда под него добавляют, переносят или правят узлы, поэтому одной версии
+    мало: удаление по устаревшей картине молча унесло бы чужую правку (инвариант 15).
+    """
+    await _lock_tree(session, map_id)
     node = await _node(session, map_id, node_id)
     check_version(expected=version, actual=node.version)
-    branch = rules.subtree(node_id, await read_model.parents(session, map_id))
+    ids = rules.subtree(node_id, await read_model.parents(session, map_id))
+    # Строки ветви уже под блокировкой карты (`_lock_tree`): между сверкой и удалением их
+    # никто не поменяет.
+    gone = [found for each in ids if (found := await session.get(MapNode, each)) is not None]
+    if rules.branch_stamp((each.id, each.version) for each in gone) != branch:
+        raise StaleVersionError(STALE_VERSION_MESSAGE)
     # Удаление по одной строке — чтобы каждое попало в журнал (инвариант 5).
-    for each in branch:
-        found = await session.get(MapNode, each)
-        if found is not None:
-            await session.delete(found)
+    for found in gone:
+        await session.delete(found)
     await session.flush()
-    return len(branch)
+    return len(gone)
 
 
 async def convert_node(
@@ -392,7 +416,6 @@ async def convert_node(
     version: int,
     now: datetime,
     zone: ZoneInfo,
-    locale: str,
 ) -> uuid.UUID:
     """Узел → проект или задача одним действием (ТЗ 11): запись заводится, узел — ссылается."""
     if kind is Outcome.POSTPONED:
@@ -409,7 +432,6 @@ async def convert_node(
         type_code=type_code,
         now=now,
         zone=zone,
-        locale=locale,
     )
     if kind is Outcome.PROJECT:
         node.project_id = created

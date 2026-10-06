@@ -35,9 +35,12 @@ from app.domain.access import (
     new_token,
     visit_began,
 )
+from app.domain.audit import AuditAction
 from app.domain.errors import NotAuthenticatedError, NotFoundError, RuleViolationError
 from app.domain.people import Locale
-from app.repos.models import AccessLink, PushSubscription, Session, User
+from app.observability import get_request_id
+from app.repos.models import AccessLink, AuditLog, PushSubscription, Session, User
+from app.services.audit import get_actor
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +222,30 @@ async def active_sessions(
 
 
 async def set_locale(session: AsyncSession, *, user: User, locale: Locale) -> None:
-    """Язык интерфейса — личная настройка: меняет его каждый себе, роль не важна."""
-    if user.locale != locale.value:
-        user.locale = locale.value
-        session.add(user)
+    """Язык интерфейса — личная настройка: меняет его каждый себе, роль не важна.
+
+    Смена пишется в журнал явной записью в той же транзакции (инвариант 5, ADR-0010). Сам
+    собой журнал пишется только у `Auditable`, а `User` им не помечен: отметка визита
+    (`last_visit_at`) сдвигается с каждым новым визитом и засыпала бы журнал правками,
+    которых никто не делал. Язык — первое поле пользователя, которое правят через API, и
+    вопрос «кто переключил на кириллицу» по нему так же законен, как по проекту.
+    """
+    if user.locale == locale.value:
+        return
+    before = user.locale
+    user.locale = locale.value
+    session.add(user)
+    actor = get_actor()
+    session.add(
+        AuditLog(
+            actor_id=actor.id,
+            actor_kind=actor.kind.value,
+            entity_type=User.__tablename__,
+            entity_id=user.id,
+            action=AuditAction.UPDATED.value,
+            changes={"locale": {"from": before, "to": locale.value}},
+            request_id=get_request_id(),
+            ip=actor.ip,
+            user_agent=actor.user_agent,
+        )
+    )

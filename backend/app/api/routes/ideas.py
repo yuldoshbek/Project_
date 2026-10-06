@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import status
+from fastapi import Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SessionDep, SettingsDep, is_demo
@@ -226,7 +226,6 @@ async def decide(
         version=body.version,
         now=now_utc(),
         zone=ZoneInfo(settings.timezone),
-        locale=user.locale,
     )
     return DecisionOut(created_id=created)
 
@@ -409,9 +408,22 @@ class DeletedOut(BaseModel):
     "/maps/{map_id}/nodes/{node_id}", response_model=DeletedOut, summary="Убрать узел с ветвью"
 )
 async def delete_node(
-    map_id: uuid.UUID, node_id: uuid.UUID, version: int, user: CurrentUser, session: SessionDep
+    map_id: uuid.UUID,
+    node_id: uuid.UUID,
+    version: int,
+    branch: Annotated[
+        str,
+        Query(
+            pattern="^[0-9a-f]{8}$",
+            description="Отпечаток ветви, которую видел человек: узлы и их версии",
+        ),
+    ],
+    user: CurrentUser,
+    session: SessionDep,
 ) -> DeletedOut:
-    count = await service.delete_node(session, map_id=map_id, node_id=node_id, version=version)
+    count = await service.delete_node(
+        session, map_id=map_id, node_id=node_id, version=version, branch=branch
+    )
     return DeletedOut(deleted=count)
 
 
@@ -447,6 +459,5 @@ async def convert_node(
         version=body.version,
         now=now_utc(),
         zone=ZoneInfo(settings.timezone),
-        locale=user.locale,
     )
     return Created(id=created)

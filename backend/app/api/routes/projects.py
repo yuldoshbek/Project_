@@ -368,7 +368,6 @@ async def create_project(
             is_multiyear=body.is_multiyear,
         ),
         today=local_date(now, zone),
-        locale=user.locale,
     )
     return _detail(
         await service.detail(session, project_id=project_id, now=now, zone=zone, locale=user.locale)

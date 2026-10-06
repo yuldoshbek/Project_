@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.storage import LINK_SECONDS, FileStorage, LocalStorage, UploadTarget
+from app.adapters.storage import FileStorage, LocalStorage, UploadTarget
 from app.domain.clock import now_utc
 from app.domain.errors import NotFoundError, RuleViolationError, check_version
 from app.domain.files import FileOwner, FileState, check_upload, storage_key
@@ -58,7 +58,7 @@ async def start_version(
     if await session.get(Preparation, preparation_id) is None:
         raise NotFoundError("Подготовка не найдена: её могли удалить")
     cleaned = check_upload(name=name, content_type=content_type, size=size)
-    await _drop_abandoned(session, preparation_id)
+    await _drop_abandoned(session, storage, preparation_id)
     last = await session.scalar(
         select(func.max(PresentationVersion.number)).where(
             PresentationVersion.preparation_id == preparation_id
@@ -98,17 +98,28 @@ async def start_version(
     return StartedUpload(version_id=version_id, file_id=file_id, upload=target)
 
 
-ABANDONED_AFTER = timedelta(seconds=LINK_SECONDS * 2)
-"""Загрузка, не подтверждённая за два срока жизни ссылки, брошена: по просроченной ссылке
-файл уже не лечь."""
+ABANDONED_AFTER = timedelta(hours=1)
+"""Загрузка, не подтверждённая за час, брошена.
+
+Отсчёт идёт от выдачи ссылки, а подписанная ссылка проверяется на старте передачи, не на
+её конце; на сервере агентства (`LocalStorage`) ссылка не истекает вовсе. Файл в 50 МБ по
+медленной мобильной сети идёт дольше десяти минут, поэтому порог — с запасом на передачу
+самого большого файла, а не два срока ссылки."""
 
 
-async def _drop_abandoned(session: AsyncSession, preparation_id: uuid.UUID) -> None:
+async def _drop_abandoned(
+    session: AsyncSession, storage: FileStorage, preparation_id: uuid.UUID
+) -> None:
     """Брошенные загрузки уходят, чтобы не занимать номер версии.
 
     Иначе номер остаётся за версией, которую никто не увидит, и в карточке появляется дыра:
     «Версия 6», а следом «Версия 8» (наблюдалось при проверке сборки сервера). Свежая
     незавершённая загрузка не трогается — её, возможно, ещё грузят.
+
+    Загрузка, чей файл лёг в хранилище целиком, а подтверждение не дошло (закрыли вкладку,
+    пропала сеть), завершается здесь же тем же правилом, что `complete`: удалить её — значит
+    оставить файл в хранилище сиротой, а оставить ожидающей — держать невидимую версию и
+    вечную дыру в номерах (найдено ревью правок).
     """
     rows = await session.execute(
         select(PresentationVersion, StoredFile)
@@ -119,7 +130,12 @@ async def _drop_abandoned(session: AsyncSession, preparation_id: uuid.UUID) -> N
             StoredFile.created_at < now_utc() - ABANDONED_AFTER,
         )
     )
-    abandoned = list(rows.tuples())
+    abandoned: list[tuple[PresentationVersion, StoredFile]] = []
+    for version, stored in rows.tuples():
+        if await storage.size(stored.storage_key) == stored.size:
+            stored.state = FileState.STORED.value
+        else:
+            abandoned.append((version, stored))
     for version, _ in abandoned:
         await session.delete(version)
     await session.flush()

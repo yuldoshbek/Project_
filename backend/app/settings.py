@@ -132,6 +132,12 @@ class Settings(BaseSettings):
             return "s3"
         return "local" if self.env in ("development", "test") else "none"
 
+    # --- SETA (порт SetaGateway, ТЗ 10) ---
+    seta: Literal["none"] = "none"
+    """Подключение SETA. Значение пока одно — «не подключена» (`NoSeta`): подключение —
+    отдельное решение заказчика (docs/PLAN.md, «Вне плана»). Реализация для API SETA
+    встанет сюда вторым значением, и выбирать её будет эта настройка, а не правка сервисов."""
+
     # --- Наблюдаемость ---
     log_level: str = "INFO"
     # В разработке читаемый вывод, в остальных случаях JSON для сбора логов.
