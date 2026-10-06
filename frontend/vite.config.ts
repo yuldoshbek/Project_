@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Куда прокси отдаёт `/api`. По умолчанию — backend из `make dev`; стенд сценариев
+// Playwright подставляет свой API на своей базе (`e2e/stand.ts`).
+const apiTarget = process.env.ORBITA_API_TARGET ?? 'http://127.0.0.1:8000';
+
 export default defineConfig({
   plugins: [
     react(),
@@ -60,7 +64,7 @@ export default defineConfig({
     // Backend поднимается отдельно (make dev). Прокси даёт тот же один источник, что
     // Netlify в облаке: cookie сессии работает так же, как в бою (ADR-0028).
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true },
     },
   },
 
@@ -69,7 +73,7 @@ export default defineConfig({
     // Тот же прокси для собранной сборки: в конвейере сценарии идут по ней, а не по
     // режиму разработки. Иначе проверялось бы то, чего в облаке нет.
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true },
     },
   },
 

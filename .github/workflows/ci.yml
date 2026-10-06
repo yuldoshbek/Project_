@@ -331,7 +331,7 @@ jobs:
         with:
           name: screens
           path: |
-            docs/reports/block-1/*.png
-            docs/reports/block-1/*.pdf
+            docs/reports/block-*/*.png
+            docs/reports/block-*/*.pdf
             frontend/test-results/**
           retention-days: 14

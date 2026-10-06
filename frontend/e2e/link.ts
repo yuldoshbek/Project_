@@ -15,6 +15,8 @@ import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { LOCAL_STAND, STAND_DB_ENV, STAND_URL, withEnv } from './stand';
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -28,11 +30,13 @@ export const REPORT_DIR = resolve(
 const backend = resolve(here, '../../backend');
 
 export function issueLink(role: 'assistant' | 'leader' = 'assistant'): string {
-  const baseURL = process.env.ORBITA_E2E_URL ?? 'http://localhost:5173';
+  const baseURL = process.env.ORBITA_E2E_URL ?? STAND_URL;
+  // На своём стенде ссылка выпускается в базе стенда, а не в базе разработки из `.env`:
+  // иначе API стенда её не узнал бы, а разработчика выбило бы из его вкладки.
   const output = execFileSync(
     'uv',
     ['run', 'python', '-m', 'app.access_cli', role, '--base-url', baseURL],
-    { cwd: backend, encoding: 'utf8' },
+    { cwd: backend, encoding: 'utf8', env: LOCAL_STAND ? withEnv(STAND_DB_ENV) : process.env },
   );
 
   const link = output.trim().split('\n').pop();
