@@ -26,6 +26,11 @@ updates:
       backend-minor:
         exclude-patterns: [sqlalchemy, ruff, mypy, pytest, pytest-*, import-linter]
         update-types: [minor, patch]
+    ignore:
+      # Заказчик решил остаться на SQLAlchemy 2.0 (08.10.2026, PR #29): патчи 2.0.x
+      # приходят своим PR, переход на 2.1 — отдельной работой, когда до неё дойдёт очередь.
+      - dependency-name: sqlalchemy
+        versions: ['>=2.1']
 
   - package-ecosystem: npm
     directory: /frontend

@@ -77,7 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Вход по личной ссылке — единственная часть API без сессии: по ссылке приходит
     # человек, у которого её ещё нет (ADR-0029).
     app.include_router(access.router)
-    # Служебный вход расписания. Закрыт секретом в заголовке и мимо прокси недоступен.
+    # Служебный вход расписания. Закрыт секретом в заголовке; через сайт недоступен —
+    # расписание зовёт его по прямому адресу API (`routes/internal.py`).
     app.include_router(internal.router)
     app.include_router(api_router)
 
