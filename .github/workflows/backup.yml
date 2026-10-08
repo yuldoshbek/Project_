@@ -36,7 +36,7 @@ jobs:
       NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
       PRODUCTION_DB_BRANCH: ${{ vars.PRODUCTION_DB_BRANCH || 'production' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Проверить ключи
         id: keys

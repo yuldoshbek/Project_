@@ -80,6 +80,7 @@ export function CalendarSection() {
   useEffect(() => {
     if (!data || isPlaceholderData || dataUpdatedAt <= today.at) return;
     const day = localDay(data.as_of);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- день приходит ответом сервера, а не из рендера
     if (day !== today.day) setToday({ day, at: dataUpdatedAt });
   }, [data, dataUpdatedAt, isPlaceholderData, today]);
 
@@ -166,6 +167,9 @@ function Calendar({
     const found = document.getElementById(dayAnchor(target));
     if (!found) return;
     found.scrollIntoView?.({ block: 'start' });
+    // Дня в списке нет до отрисовки, найти его можно только после неё. Сброс — чтобы
+    // повторное касание того же дня прокрутило снова.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- сброс после прокрутки
     setTarget(null);
   }, [target, view.items]);
 

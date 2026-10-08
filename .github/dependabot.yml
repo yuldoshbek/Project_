@@ -1,7 +1,13 @@
 version: 2
 
 updates:
-  - package-ecosystem: pip
+  # uv, а не pip: источник правды — uv.lock, requirements.txt из него экспортируется.
+  # С pip бот правил только requirements.txt (PR #19, 05.10.2026): CI ставил старые
+  # версии из uv.lock и проверял их, а pydantic-core 2.49 рядом с pydantic 2.13.5 (тот
+  # пинит pydantic-core==2.46.5) не устанавливался вовсе. Экосистема uv поднимает версии
+  # через `uv lock --upgrade-package`, но requirements.txt не трогает — его пересобирает
+  # `make reqs` в ветке PR, иначе CI покажет расхождение.
+  - package-ecosystem: uv
     directory: /backend
     schedule:
       interval: weekly
@@ -10,7 +16,15 @@ updates:
     commit-message:
       prefix: 'deps(backend)'
     groups:
+      # Инструменты разработки — отдельно: минорные релизы ruff 0.x для него ломающие, и
+      # один красный групповой PR не должен держать обновления рабочих зависимостей.
+      backend-dev:
+        patterns: [ruff, mypy, pytest, pytest-*, import-linter]
+        update-types: [minor, patch]
+      # SQLAlchemy — своим PR: её «минорная» 2.0 → 2.1 потребовала 45 правок типов и за две
+      # недели получила четыре патча с исправлениями регрессий (разбор PR #19, 08.10.2026).
       backend-minor:
+        exclude-patterns: [sqlalchemy, ruff, mypy, pytest, pytest-*, import-linter]
         update-types: [minor, patch]
 
   - package-ecosystem: npm
@@ -24,6 +38,15 @@ updates:
     groups:
       frontend-minor:
         update-types: [minor, patch]
+    ignore:
+      # ESLint 10 ждёт eslint-plugin-react: его 7.37.5 объявляет eslint ^9.7, и npm ci
+      # падает (PR #8, 08.10.2026). Без плагина нет react/jsx-no-literals — проверки, что
+      # в интерфейсе нет строк мимо ключей перевода. Снять, когда выйдет плагин с ^10
+      # (jsx-eslint/eslint-plugin-react#4022); eslint и @eslint/js поднимаются вместе.
+      - dependency-name: eslint
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /

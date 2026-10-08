@@ -39,21 +39,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    const resolved = mode === 'system' ? systemTheme() : (mode as ThemeName);
-    setTheme(resolved);
-    document.documentElement.setAttribute('data-theme', resolved);
-  }, [mode]);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     if (mode !== 'system') return;
     // Системная тема меняется и при работающем приложении: вечером, по расписанию
     // телефона. Без подписки экран остался бы светлым до перезагрузки.
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const follow = () => {
-      const resolved = systemTheme();
-      setTheme(resolved);
-      document.documentElement.setAttribute('data-theme', resolved);
-    };
+    const follow = () => setTheme(systemTheme());
     media.addEventListener('change', follow);
     return () => media.removeEventListener('change', follow);
   }, [mode]);
@@ -75,6 +69,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
+    setTheme(next === 'system' ? systemTheme() : next);
     try {
       if (next === 'system') localStorage.removeItem(STORAGE_KEY);
       else localStorage.setItem(STORAGE_KEY, next);
