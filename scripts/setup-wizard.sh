@@ -473,12 +473,10 @@ say "Секреты репозитория (только имена):"
 gh secret list --repo "$REPO" --json name -q '.[].name' 2>/dev/null | sed 's/^/    /'
 say "Секреты окружения $ENVIRONMENT (только имена):"
 gh secret list --repo "$REPO" --env "$ENVIRONMENT" --json name -q '.[].name' 2>/dev/null | sed 's/^/    /'
-if confirm "Проверить связь с Neon — запустить «Копия базы»?"; then
-  gh workflow run backup.yml --repo "$REPO" >/dev/null 2>&1 \
-    && say "✓ запущено: Actions → «Копия базы» должна написать, сколько таблиц в схеме" \
-    || warn "не запустилось — запустите вручную: Actions → «Копия базы» → Run workflow"
-fi
-note "Первая выкладка — после слияния блоков в main: Actions → «Выкладка» → deploy, миграции — да."
+# «Копию базы» здесь не предлагаем: до первой выкладки схема пуста, проверка снимка
+# (таблиц больше нуля) падает и открывает задачу о несделанной копии — SETUP, шаг 4.
+note "Дальше — первая выкладка: Actions → «Выкладка» → deploy, миграции — да."
+note "Когда она пройдёт — Actions → «Копия базы» → Run workflow: снимок и число таблиц."
 pause "Enter — итог"
 
 finish
