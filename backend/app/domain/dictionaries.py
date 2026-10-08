@@ -24,6 +24,11 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from app.domain.errors import RuleViolationError
+
+ORGANIZATION_NAME_MAX_LENGTH = 300
+"""Как у столбца `organizations.name`."""
+
 
 class ProjectStatus(StrEnum):
     """Статусы проекта (ТЗ 3.1). Их ровно четыре.
@@ -116,5 +121,42 @@ class SettingKey(StrEnum):
     MIN_CLOSED_FOR_PACE = "min_closed_for_pace"
     """Сколько задач надо закрыть, чтобы отвечать на «успеваем?». Меньше — «мало данных»."""
 
+    HOT_DAY_THRESHOLD = "hot_day_threshold"
+    """Сколько незакрытых сроков в один день делают его горячим. По умолчанию 3 (V15)."""
+
+    HOT_WINDOW_DAYS = "hot_window_days"
+    """На сколько дней вперёд отвечает «где неделя перегружена?». По умолчанию 28 (V15)."""
+
     SUMMARY_AT = "summary_at"
     """Время утренней сводки по Ташкенту (ТЗ 8)."""
+
+
+def localized_name(locale: str, *, ru: str, uz_cyrl: str, uz_latn: str) -> str:
+    """Название справочника на языке пользователя; незнакомый язык — по-русски.
+
+    Справочники хранят все три письменности (ТЗ 6), а экран разделов показывает одну:
+    выбор идёт по языку учётной записи. Русский по умолчанию — не предпочтение, а то, что
+    заполнено всегда: узбекские названия появляются в блоке 3, и пустая строка вместо типа
+    проекта читалась бы как «тип не указан».
+    """
+    chosen = {"uz_cyrl": uz_cyrl, "uz_latn": uz_latn}.get(locale, ru)
+    return chosen or ru
+
+
+def validate_organization_name(name: str) -> str:
+    """Название новой организации: без пробелов по краям, непустое, без нулевого символа.
+
+    Название — ключ организации (`Organization.name` уникально): по нему её узнают и
+    помощник, и привоз таблиц Ижро. Поэтому пробелы по краям срезаются здесь, а не
+    остаются второй «той же» организацией.
+    """
+    if "\x00" in name:
+        raise RuleViolationError("В названии организации есть недопустимый символ")
+    value = name.strip()
+    if not value:
+        raise RuleViolationError("Напишите название организации")
+    if len(value) > ORGANIZATION_NAME_MAX_LENGTH:
+        raise RuleViolationError(
+            f"Название организации длиннее {ORGANIZATION_NAME_MAX_LENGTH} символов"
+        )
+    return value

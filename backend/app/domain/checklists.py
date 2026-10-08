@@ -15,6 +15,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.domain.errors import RuleViolationError
+
+ITEM_MAX_LENGTH = 500
+"""Пункт чек-листа — одно действие. Длиннее — это уже описание задачи."""
+
 
 @dataclass(frozen=True, slots=True)
 class ChecklistProgress:
@@ -45,3 +50,15 @@ def progress(*, done: int, total: int) -> ChecklistProgress:
     if done > total:
         raise ValueError("выполненных пунктов больше, чем всего")
     return ChecklistProgress(done=done, total=total)
+
+
+def clean_item(text: str) -> str:
+    """Текст пункта: без пробелов по краям, непустой, без нулевого символа."""
+    if "\x00" in text:
+        raise RuleViolationError("В пункте чек-листа есть недопустимый символ")
+    value = text.strip()
+    if not value:
+        raise RuleViolationError("Напишите, что нужно сделать")
+    if len(value) > ITEM_MAX_LENGTH:
+        raise RuleViolationError(f"Пункт длиннее {ITEM_MAX_LENGTH} символов")
+    return value

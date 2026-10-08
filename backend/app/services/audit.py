@@ -137,8 +137,17 @@ def _changes_on_create(target: Any) -> Changes:
 
 @event.listens_for(Session, "before_flush")
 def _collect_changes(session: Session, flush_context: Any, instances: Any) -> None:
-    """До сохранения: пока сессия ещё помнит, что именно изменилось."""
-    pending: list[_Entry] = session.info.setdefault(_PENDING, [])
+    """До сохранения: пока сессия ещё помнит, что именно изменилось.
+
+    Список собирается заново на каждое сохранение, а не дописывается. Сохранение, которое
+    упало внутри точки сохранения, до `_write_entries` не доходит, и его записи остались
+    бы в сессии: повтор (`app.services.codes.add_with_code` при занятом номере) дописал бы
+    к ним свои, и один проект получил бы в журнале две записи «создан» — первую с номером,
+    которого у него никогда не было. Всё, что ещё не сохранено, сессия и так покажет
+    снова: новые и изменённые объекты остаются в `new` и `dirty` до успешного сохранения.
+    """
+    pending: list[_Entry] = []
+    session.info[_PENDING] = pending
 
     for target in session.new:
         if isinstance(target, Auditable):

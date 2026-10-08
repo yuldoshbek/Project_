@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
+from app.adapters.push import push_sender
 from app.api.errors import register_exception_handlers
 from app.api.router import api_router
 from app.api.routes import access, health, internal
@@ -59,6 +60,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # кешированного чтения окружения. Иначе create_app(settings) даёт приложение,
     # часть которого работает с переданными настройками, а часть — с чужими.
     app.state.settings = settings
+    # Порт уведомлений выбирается конфигом: без ключа — выключенный отправитель, и экран
+    # говорит «не настроено», а не падает (ADR-0036).
+    app.state.push = push_sender(settings)
 
     # CORS не настраивается, и это не упущение. Браузер видит один источник: интерфейс
     # на Netlify проксирует `/api` на этот API (ADR-0028), поэтому запрос для браузера —

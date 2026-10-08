@@ -46,6 +46,11 @@ class Settings(BaseSettings):
         env_file=REPO_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # Отказ проверки не повторяет введённое значение: `SecretStr` прячет ключ в выводе,
+        # но pydantic всё равно приложил бы его к ошибке (`input_value`), и ключ с одной
+        # лишней буквой лёг бы в журнал площадки целиком. Что не так и как сгенерировать
+        # новый, говорят сообщения проверок.
+        hide_input_in_errors=True,
     )
 
     # --- Приложение ---
@@ -69,6 +74,17 @@ class Settings(BaseSettings):
 
     session_days: int = 30
     """Срок cookie сессии. Продлевается при каждом входе по ссылке."""
+
+    vapid_private_key: SecretStr | None = None
+    """Закрытый ключ сервера для Web Push (RFC 8292): 32 байта скаляра P-256 в base64url.
+
+    Необязателен: без него уведомления выключены, а всё остальное работает — сборка,
+    миграции и pytest ключа не требуют. Превью получает свой ключ, только когда задан
+    секрет `PREVIEW_VAPID_PRIVATE_KEY` (V30); e2e в CI создаёт одноразовый ключ на прогон
+    (`app.push_keys`); рабочий ключ вводит только заказчик. Открытый ключ выводится из
+    закрытого, а не задаётся вторым значением: пара, заданная двумя строками, однажды
+    разойдётся, и браузер подпишется на ключ, которым сервер не подписывает.
+    """
 
     # --- База данных ---
     database_url: str | None = None
@@ -131,6 +147,43 @@ class Settings(BaseSettings):
                 "передать заголовком HTTP. Сгенерируйте: "
                 'python -c "import secrets; print(secrets.token_urlsafe(24))"'
             )
+        return value
+
+    @field_validator("vapid_private_key", mode="before")
+    @classmethod
+    def _empty_vapid_key_means_off(cls, value: object) -> object:
+        """Пустая строка из .env — «уведомления выключены», а не ключ из нуля байт.
+
+        Так выглядит строка `ORBITA_VAPID_PRIVATE_KEY=` из .env.example, скопированного
+        как есть: падать на ней значило бы требовать ключ от каждой машины разработчика.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if isinstance(value, SecretStr) and not value.get_secret_value().strip():
+            return None
+        return value
+
+    @field_validator("vapid_private_key")
+    @classmethod
+    def _vapid_key_is_a_key(cls, value: SecretStr | None) -> SecretStr | None:
+        """Ключ проверяется на старте, а не при первой отправке.
+
+        Первая отправка — утренняя сводка: испорченный ключ обнаружился бы в 08:30 молчащим
+        телефоном руководителя, а не упавшей выкладкой.
+        """
+        if value is None:
+            return None
+        # Импорт здесь, а не наверху: криптография нужна только контуру с ключом, а
+        # настройки читают и миграции, и командная строка.
+        from app.push_keys import private_key_from
+
+        try:
+            private_key_from(value.get_secret_value())
+        except ValueError as error:
+            raise ValueError(
+                "ORBITA_VAPID_PRIVATE_KEY — не закрытый ключ P-256 в base64url. "
+                "Сгенерируйте: cd backend && uv run python -m app.push_keys"
+            ) from error
         return value
 
     @computed_field  # type: ignore[prop-decorator]

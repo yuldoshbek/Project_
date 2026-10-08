@@ -6,6 +6,11 @@
 
     python -m app.jobs.run morning-summary
     python -m app.jobs.run deadline-check --force   # прогнать повторно за тот же период
+
+`--force` пропускает и проверку «пора»: сводку можно отправить до назначенного времени.
+
+Код выхода — не ноль, когда прогон неудачный (`failed`): так же, как эндпоинт отвечает
+503, чтобы запуск из cron на сервере агентства тоже видел неудачу, а не «выполнено».
 """
 
 from __future__ import annotations
@@ -15,7 +20,9 @@ import asyncio
 import json
 import sys
 
+from app.adapters.push import push_sender
 from app.jobs import all_jobs, run_job
+from app.jobs.registry import STATUS_FAILED
 from app.repos.database import dispose_database, init_database, session_scope
 from app.settings import get_settings
 
@@ -28,6 +35,7 @@ async def main(name: str, *, force: bool) -> int:
             outcome = await run_job(
                 session,
                 name,
+                push=push_sender(settings),
                 timezone=settings.timezone,
                 force=force,
             )
@@ -46,7 +54,7 @@ async def main(name: str, *, force: bool) -> int:
         )
     finally:
         await dispose_database()
-    return 0
+    return 1 if outcome.status == STATUS_FAILED else 0
 
 
 def cli() -> int:

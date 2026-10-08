@@ -7,6 +7,7 @@
 
 from app.repos.models.access import AccessLink, Session
 from app.repos.models.audit import Auditable, AuditLog
+from app.repos.models.captures import Capture
 from app.repos.models.checklists import TaskChecklistItem
 from app.repos.models.comments import Comment
 from app.repos.models.cycles import YearlyCycle
@@ -34,12 +35,15 @@ from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.people import Person, User
 from app.repos.models.projects import Project, ProjectOrganization
+from app.repos.models.push import PushSubscription
+from app.repos.models.round import RoundMark
 from app.repos.models.tasks import Task
 
 __all__ = [
     "AccessLink",
     "AuditLog",
     "Auditable",
+    "Capture",
     "Comment",
     "Direction",
     "IjroAssignment",
@@ -59,7 +63,9 @@ __all__ = [
     "ProjectStatusRef",
     "ProjectTypeMilestone",
     "ProjectTypeRef",
+    "PushSubscription",
     "Region",
+    "RoundMark",
     "Session",
     "Setting",
     "Task",

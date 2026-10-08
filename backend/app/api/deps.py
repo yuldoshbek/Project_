@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.push import PushSender
 from app.api.transaction import SESSION_STATE_ATTRIBUTE
 from app.repos.database import new_session
 from app.settings import Settings
@@ -52,5 +53,30 @@ def get_app_settings(request: Request) -> Settings:
     return settings
 
 
+def get_push(request: Request) -> PushSender:
+    """Отправитель уведомлений приложения — порт, выбранный конфигом (`create_app`).
+
+    С приложения, а не из модуля: тесты ставят на его место подделку, и сценарии не знают,
+    настоящая это служба или нет.
+    """
+    push = getattr(request.app.state, "push", None)
+    if push is None:
+        raise RuntimeError(
+            "отправитель уведомлений не привязан к приложению: используйте create_app"
+        )
+    return cast(PushSender, push)
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
+PushDep = Annotated[PushSender, Depends(get_push)]
+
+
+def is_demo(settings: Settings) -> bool:
+    """Показывает ли контур вымышленные данные.
+
+    Они живут везде, кроме рабочего контура (инвариант 11), и экран обязан это сказать:
+    иначе вымышленную строку однажды примут за настоящую. Одна функция на все разделы —
+    пометка не может стоять на Пульте и пропасть в «Проектах».
+    """
+    return settings.env != "production"

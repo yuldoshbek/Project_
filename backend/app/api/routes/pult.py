@@ -2,7 +2,8 @@
 
 Форма ответа — договор экрана `frontend/src/sections/pult/model.ts`: экран утверждён
 заказчиком на вымышленных данных той же формы, и API написан под него, а не наоборот
-(CLAUDE.md, цикл блока). Эндпоинта, которому нет места на экране, здесь нет.
+(CLAUDE.md, цикл блока). Эндпоинта, которому нет места на экране, здесь нет: Пульт, отчёт
+и сводка — три вкладки раздела.
 """
 
 from __future__ import annotations
@@ -14,13 +15,13 @@ from zoneinfo import ZoneInfo
 from fastapi import Query
 from pydantic import BaseModel
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import PushDep, SessionDep, SettingsDep, is_demo
 from app.api.security import CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.clock import now_utc
 from app.domain.pult import PeriodKind
 from app.services import pult as service
-from app.settings import Settings
+from app.services import summary
 
 router = transactional_router(tags=["пульт"])
 
@@ -159,12 +160,6 @@ def _moves(moves: service.MovesView) -> DeadlineMoves:
     )
 
 
-def _is_demo(settings: Settings) -> bool:
-    # Вымышленные данные живут везде, кроме рабочего контура (инвариант 11): экран обязан
-    # это сказать, иначе вымышленную строку однажды примут за настоящую.
-    return settings.env != "production"
-
-
 @router.get("/pult", response_model=PultResponse, summary="Пульт: что требует внимания")
 async def read_pult(user: CurrentUser, session: SessionDep, settings: SettingsDep) -> PultResponse:
     view = await service.load(
@@ -172,7 +167,7 @@ async def read_pult(user: CurrentUser, session: SessionDep, settings: SettingsDe
         viewer=user,
         now=now_utc(),
         zone=ZoneInfo(settings.timezone),
-        is_demo=_is_demo(settings),
+        is_demo=is_demo(settings),
     )
     return PultResponse(
         as_of=view.as_of,
@@ -252,7 +247,7 @@ async def read_report(
         zone=ZoneInfo(settings.timezone),
         kind=period,
         offset=offset,
-        is_demo=_is_demo(settings),
+        is_demo=is_demo(settings),
     )
     totals = view.totals
     return ReportResponse(
@@ -288,4 +283,75 @@ async def read_report(
         ],
         deadline_moves=_moves(view.deadline_moves),
         is_demo=view.is_demo,
+    )
+
+
+class PushRow(BaseModel):
+    title: str | None
+    section: str
+    decision_kind: str | None
+    context: str | None
+    deviation: int
+
+
+class AwaitingLine(BaseModel):
+    count: int
+    oldest: PushRow
+
+
+class DueLine(BaseModel):
+    count: int
+    first: PushRow
+
+
+class LockScreen(BaseModel):
+    awaiting: AwaitingLine | None
+    due: DueLine | None
+
+
+class LeaderDevice(BaseModel):
+    name: str
+    since: date
+
+
+class SummaryResponse(BaseModel):
+    as_of: datetime
+    send_at: str
+    # До какого времени «ЧЧ:ММ» расписание повторяет попытки: экран обещает повтор по этой
+    # строке, а не по своей (`app.domain.push.LAST_SUMMARY_RUN`).
+    last_run: str
+    sent_at: datetime | None
+    awaiting: list[Row]
+    due_today: list[Row]
+    lock_screen: LockScreen
+    leader_device: LeaderDevice | None
+    push_key: str | None
+    is_demo: bool
+
+
+@router.get(
+    "/pult/summary",
+    response_model=SummaryResponse,
+    summary="Утренняя сводка: что придёт на экран блокировки руководителя и когда",
+)
+async def read_summary(
+    session: SessionDep, settings: SettingsDep, push: PushDep
+) -> SummaryResponse:
+    """Оба видят одно (инвариант 13): руководитель — что придёт, помощник — пришла ли."""
+    view = await summary.load(session, now=now_utc(), zone=ZoneInfo(settings.timezone))
+    return SummaryResponse(
+        as_of=view.as_of,
+        send_at=view.send_at,
+        last_run=view.last_run,
+        sent_at=view.sent_at,
+        awaiting=[_row(row) for row in view.awaiting],
+        due_today=[_row(row) for row in view.due_today],
+        # Из того же словаря, что уходит в пуш: предпросмотр не может разойтись с ним по
+        # форме, даже если одна из моделей когда-нибудь поменяется.
+        lock_screen=LockScreen.model_validate(summary.lock_screen_payload(view.lock_screen)),
+        leader_device=LeaderDevice(name=view.leader_device.name, since=view.leader_device.since)
+        if view.leader_device
+        else None,
+        push_key=push.public_key,
+        is_demo=is_demo(settings),
     )
