@@ -35,8 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Ключевые документы на месте, ссылки целы
@@ -82,7 +82,7 @@ jobs:
       ORBITA_BASE_URL: http://localhost:5173
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Установить uv
         uses: astral-sh/setup-uv@v7
@@ -156,7 +156,7 @@ jobs:
       ORBITA_DATABASE_URL: postgresql+asyncpg://orbita:orbita@localhost:5432/orbita
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -196,9 +196,9 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -258,7 +258,7 @@ jobs:
       ORBITA_E2E_URL: http://localhost:4173
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -266,7 +266,7 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - run: uv python install ${{ env.PYTHON_VERSION }}
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -327,7 +327,7 @@ jobs:
       # добавляется трасса: по ней видно, что происходило, без повторения прогона руками.
       - name: Снимки и трассы
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screens
           path: |
