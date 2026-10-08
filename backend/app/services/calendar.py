@@ -56,6 +56,8 @@ SECTION = {
     CalendarKind.MILESTONE: "milestones",
     CalendarKind.TASK: "tasks",
     CalendarKind.DECISION: "decisions",
+    CalendarKind.IJRO: "ijro",
+    CalendarKind.PREPARATION: "preparations",
 }
 """Раздел строки лестницы по виду даты — как их называет снимок `app.repos.attention`."""
 

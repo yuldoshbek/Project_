@@ -10,6 +10,10 @@
 Ленты хода исполнения здесь нет — она живёт в полиморфной таблице `comments`, где
 поручение единственный владелец (`app.domain.comments`). Вложений у поручения пока нет
 вовсе: файлы приходят в блоке 2 вместе с хранилищем и своей миграцией.
+
+История продлений и контрольные отметки — отдельные таблицы (миграция `0005_ijro`, экран
+утверждён 30.09.2026): у каждой записи свой момент и свой автор, и в поле поручения они
+не помещаются, не теряя истории.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -31,6 +36,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import false
 
 from app.domain.ijro import (
     BAND_MAX_LENGTH,
@@ -40,9 +46,11 @@ from app.domain.ijro import (
     DocumentKind,
     DuePrecision,
     DueYearSource,
+    ExtensionKind,
     IjroSource,
     IjroState,
     ImportState,
+    MarkKind,
 )
 from app.repos.base import Base, Timestamps, UUIDPrimaryKey, Versioned
 from app.repos.models.audit import Auditable
@@ -57,6 +65,8 @@ def _values(
         | DueYearSource
         | ImportState
         | AliasSource
+        | MarkKind
+        | ExtensionKind
     ],
 ) -> str:
     """Список значений для `CHECK`, собранный из перечисления, а не переписанный руками.
@@ -145,6 +155,11 @@ class IjroAssignment(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     """
 
     due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    original_due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    """Первый срок — «исходный → текущий» на карточке. Ставит привоз, когда строка впервые
+    появляется; перенос, подтверждённый человеком, меняет только `due_on` и пишется в
+    историю продлений (`IjroExtension`)."""
+
     due_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
     """Срок как в источнике: «25 декабрь», без года."""
 
@@ -196,6 +211,12 @@ class IjroAssignment(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
         DateTime(timezone=True), nullable=True
     )
     """Когда проблему трогали в последний раз: несвежая проблема хуже отсутствующей."""
+
+    extension_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    """«Запрошено продление» — помощник отправил запрос наверх, ответа нет (ТЗ 3.3).
+    Отдельный признак, а не этап: поручение при этом остаётся в работе."""
 
     source_state_raw: Mapped[str | None] = mapped_column(String(400), nullable=True)
     """Графа «Ижро ҳолати» как пришла. Непуста в трёх строках из 165 — **Q34**."""
@@ -319,6 +340,9 @@ class IjroImport(UUIDPrimaryKey, Timestamps, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    table_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    """Дата таблицы — «по таблице от 15.09» у каждого числа из привоза (инвариант 7). Не
+    дата загрузки: таблицу от пятницы помощник может привезти в понедельник."""
 
     source: Mapped[str | None] = mapped_column(String(10), nullable=True)
     table_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -356,4 +380,58 @@ class IjroImport(UUIDPrimaryKey, Timestamps, Base):
             unique=True,
             postgresql_where="state = 'applied'",
         ),
+    )
+
+
+class IjroExtension(Auditable, UUIDPrimaryKey, Timestamps, Base):
+    """Запись истории продлений: «было → стало, партия привоза, вид переноса» (ТЗ 3.3).
+
+    Пишется только перенос, подтверждённый человеком (ТЗ 7): привоз предлагает, человек
+    решает, продление это или исправленная дата. Неподтверждённый перенос ждёт в отчёте
+    партии и сюда не попадает.
+    """
+
+    __tablename__ = "ijro_extensions"
+
+    assignment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ijro_assignments.id", ondelete="CASCADE"), nullable=False
+    )
+    due_from: Mapped[date] = mapped_column(Date, nullable=False)
+    due_to: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ijro_imports.id", ondelete="SET NULL"), nullable=True
+    )
+    """Партия, из которой пришёл перенос. Пусто — перенос внесён вручную."""
+
+    __table_args__ = (
+        CheckConstraint(f"kind IN ({_values(ExtensionKind)})", name="kind_is_known"),
+        Index("ix_ijro_extensions_assignment_id_created_at", "assignment_id", "created_at"),
+    )
+
+
+class IjroControlMark(Auditable, UUIDPrimaryKey, Timestamps, Base):
+    """Контрольная отметка: «связался», «делает, обещал к …», «не отвечает» (ТЗ 3.3).
+
+    Ставят оба пользователя (V35), автор — часть записи (инвариант 13). Отметка — первый
+    из трёх признаков жизни поручения (ТЗ 4): без неё молчание ответственного не отличить
+    от молчания системы.
+    """
+
+    __tablename__ = "ijro_control_marks"
+
+    assignment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ijro_assignments.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    promised_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(f"kind IN ({_values(MarkKind)})", name="kind_is_known"),
+        # Признак жизни — самая свежая отметка поручения; лента карточки — все по порядку.
+        Index("ix_ijro_control_marks_assignment_id_created_at", "assignment_id", "created_at"),
     )

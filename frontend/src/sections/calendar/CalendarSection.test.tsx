@@ -22,6 +22,15 @@ import { CalendarSection } from './CalendarSection';
 import type { NewCycle } from './model';
 import { created, detail, initialCycles, preview, summary, view } from './test-data';
 
+const navigated = vi.hoisted(() => [] as unknown[]);
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => (options: unknown) => {
+    navigated.push(options);
+    return Promise.resolve();
+  },
+}));
+
 const NOW = new Date('2026-09-28T07:00:00Z');
 
 function user(role: 'leader' | 'assistant'): CurrentUser {
@@ -192,8 +201,8 @@ describe('Календарь', { timeout: 20_000 }, () => {
     fireEvent.click(tasks);
     expect(tasks).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByText('Отбор участников пилота с Минсельхозом')).not.toBeInTheDocument();
-    // Источники блока 2 названы, чтобы их отсутствие не читалось как «ничего нет».
-    expect(screen.getByText(/Поручения Ижро, письма, соглашения/)).toBeInTheDocument();
+    // Источники вне календаря названы, чтобы их отсутствие не читалось как «писем нет».
+    expect(screen.getByText(/Сроки писем и соглашений/)).toBeInTheDocument();
 
     // Горячий день считается по всем источникам — скрытое названо, и его можно вернуть.
     const day = screen.getByRole('heading', { name: 'Пн, 28 сентября' }).closest('section')!;
@@ -337,6 +346,22 @@ describe('Календарь', { timeout: 20_000 }, () => {
     fireEvent.click(within(day).getByRole('button', { name: /Отбор участников пилота/ }));
     expect(await screen.findByRole('dialog', { name: 'Задачи' })).toBeInTheDocument();
     await waitFor(() => expect(calls.map((call) => call.path)).toContain('/api/v1/tasks/t-crops'));
+  });
+
+  it('касание доклада и поручения Ижро ведёт в их раздел с открытой карточкой', async () => {
+    serve();
+    renderCalendar();
+    await screen.findByRole('heading', { name: 'Пн, 28 сентября' });
+    const day = screen.getByRole('heading', { name: 'Пн, 28 сентября' }).closest('section')!;
+    navigated.length = 0;
+
+    fireEvent.click(within(day).getByRole('button', { name: /Ежеквартальная справка/ }));
+    fireEvent.click(within(day).getByRole('button', { name: /ПФ-155/ }));
+
+    expect(navigated).toEqual([
+      { to: '/reports', search: { open: 'p-quarter' } },
+      { to: '/ijro', search: { view: 'assignments', open: 'ij-155' } },
+    ]);
   });
 
   it('касание решения — его лист, оттуда — задача, по которой оно принято', async () => {

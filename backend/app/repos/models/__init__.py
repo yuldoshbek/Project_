@@ -23,17 +23,22 @@ from app.repos.models.dictionaries import (
     TaskStatusRef,
     TaskTypeRef,
 )
+from app.repos.models.files import PresentationVersion, SlideComment, StoredFile
 from app.repos.models.ijro import (
     IjroAssignment,
+    IjroControlMark,
     IjroDocument,
+    IjroExtension,
     IjroImport,
     IjroOrgAlias,
     IjroPersonAlias,
 )
+from app.repos.models.interaction import Agreement, Letter
 from app.repos.models.jobs import JobRun
 from app.repos.models.milestones import Milestone
 from app.repos.models.notifications import Notification
 from app.repos.models.people import Person, User
+from app.repos.models.preparations import InfoRequest, Preparation, PreparationItem
 from app.repos.models.projects import Project, ProjectOrganization
 from app.repos.models.push import PushSubscription
 from app.repos.models.round import RoundMark
@@ -41,23 +46,31 @@ from app.repos.models.tasks import Task
 
 __all__ = [
     "AccessLink",
+    "Agreement",
     "AuditLog",
     "Auditable",
     "Capture",
     "Comment",
     "Direction",
     "IjroAssignment",
+    "IjroControlMark",
     "IjroDocument",
+    "IjroExtension",
     "IjroImport",
     "IjroOrgAlias",
     "IjroPersonAlias",
+    "InfoRequest",
     "JobRun",
     "LeaderDecision",
     "LeaderQuestion",
+    "Letter",
     "Milestone",
     "Notification",
     "Organization",
     "Person",
+    "Preparation",
+    "PreparationItem",
+    "PresentationVersion",
     "Project",
     "ProjectOrganization",
     "ProjectStatusRef",
@@ -68,6 +81,8 @@ __all__ = [
     "RoundMark",
     "Session",
     "Setting",
+    "SlideComment",
+    "StoredFile",
     "Task",
     "TaskChecklistItem",
     "TaskStatusRef",

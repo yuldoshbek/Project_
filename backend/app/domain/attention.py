@@ -116,6 +116,8 @@ def attention_of(
     lead_is_outside: bool,
     burn_days: int,
     quiet_days: int,
+    due_is_exact: bool = True,
+    due_is_others: bool = False,
 ) -> Attention:
     """Ступень лестницы для одной незавершённой записи.
 
@@ -133,6 +135,14 @@ def attention_of(
     Все пороги приходят аргументами: они лежат в справочнике и меняются без разработчика
     (ТЗ 3.9). Сегодняшний день — тоже аргумент, а не системные часы: сроки наступают по
     Ташкенту (`app.domain.clock`).
+
+    `due_is_exact = False` — срок без известного дня: поручение Ижро «до конца месяца» или
+    «до конца года» (V33). Просроченным оно становится, когда срок прошёл, а гореть не
+    может: считать дни до него значило бы выдумать день.
+
+    `due_is_others = True` — срок обещан не нами, а нам: ответ на наше письмо (V39).
+    Прошедший такой срок — «зависит от чужих», а не «просрочено»: просрочили не мы, и
+    действие другое — напомнить ведомству. Гореть он не может по той же причине.
     """
     # Вопрос к руководителю старше срока: пока он не ответил, работать всё равно нельзя,
     # и показывать такую строку просроченной — значит требовать действия от того, кто
@@ -142,8 +152,8 @@ def attention_of(
 
     if due_on is not None:
         if due_on < today:
-            return Attention.OVERDUE
-        if (due_on - today).days <= burn_days:
+            return Attention.BLOCKED_BY_OTHERS if due_is_others else Attention.OVERDUE
+        if due_is_exact and not due_is_others and (due_on - today).days <= burn_days:
             return Attention.BURNING
 
     if last_sign_of_life is not None and (today - last_sign_of_life).days > quiet_days:
@@ -205,7 +215,7 @@ class Item:
     """
 
     section: str
-    """Раздел, откуда запись: `projects`, `milestones`, `tasks`, `decisions`."""
+    """Раздел, откуда запись: `projects`, `milestones`, `tasks`, `decisions`, `ijro`."""
 
     entity_id: uuid.UUID
     title: str | None
@@ -219,6 +229,15 @@ class Item:
     kind: str | None = None
     """Вид записи внутри раздела — сейчас вид решения. Подпись по нему переводит
     интерфейс: код в заголовок строки не подставляется."""
+
+    due_is_exact: bool = True
+    """Известен ли день срока — см. `attention_of`. Ложно только у поручений Ижро."""
+
+    due_is_others: bool = False
+    """Срок обещан нам, а не нами — ответ на наше письмо; см. `attention_of`."""
+
+    quiet_days: int | None = None
+    """Свой порог молчания вида записи: у соглашения — «спит» (ТЗ 5). `None` — общий."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,7 +302,9 @@ def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_da
             last_sign_of_life=item.last_sign_of_life,
             lead_is_outside=item.lead_is_outside,
             burn_days=burn_days,
-            quiet_days=quiet_days,
+            quiet_days=item.quiet_days if item.quiet_days is not None else quiet_days,
+            due_is_exact=item.due_is_exact,
+            due_is_others=item.due_is_others,
         )
         if state.is_normal:
             on_track += 1

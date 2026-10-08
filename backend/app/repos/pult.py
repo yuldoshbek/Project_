@@ -21,13 +21,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.attention import Row
 from app.domain.clock import local_date
 from app.domain.decisions import DecisionTarget
-from app.domain.pult import DECISIONS, MILESTONES, PROJECTS, TASKS, AuditEntry
+from app.domain.pult import (
+    AGREEMENTS,
+    DECISIONS,
+    IJRO,
+    LETTERS,
+    MILESTONES,
+    PREPARATIONS,
+    PROJECTS,
+    TASKS,
+    AuditEntry,
+)
 from app.repos.models import (
+    Agreement,
     AuditLog,
+    IjroAssignment,
+    IjroDocument,
     LeaderDecision,
     LeaderQuestion,
+    Letter,
     Milestone,
+    Organization,
     Person,
+    Preparation,
     Project,
     Task,
 )
@@ -40,6 +56,10 @@ SECTION_TARGET = {
     "projects": DecisionTarget.PROJECT.value,
     "milestones": DecisionTarget.MILESTONE.value,
     "tasks": DecisionTarget.TASK.value,
+    "ijro": DecisionTarget.IJRO_ASSIGNMENT.value,
+    "letters": DecisionTarget.LETTER.value,
+    "agreements": DecisionTarget.AGREEMENT.value,
+    "preparations": DecisionTarget.PREPARATION.value,
 }
 
 # Вид объекта решения → таблица журнала.
@@ -47,6 +67,10 @@ TARGET_TABLE = {
     DecisionTarget.PROJECT.value: PROJECTS,
     DecisionTarget.MILESTONE.value: MILESTONES,
     DecisionTarget.TASK.value: TASKS,
+    DecisionTarget.IJRO_ASSIGNMENT.value: IJRO,
+    DecisionTarget.LETTER.value: LETTERS,
+    DecisionTarget.AGREEMENT.value: AGREEMENTS,
+    DecisionTarget.PREPARATION.value: PREPARATIONS,
 }
 
 
@@ -121,6 +145,56 @@ async def row_details(
                 context=project_title,
                 original_due_on=local_date(original, zone) if original else None,
                 target=(DecisionTarget.TASK.value, task_id),
+            )
+
+    if ids := by_section.get("ijro"):
+        # Контекст поручения — где оно в документе: «ПҚ-312 · 4-банд». Само содержание —
+        # заголовок строки, а по номеру документа его узнаёт тот, кто готовит доклад.
+        result = await session.execute(
+            select(
+                IjroAssignment.id,
+                IjroDocument.number_raw,
+                IjroAssignment.band,
+                IjroAssignment.original_due_on,
+            )
+            .join(IjroDocument, IjroDocument.id == IjroAssignment.document_id)
+            .where(IjroAssignment.id.in_(ids))
+        )
+        for assignment_id, code, band, original in result:
+            found[("ijro", assignment_id)] = RowDetail(
+                context=f"{code} · {band}" if band else code,
+                original_due_on=original,
+                target=(DecisionTarget.IJRO_ASSIGNMENT.value, assignment_id),
+            )
+
+    # Контекст письма и соглашения — организация: по ней руководитель узнаёт, кого ждём.
+    for section, model, target in (
+        ("letters", Letter, DecisionTarget.LETTER.value),
+        ("agreements", Agreement, DecisionTarget.AGREEMENT.value),
+    ):
+        if ids := by_section.get(section):
+            result = await session.execute(
+                select(model.id, Organization.short_name, Organization.name)
+                .join(Organization, Organization.id == model.organization_id)
+                .where(model.id.in_(ids))
+            )
+            for entity_id, short, name in result:
+                found[(section, entity_id)] = RowDetail(
+                    context=short or name, original_due_on=None, target=(target, entity_id)
+                )
+
+    if ids := by_section.get("preparations"):
+        # Контекст подготовки — проект, к которому она относится; без проекта — ничего.
+        result = await session.execute(
+            select(Preparation.id, Project.title)
+            .outerjoin(Project, Project.id == Preparation.project_id)
+            .where(Preparation.id.in_(ids))
+        )
+        for prep_id, project_title in result:
+            found[("preparations", prep_id)] = RowDetail(
+                context=project_title,
+                original_due_on=None,
+                target=(DecisionTarget.PREPARATION.value, prep_id),
             )
 
     if ids := by_section.get("decisions"):
@@ -205,6 +279,24 @@ async def titles(
         if ids := by_table.get(table):
             result = await session.execute(select(model.id, model.title).where(model.id.in_(ids)))
             found.update({(table, entity_id): title for entity_id, title in result})
+    if ids := by_table.get(IJRO):
+        result = await session.execute(
+            select(IjroAssignment.id, IjroAssignment.content).where(IjroAssignment.id.in_(ids))
+        )
+        found.update({(IJRO, entity_id): content for entity_id, content in result})
+    if ids := by_table.get(LETTERS):
+        result = await session.execute(select(Letter.id, Letter.subject).where(Letter.id.in_(ids)))
+        found.update({(LETTERS, entity_id): subject for entity_id, subject in result})
+    if ids := by_table.get(PREPARATIONS):
+        result = await session.execute(
+            select(Preparation.id, Preparation.title).where(Preparation.id.in_(ids))
+        )
+        found.update({(PREPARATIONS, entity_id): title for entity_id, title in result})
+    if ids := by_table.get(AGREEMENTS):
+        result = await session.execute(
+            select(Agreement.id, Agreement.title).where(Agreement.id.in_(ids))
+        )
+        found.update({(AGREEMENTS, entity_id): title for entity_id, title in result})
 
     if ids := by_table.get(DECISIONS):
         decision_rows = await session.execute(
@@ -337,6 +429,26 @@ async def target_responsible(
     elif kind == DecisionTarget.TASK.value:
         found = await session.execute(
             select(Task.id, Task.assignee_person_id).where(Task.id == target_id)
+        )
+    elif kind == DecisionTarget.IJRO_ASSIGNMENT.value:
+        found = await session.execute(
+            select(IjroAssignment.id, IjroAssignment.responsible_person_id).where(
+                IjroAssignment.id == target_id
+            )
+        )
+    elif kind == DecisionTarget.LETTER.value:
+        found = await session.execute(
+            select(Letter.id, Letter.author_person_id).where(Letter.id == target_id)
+        )
+    elif kind == DecisionTarget.PREPARATION.value:
+        found = await session.execute(
+            select(Preparation.id, Preparation.responsible_person_id).where(
+                Preparation.id == target_id
+            )
+        )
+    elif kind == DecisionTarget.AGREEMENT.value:
+        found = await session.execute(
+            select(Agreement.id, Agreement.responsible_person_id).where(Agreement.id == target_id)
         )
     else:
         return False, None

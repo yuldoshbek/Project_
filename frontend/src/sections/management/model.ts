@@ -93,7 +93,9 @@ export type ThresholdKey =
   | 'min_closed_for_pace'
   | 'hot_day_threshold'
   | 'hot_window_days'
-  | 'summary_at';
+  | 'summary_at'
+  | 'sleeping_days'
+  | 'min_letters_for_speed';
 
 export interface Threshold {
   key: ThresholdKey;

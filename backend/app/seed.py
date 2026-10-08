@@ -540,6 +540,28 @@ SETTINGS: list[Row] = [
         "value_type": "time",
         "description_ru": "Время утренней сводки руководителю по Ташкенту (ТЗ 8)",
     },
+    {
+        "key": SettingKey.SLEEPING_DAYS.value,
+        "value": 90,
+        "value_type": "days",
+        "min_value": 14,
+        "max_value": 365,
+        "description_ru": (
+            "Через сколько дней без движения соглашение «спит»: движение — правка следующего "
+            "шага или его даты (ТЗ 5, V40)"
+        ),
+    },
+    {
+        "key": SettingKey.MIN_LETTERS_FOR_SPEED.value,
+        "value": 5,
+        "value_type": "count",
+        "min_value": 2,
+        "max_value": 50,
+        "description_ru": (
+            "Сколько полученных ответов нужно, чтобы показывать скорость ответа организации; "
+            "меньше — «мало писем» (ТЗ 4)"
+        ),
+    },
 ]
 
 # --------------------------------------------------------------------------

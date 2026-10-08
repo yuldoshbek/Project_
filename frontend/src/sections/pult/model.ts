@@ -23,7 +23,15 @@ export const LADDER = [
 export type Step = (typeof LADDER)[number];
 
 /** Откуда строка. Ижро приходит в блоке 2. */
-export type RowSection = 'projects' | 'milestones' | 'tasks' | 'decisions' | 'ijro';
+export type RowSection =
+  | 'projects'
+  | 'milestones'
+  | 'tasks'
+  | 'decisions'
+  | 'ijro'
+  | 'letters'
+  | 'agreements'
+  | 'preparations';
 
 /** Вид решения руководителя (ТЗ 3.7). */
 export type DecisionKind =
@@ -59,7 +67,8 @@ export interface Person {
 }
 
 /** По какому объекту принимается решение (ТЗ 3.7). */
-export type TargetType = 'project' | 'milestone' | 'task' | 'ijro_assignment';
+export type TargetType =
+  'project' | 'milestone' | 'task' | 'ijro_assignment' | 'letter' | 'agreement' | 'preparation';
 
 export interface PultRow {
   section: RowSection;

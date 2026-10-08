@@ -32,19 +32,24 @@ export interface SectionDefinition {
   block: 0 | 1 | 2 | 3;
   /** Раздел в нижней панели телефона (ТЗ 6): «Пульт · Календарь · (+) · Поиск · Ещё». */
   onPhone: boolean;
+  /**
+   * У раздела есть экран. Отдельно от номера блока: блок 2 идёт раздел за разделом, и
+   * «Ижро» уже открывается, пока соседи по блоку ещё показывают свой вопрос.
+   */
+  ready: boolean;
 }
 
 export const SECTIONS: readonly SectionDefinition[] = [
-  { id: 'pult', icon: Gauge, block: 1, onPhone: true },
-  { id: 'programs', icon: Layers, block: 1, onPhone: false },
-  { id: 'projects', icon: ClipboardList, block: 1, onPhone: false },
-  { id: 'tasks', icon: ListChecks, block: 1, onPhone: false },
-  { id: 'ijro', icon: FileText, block: 2, onPhone: false },
-  { id: 'interaction', icon: Users, block: 2, onPhone: false },
-  { id: 'reports', icon: Presentation, block: 2, onPhone: false },
-  { id: 'ideas', icon: Lightbulb, block: 3, onPhone: false },
-  { id: 'calendar', icon: Calendar, block: 1, onPhone: true },
-  { id: 'management', icon: Settings, block: 0, onPhone: false },
+  { id: 'pult', icon: Gauge, block: 1, onPhone: true, ready: true },
+  { id: 'programs', icon: Layers, block: 1, onPhone: false, ready: true },
+  { id: 'projects', icon: ClipboardList, block: 1, onPhone: false, ready: true },
+  { id: 'tasks', icon: ListChecks, block: 1, onPhone: false, ready: true },
+  { id: 'ijro', icon: FileText, block: 2, onPhone: false, ready: true },
+  { id: 'interaction', icon: Users, block: 2, onPhone: false, ready: true },
+  { id: 'reports', icon: Presentation, block: 2, onPhone: false, ready: true },
+  { id: 'ideas', icon: Lightbulb, block: 3, onPhone: false, ready: false },
+  { id: 'calendar', icon: Calendar, block: 1, onPhone: true, ready: true },
+  { id: 'management', icon: Settings, block: 0, onPhone: false, ready: true },
 ];
 
 /**

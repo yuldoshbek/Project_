@@ -29,6 +29,8 @@ from app.domain.pult import MILESTONES, PROJECTS, AuditEntry, due_shift
 from app.repos import attention as snapshot
 from app.repos.models import (
     AuditLog,
+    IjroAssignment,
+    IjroDocument,
     LeaderQuestion,
     Milestone,
     Organization,
@@ -465,8 +467,25 @@ class TestTasks:
     async def test_tasks_without_a_project(self, session: AsyncSession, loaded: Loaded) -> None:
         loose = list(await session.scalars(select(Task).where(Task.project_id.is_(None))))
         assert {task.title for task in loose} == WITHOUT_PROJECT
-        # Метки Ижро экрана не заводятся: поручения приходят привозом в блоке 2 (`app.demo`).
-        assert all(task.ijro_assignment_id is None for task in loose)
+
+    async def test_three_reports_grew_from_ijro_assignments(
+        self, session: AsyncSession, loaded: Loaded
+    ) -> None:
+        """Связаны ровно задачи `TASK_LINKS` — с поручениями того же документа и пункта."""
+        rows = await session.execute(
+            select(Task.title, IjroDocument.number_raw, IjroAssignment.band)
+            .join(IjroAssignment, IjroAssignment.id == Task.ijro_assignment_id)
+            .join(IjroDocument, IjroDocument.id == IjroAssignment.document_id)
+        )
+        linked = {title: (code, band) for title, code, band in rows}
+        assert linked == {
+            "Сведения по поручению ПФ-155 §5.1": ("ПФ-155", "5.1-банд"),
+            "Сведения по поручению ПФ-155 для Администрации Президента": ("ПФ-155", "12-банд"),
+            "Сведения для Администрации Президента по мониторингу водохранилищ": (
+                "ПҚ-312",
+                "2-банд",
+            ),
+        }
 
     async def test_every_status_with_the_stamps_the_service_would_set(
         self, session: AsyncSession, loaded: Loaded
@@ -565,7 +584,12 @@ class TestCalendar:
         # другой день загрузки могут добавить горячий день, но не убрать эти.
         hot = [day.date for day in view.hot_ahead]
         assert {loaded.today, loaded.on(10), loaded.on(20)} <= set(hot)
-        assert len(view.overdue) == 5
+        # Пять — даты блока 1 утверждённого экрана; поручения Ижро блока 2 — сверх них, и
+        # каждое — та же просрочка, что на Пульте.
+        block_one = [each for each in view.overdue if each.kind.value != "ijro"]
+        assert len(block_one) == 5
+        ijro = [each for each in view.overdue if each.kind.value == "ijro"]
+        assert ijro and all(each.step is not None for each in ijro)
         # Через 6 дней итоговая веха стажировок в день срока проекта — одна строка.
         interns = [
             item

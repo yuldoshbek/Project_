@@ -179,6 +179,10 @@ class Organization(Auditable, Versioned, UUIDPrimaryKey, Timestamps, Base):
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     is_founded_by_agency: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    """Контакты организации (ТЗ 3.4) — на карточке во «Взаимодействии»."""
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 

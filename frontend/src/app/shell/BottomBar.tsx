@@ -114,7 +114,7 @@ export function BottomBar({ onCapture }: { onCapture: () => void }) {
                   >
                     <Icon className="size-5 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{t(`sections.${section.id}`)}</span>
-                    {section.block > 1 ? (
+                    {!section.ready ? (
                       <span className="text-xs text-ink-muted">
                         {t('app.moreSoon', { block: section.block })}
                       </span>

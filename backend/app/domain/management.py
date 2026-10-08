@@ -148,6 +148,8 @@ THRESHOLD_DEFAULTS: dict[SettingKey, tuple[int | str, ThresholdOrigin]] = {
     SettingKey.HOT_DAY_THRESHOLD: (3, ThresholdOrigin.ASSUMPTION),
     SettingKey.HOT_WINDOW_DAYS: (28, ThresholdOrigin.ASSUMPTION),
     SettingKey.SUMMARY_AT: ("08:30", ThresholdOrigin.TZ),
+    SettingKey.SLEEPING_DAYS: (90, ThresholdOrigin.TZ),
+    SettingKey.MIN_LETTERS_FOR_SPEED: (5, ThresholdOrigin.TZ),
 }
 """Значения по умолчанию — не справочник, а факт ТЗ и допущений (V15): к ним возвращаются
 одним касанием, и сам справочник их не хранит. Текущие значения — в таблице `settings`."""

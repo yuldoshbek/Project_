@@ -27,6 +27,8 @@ from app.domain.attention import Item
 from app.domain.clock import local_date
 from app.domain.decisions import DecisionState, DecisionTarget
 from app.domain.dictionaries import OrganizationRole, ProjectStatus, TaskStatus
+from app.domain.interaction import DEFAULT_SLEEPING_DAYS
+from app.repos import ijro, interaction, preparations
 from app.repos.models import (
     LeaderDecision,
     LeaderQuestion,
@@ -44,11 +46,14 @@ TASK_TERMINAL = [status.value for status in TaskStatus if status.is_terminal]
 Key = tuple[str, uuid.UUID]
 
 
-async def load_items(session: AsyncSession, *, zone: ZoneInfo) -> list[Item]:
+async def load_items(
+    session: AsyncSession, *, zone: ZoneInfo, sleeping_days: int = DEFAULT_SLEEPING_DAYS
+) -> list[Item]:
     """Все незавершённые записи, из которых складывается лестница.
 
-    Ижро сюда придёт в блоке 2 вместе с признаком жизни поручения: контрольная отметка,
-    движение связанной задачи, промежуточная информация (ТЗ 4).
+    Поручения Ижро — только на этапах, где работа наша (`app.domain.ijro.OPEN_STATES`);
+    строку и признак жизни собирает `app.repos.ijro` — та же, что в разделе. Письма — только
+    неотвеченные, соглашения — все, со своим порогом «спит» (`sleeping_days`, ТЗ 5).
     """
     awaiting = await _open_questions(session, zone)
     items: list[Item] = []
@@ -56,6 +61,10 @@ async def load_items(session: AsyncSession, *, zone: ZoneInfo) -> list[Item]:
     items += await _milestones(session, awaiting)
     items += await _tasks(session, zone, awaiting)
     items += await _decisions(session, zone)
+    items += await _ijro(session, zone, awaiting)
+    items += await _letters(session, awaiting)
+    items += await _agreements(session, zone, awaiting, sleeping_days)
+    items += await _preparations(session, zone, awaiting)
     return items
 
 
@@ -264,3 +273,45 @@ async def _decisions(session: AsyncSession, zone: ZoneInfo) -> list[Item]:
         )
         for decision_id, text, kind, due_on, assignee, moved in rows
     ]
+
+
+async def _ijro(session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date]) -> list[Item]:
+    records = await ijro.records(session, zone=zone, open_only=True)
+    return [
+        ijro.item_of(record, awaiting.get((DecisionTarget.IJRO_ASSIGNMENT.value, record.id)))
+        for record in records
+    ]
+
+
+async def _letters(session: AsyncSession, awaiting: dict[Key, date]) -> list[Item]:
+    records = await interaction.letters(session, unanswered_only=True)
+    found = (
+        interaction.letter_item(record, awaiting.get((DecisionTarget.LETTER.value, record.id)))
+        for record in records
+    )
+    return [item for item in found if item is not None]
+
+
+async def _agreements(
+    session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date], sleeping_days: int
+) -> list[Item]:
+    records = await interaction.agreements(session, zone=zone)
+    return [
+        interaction.agreement_item(
+            record,
+            awaiting.get((DecisionTarget.AGREEMENT.value, record.id)),
+            sleeping_days=sleeping_days,
+        )
+        for record in records
+    ]
+
+
+async def _preparations(
+    session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date]
+) -> list[Item]:
+    records = await preparations.records(session, zone=zone, open_only=True)
+    found = (
+        preparations.item_of(record, awaiting.get((DecisionTarget.PREPARATION.value, record.id)))
+        for record in records
+    )
+    return [item for item in found if item is not None]

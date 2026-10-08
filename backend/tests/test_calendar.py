@@ -9,6 +9,8 @@
 4. **«Срок прошёл»** — всё незакрытое раньше сегодняшнего, без дат циклов (V16).
 5. **Годовые циклы:** даты до записи, запись, список с ближайшей датой, отмена по версии;
    смотрят оба, вносит помощник.
+6. **Даты блока 2:** показ доклада или мероприятия и точный срок поручения Ижро — со
+   ступенью Пульта; срок «в течение месяца» в календарь не попадает (V45).
 """
 
 from __future__ import annotations
@@ -212,6 +214,47 @@ class TestContents:
     async def test_needs_personal_link(self, api: AsyncClient) -> None:
         assert (await api.get(window(on(0), on(5)))).status_code == 401
         assert (await api.get(CYCLES)).status_code == 401
+
+
+class TestBlockTwoDates:
+    async def test_preparations_and_exact_ijro_deadlines(
+        self, session: AsyncSession, leader_api: AsyncClient
+    ) -> None:
+        from app import demo
+        from app.domain.ijro import DuePrecision
+        from app.repos.models import IjroAssignment, Preparation
+
+        now = now_utc()
+        await demo.before_visit(session, now=now, zone=TASHKENT)
+        await demo.after_visit(session, now=now, zone=TASHKENT)
+        since, until = on(-200), on(200)
+        body = (await leader_api.get(window(since, until))).json()
+        pult = (await leader_api.get("/api/v1/pult")).json()
+        pult_steps = {(row["section"], row["entity_id"]): row["step"] for row in pult["rows"]}
+
+        preparations = (await session.execute(select(Preparation))).scalars().all()
+        assert preparations
+        for preparation in preparations:
+            item = by_id(body["items"], preparation.id)
+            assert item["kind"] == "preparation"
+            assert item["date"] == preparation.show_on.isoformat()
+            assert item["target"] == {"kind": "preparation", "id": str(preparation.id)}
+            assert item["step"] == pult_steps.get(("preparations", str(preparation.id)))
+
+        assignments = (await session.execute(select(IjroAssignment))).scalars().all()
+        exact = [
+            each
+            for each in assignments
+            if each.due_on is not None
+            and each.due_precision == DuePrecision.EXACT.value
+            and since <= each.due_on <= until
+        ]
+        inexact = [each for each in assignments if each.due_precision != DuePrecision.EXACT.value]
+        assert exact and inexact
+        for assignment in exact:
+            item = by_id(body["items"], assignment.id)
+            assert (item["kind"], item["target"]["kind"]) == ("ijro", "ijro")
+        assert not ids(body["items"]) & {str(each.id) for each in inexact}
 
 
 class TestSameNumbers:

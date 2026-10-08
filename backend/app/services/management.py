@@ -62,6 +62,7 @@ from app.domain.management import (
 )
 from app.domain.pult import PROJECTS
 from app.repos import calendar as calendar_model
+from app.repos import interaction
 from app.repos import management as read_model
 from app.repos import projects as project_model
 from app.repos import pult as pult_model
@@ -353,6 +354,8 @@ _FIELD: dict[SettingKey, str] = {
     SettingKey.MIN_CLOSED_FOR_PACE: "min_closed_for_pace",
     SettingKey.HOT_DAY_THRESHOLD: "hot_day_threshold",
     SettingKey.HOT_WINDOW_DAYS: "hot_window_days",
+    SettingKey.SLEEPING_DAYS: "sleeping_days",
+    SettingKey.MIN_LETTERS_FOR_SPEED: "min_letters_for_speed",
 }
 
 MAX_WINDOW_DAYS = 90
@@ -396,6 +399,19 @@ class _Figures:
                     thresholds=thresholds,
                 )
             )
+        if key is SettingKey.SLEEPING_DAYS:
+            agreements = await interaction.agreements(self.session, zone=self.zone)
+            return sum(
+                1
+                for each in agreements
+                if (self.today - each.moved_on).days > thresholds.sleeping_days
+            )
+        if key is SettingKey.MIN_LETTERS_FOR_SPEED:
+            replies: dict[uuid.UUID, int] = {}
+            for letter in await interaction.letters(self.session):
+                if letter.direction.value == "outgoing" and letter.answered_on is not None:
+                    replies[letter.organization_id] = replies.get(letter.organization_id, 0) + 1
+            return sum(1 for count in replies.values() if count >= thresholds.min_letters_for_speed)
         if key is SettingKey.MIN_CLOSED_FOR_PACE:
             if self._pace is None:
                 self._pace = await programs.pace_inputs(

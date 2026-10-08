@@ -44,7 +44,7 @@ function person(id: string): Ref {
   return PEOPLE.find((each) => each.id === id)!;
 }
 
-type Kind = 'milestone' | 'task' | 'decision';
+type Kind = 'milestone' | 'task' | 'decision' | 'ijro' | 'preparation';
 
 function item(
   id: string,
@@ -66,8 +66,8 @@ function item(
     target:
       kind === 'milestone'
         ? { kind: 'project', id: project!.id }
-        : kind === 'task'
-          ? { kind: 'task', id }
+        : kind === 'task' || kind === 'ijro' || kind === 'preparation'
+          ? { kind, id }
           : { kind: 'task', id: 't-jizzakh' },
     responsible: person('p-rakhimov'),
     step: null,
@@ -133,6 +133,8 @@ const ITEMS: CalendarItem[] = [
     burning(0),
   ),
   item('t-tz', 'task', TODAY, 'Разработка ТЗ спутниковой группировки', null, { is_done: true }),
+  item('p-quarter', 'preparation', TODAY, 'Ежеквартальная справка для Администрации', null),
+  item('ij-155', 'ijro', TODAY, 'Сведения о ходе исполнения ПФ-155', null),
   item(
     't-reservoirs',
     'task',

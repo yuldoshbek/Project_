@@ -451,6 +451,8 @@ class TestThresholds:
             "hot_day_threshold",
             "hot_window_days",
             "summary_at",
+            "sleeping_days",
+            "min_letters_for_speed",
         ]
         assert by_key["burn_days"]["affected"] == pult["counts"]["burning"]
         assert by_key["quiet_days"]["affected"] == (

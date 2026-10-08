@@ -1,8 +1,13 @@
-"""Read-модель раздела «Календарь»: даты всех записей блока 1 и годовые циклы.
+"""Read-модель раздела «Календарь»: даты всех разделов и годовые циклы.
 
 Экран собирается одним заходом: по запросу на вид записи — сроки проектов, вехи, задачи,
-решения руководителя — и на каждое из двух окон: запрошенные дни и «срок прошёл». Двести
-дат не стоят двухсот обращений к базе.
+решения руководителя, сроки поручений Ижро, показы докладов и мероприятий — и на каждое из
+двух окон: запрошенные дни и «срок прошёл». Двести дат не стоят двухсот обращений к базе.
+
+**Поручение Ижро — только с точным сроком** (V45). «В течение месяца» и «до конца года»
+хранятся последним днём периода, и на 31.12 их сошлись бы десятки: день был бы горячим
+всегда, а горячий день — сигнал, на который надо отвечать. Закрыто поручение, когда работа
+уже не наша — отправлено или снято с контроля (`app.domain.ijro.OPEN_STATES`).
 
 **Что считается закрытым.** Своё терминальное состояние — пройдена веха, готова задача,
 исполнено решение, завершён проект — и завершённый проект для всего, что в нём: его вехи и
@@ -30,7 +35,19 @@ from app.domain.calendar import CalendarKind
 from app.domain.clock import local_date
 from app.domain.decisions import DecisionState, DecisionTarget
 from app.domain.dictionaries import ProjectStatus, TaskStatus
-from app.repos.models import LeaderDecision, Milestone, Person, Project, Task, YearlyCycle
+from app.domain.ijro import OPEN_STATES, DuePrecision
+from app.domain.ijro_control import task_title
+from app.domain.preparations import PrepStage
+from app.repos.models import (
+    IjroAssignment,
+    LeaderDecision,
+    Milestone,
+    Person,
+    Preparation,
+    Project,
+    Task,
+    YearlyCycle,
+)
 
 PROJECT_TERMINAL = [status.value for status in ProjectStatus if status.is_terminal]
 TASK_TERMINAL = [status.value for status in TaskStatus if status.is_terminal]
@@ -127,6 +144,93 @@ async def _rows(session: AsyncSession, window: _Window, zone: ZoneInfo) -> list[
         *await _milestones(session, window),
         *await _tasks(session, window, zone),
         *await _decisions(session, window),
+        *await _ijro(session, window),
+        *await _preparations(session, window),
+    ]
+
+
+IJRO_OPEN = [state.value for state in OPEN_STATES]
+
+
+async def _ijro(session: AsyncSession, window: _Window) -> list[DatedRow]:
+    condition = and_(
+        IjroAssignment.due_on.is_not(None),
+        IjroAssignment.due_precision == DuePrecision.EXACT.value,
+        window.days(IjroAssignment.due_on),
+    )
+    if window.open_only:
+        condition = and_(condition, IjroAssignment.state.in_(IJRO_OPEN))
+    rows = await session.execute(
+        select(
+            IjroAssignment.id,
+            IjroAssignment.content,
+            IjroAssignment.due_on,
+            IjroAssignment.state,
+            IjroAssignment.responsible_person_id,
+            Person.full_name,
+        )
+        .outerjoin(Person, Person.id == IjroAssignment.responsible_person_id)
+        .where(condition)
+    )
+    return [
+        DatedRow(
+            kind=CalendarKind.IJRO,
+            id=assignment_id,
+            on=due_on,
+            title=task_title(content),
+            decision_kind=None,
+            project_id=None,
+            project_title=None,
+            responsible_id=responsible,
+            responsible_name=name,
+            is_done=state not in IJRO_OPEN,
+        )
+        for assignment_id, content, due_on, state, responsible, name in rows
+    ]
+
+
+async def _preparations(session: AsyncSession, window: _Window) -> list[DatedRow]:
+    condition = window.days(Preparation.show_on)
+    if window.open_only:
+        condition = and_(condition, Preparation.stage != PrepStage.SHOWN.value)
+    rows = await session.execute(
+        select(
+            Preparation.id,
+            Preparation.title,
+            Preparation.show_on,
+            Preparation.stage,
+            Project.id,
+            Project.title,
+            Preparation.responsible_person_id,
+            Person.full_name,
+        )
+        .outerjoin(Project, Project.id == Preparation.project_id)
+        .outerjoin(Person, Person.id == Preparation.responsible_person_id)
+        .where(condition)
+    )
+    return [
+        DatedRow(
+            kind=CalendarKind.PREPARATION,
+            id=preparation_id,
+            on=show_on,
+            title=title,
+            decision_kind=None,
+            project_id=project_id,
+            project_title=project_title,
+            responsible_id=responsible,
+            responsible_name=name,
+            is_done=stage == PrepStage.SHOWN.value,
+        )
+        for (
+            preparation_id,
+            title,
+            show_on,
+            stage,
+            project_id,
+            project_title,
+            responsible,
+            name,
+        ) in rows
     ]
 
 
