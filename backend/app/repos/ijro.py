@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
@@ -35,6 +36,7 @@ from app.domain.ijro import (
 )
 from app.domain.ijro_control import LifeSign, sign_of_life
 from app.domain.ijro_import import Existing
+from app.domain.seta import assignment_key
 from app.repos.models import (
     Comment,
     IjroAssignment,
@@ -87,23 +89,28 @@ class AssignmentRecord:
     extensions: int
     """Продления — без исправленных дат: «продлевали ≥ 2» про них (ТЗ 5)."""
 
+    seta_on: date | None
+    """День самого свежего события SETA по поручению (`app.services.metrics.seta_life`)."""
+
     @property
     def is_open(self) -> bool:
         return self.state in {state.value for state in OPEN_STATES}
 
     @property
     def life(self) -> LifeSign | None:
-        """Признак жизни: самое свежее из отметки и движения задачи (ТЗ 4).
+        """Признак жизни: самое свежее из отметки, движения задачи и события SETA (ТЗ 4, 10).
 
-        Третье событие ТЗ — «промежуточная информация» — пока не записывается нигде: у неё
-        нет ни поля, ни действия на утверждённом экране (вопрос V37). Когда появится, оно
-        встанет третьим в этот список, и лестница подхватит его без правки.
+        Событие ТЗ «промежуточная информация» пока не записывается нигде: у него нет ни
+        поля, ни действия на утверждённом экране (вопрос V37). Когда появится, оно встанет
+        в этот список, и лестница подхватит его без правки.
         """
         events = []
         if self.last_mark_on is not None:
             events.append(LifeSign(self.last_mark_on, LifeSource.CONTROL_MARK))
         if self.last_task_move_on is not None:
             events.append(LifeSign(self.last_task_move_on, LifeSource.TASK_MOVEMENT))
+        if self.seta_on is not None:
+            events.append(LifeSign(self.seta_on, LifeSource.SETA))
         return sign_of_life(events)
 
 
@@ -164,8 +171,15 @@ async def records(
     zone: ZoneInfo,
     open_only: bool = False,
     ids: list[uuid.UUID] | None = None,
+    seta: Mapping[str, date],
 ) -> list[AssignmentRecord]:
-    """Строки реестра. `open_only` — только этапы, на которых работа наша (лестница)."""
+    """Строки реестра. `open_only` — только этапы, на которых работа наша (лестница).
+
+    `seta` — вклад SETA в признак жизни: номер поручения → день самого свежего события
+    (`app.services.metrics.seta_life`). Обязательный по той же причине, что в
+    `app.repos.attention.load_items`: забытый у одного вызова, он развёл бы ступень
+    поручения на двух экранах.
+    """
     marks = (
         select(
             IjroControlMark.assignment_id,
@@ -182,7 +196,15 @@ async def records(
     )
     moves = _task_moves()
     statement = (
-        select(IjroAssignment, marks.c.marked, moves.c.moved, moves.c.tasks, extensions.c.count)
+        select(
+            IjroAssignment,
+            marks.c.marked,
+            moves.c.moved,
+            moves.c.tasks,
+            extensions.c.count,
+            IjroDocument.code_norm,
+        )
+        .join(IjroDocument, IjroDocument.id == IjroAssignment.document_id)
         .outerjoin(marks, marks.c.assignment_id == IjroAssignment.id)
         .outerjoin(moves, moves.c.assignment_id == IjroAssignment.id)
         .outerjoin(extensions, extensions.c.assignment_id == IjroAssignment.id)
@@ -199,7 +221,7 @@ async def records(
         return local_date(moment, zone) if moment is not None else None
 
     found: list[AssignmentRecord] = []
-    for assignment, marked, moved, tasks, extension_count in rows:
+    for assignment, marked, moved, tasks, extension_count, document_code in rows:
         first_seen = local_date(assignment.first_seen_at or assignment.created_at, zone)
         found.append(
             AssignmentRecord(
@@ -229,6 +251,7 @@ async def records(
                 last_task_move_on=day(moved),
                 tasks=tasks or 0,
                 extensions=extension_count or 0,
+                seta_on=seta.get(assignment_key(document_code, assignment.band)),
             )
         )
     return found

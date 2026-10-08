@@ -24,6 +24,7 @@ from app.repos.models.dictionaries import (
     TaskTypeRef,
 )
 from app.repos.models.files import PresentationVersion, SlideComment, StoredFile
+from app.repos.models.ideas import Idea, IdeaMap, MapNode
 from app.repos.models.ijro import (
     IjroAssignment,
     IjroControlMark,
@@ -52,6 +53,8 @@ __all__ = [
     "Capture",
     "Comment",
     "Direction",
+    "Idea",
+    "IdeaMap",
     "IjroAssignment",
     "IjroControlMark",
     "IjroDocument",
@@ -64,6 +67,7 @@ __all__ = [
     "LeaderDecision",
     "LeaderQuestion",
     "Letter",
+    "MapNode",
     "Milestone",
     "Notification",
     "Organization",

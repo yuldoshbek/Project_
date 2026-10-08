@@ -398,6 +398,37 @@ describe('Пульт', () => {
     expect(screen.queryByText('Справка для Кабмина')).not.toBeInTheDocument();
   });
 
+  it('длинная лестница — без кнопки: горящее в хвосте видно, свёрнута только норма', async () => {
+    // ТЗ 4 сворачивает в строку только «по плану». Телефон рисует первые строки раньше
+    // остальных, но хвост приходит сам, а не прячется за «Показать ещё».
+    setViewport({ width: 390 });
+    const overdue = Array.from({ length: 14 }, (_, at) =>
+      row({ entity_id: `o-${at}`, target_id: `o-${at}`, title: `Просроченная ${at + 1}` }),
+    );
+    const burning = Array.from({ length: 3 }, (_, at) =>
+      row({
+        entity_id: `b-${at}`,
+        target_id: `b-${at}`,
+        title: `Горящая ${at + 1}`,
+        step: 'burning',
+        deviation: 0,
+      }),
+    );
+    serve('leader', {
+      ...VIEW,
+      rows: [...overdue, ...burning],
+      counts: { ...VIEW.counts, awaiting_decision: 0, overdue: 14, burning: 3 },
+    });
+    renderPult();
+
+    // Хвост дорисовывается после первой отрисовки: под нагрузкой полного прогона это
+    // дольше секунды ожидания по умолчанию (падало именно так).
+    expect(await screen.findByText('Горящая 3', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByText('Просроченная 14')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Показать ещё/ })).not.toBeInTheDocument();
+    expect(screen.getByText('и ещё 21 по плану')).toBeInTheDocument();
+  });
+
   it('перенос срока «с прошлого визита» — было → стало', async () => {
     serve('leader');
     renderPult();

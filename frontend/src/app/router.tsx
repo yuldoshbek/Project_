@@ -20,17 +20,57 @@ import {
 
 import { App } from '@/app/App';
 import { SECTIONS, sectionPath } from '@/app/sections';
-import { CalendarSection } from '@/sections/calendar/CalendarSection';
+import { lazy, Suspense, type ComponentType, type ReactElement } from 'react';
+
+import { IdeasRoute } from '@/sections/ideas/IdeasRoute';
 import { IjroRoute } from '@/sections/ijro/IjroRoute';
 import { InteractionRoute } from '@/sections/interaction/InteractionRoute';
 import { ReportsRoute } from '@/sections/reports/ReportsRoute';
-import { ManagementSection } from '@/sections/management/ManagementSection';
-import { ProgramsSection } from '@/sections/programs/ProgramsSection';
-import { ProjectsSection } from '@/sections/projects/ProjectsSection';
 import { PultSection } from '@/sections/pult/PultSection';
 import { SoonSection } from '@/sections/SoonSection';
-import { TasksSection } from '@/sections/tasks/TasksSection';
 import { RenderFailure } from '@/shared/ui/Boundary';
+import { Loading } from '@/shared/ui/States';
+
+/**
+ * Раздел отдельным куском. Пульт — в основной сборке: это первый экран руководителя, и
+ * ждать второй загрузки ради него нельзя. Остальные грузятся при переходе: на телефоне по
+ * 4G каждый лишний килобайт первого экрана — это время исполнения на медленном процессоре
+ * (замер первого экрана, критерий 4 блока 3).
+ */
+function deferred(load: () => Promise<{ default: ComponentType }>): () => ReactElement {
+  const Section = lazy(load);
+  return function DeferredSection() {
+    return (
+      <Suspense fallback={<Loading />}>
+        <Section />
+      </Suspense>
+    );
+  };
+}
+
+const CalendarSection = deferred(() =>
+  import('@/sections/calendar/CalendarSection').then((module) => ({
+    default: module.CalendarSection,
+  })),
+);
+const ManagementSection = deferred(() =>
+  import('@/sections/management/ManagementSection').then((module) => ({
+    default: module.ManagementSection,
+  })),
+);
+const ProgramsSection = deferred(() =>
+  import('@/sections/programs/ProgramsSection').then((module) => ({
+    default: module.ProgramsSection,
+  })),
+);
+const ProjectsSection = deferred(() =>
+  import('@/sections/projects/ProjectsSection').then((module) => ({
+    default: module.ProjectsSection,
+  })),
+);
+const TasksSection = deferred(() =>
+  import('@/sections/tasks/TasksSection').then((module) => ({ default: module.TasksSection })),
+);
 
 const rootRoute = createRootRoute({ component: App });
 
@@ -57,9 +97,11 @@ const sectionRoutes: AnyRoute[] = SECTIONS.map((section) =>
                       ? InteractionRoute
                       : section.id === 'reports'
                         ? ReportsRoute
-                        : function Section() {
-                            return <SoonSection section={section} />;
-                          },
+                        : section.id === 'ideas'
+                          ? IdeasRoute
+                          : function Section() {
+                              return <SoonSection section={section} />;
+                            },
   }),
 );
 

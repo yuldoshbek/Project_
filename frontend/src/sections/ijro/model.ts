@@ -64,8 +64,11 @@ export type MarkKind = 'contacted' | 'doing' | 'no_answer';
 
 export const MARK_KINDS: readonly MarkKind[] = ['contacted', 'doing', 'no_answer'];
 
-/** Откуда признак жизни (ТЗ 4): самое свежее из трёх событий. */
-export type LifeSource = 'control_mark' | 'task_movement' | 'interim_report';
+/**
+ * Откуда признак жизни (ТЗ 4): самое свежее из трёх своих событий и SETA. `seta` сервер
+ * отдаёт, только когда SETA подключена (ТЗ 10, `app.domain.ijro.LifeSource`).
+ */
+export type LifeSource = 'control_mark' | 'task_movement' | 'interim_report' | 'seta';
 
 /** Вид переноса срока в истории продлений (ТЗ 3.3): продление или уточнение даты. */
 export type ExtensionKind = 'extension' | 'correction';

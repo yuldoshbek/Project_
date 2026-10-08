@@ -6,7 +6,7 @@
  * то же самое, что отсутствие сессии, и разводятся они по коду ответа, а не по тексту.
  */
 
-import { useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { Outlet } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import { useCurrentUser } from '@/app/session';
 import { AppShell } from '@/app/shell/AppShell';
 import { ApiError, describeError } from '@/shared/api/client';
 import { issuedLinkQuery } from '@/shared/api/queries';
+import { applyLocale, LOCALE_MUTATION_KEY } from '@/shared/i18n';
 import { Failure, Loading } from '@/shared/ui/States';
 
 export function App() {
@@ -30,6 +31,17 @@ export function App() {
   useEffect(() => {
     if (role) client.removeQueries({ queryKey: issuedLinkQuery(role).queryKey, exact: true });
   }, [client, role, user.dataUpdatedAt]);
+
+  // Язык — у пользователя на сервере: тот же на любом устройстве, где открыта ORBITA.
+  // Не загрузился словарь — экран остаётся русским, и меню честно отмечает русский: это
+  // лучше, чем пустой экран из-за одного куска сборки.
+  // Пока человек выбирает язык в меню, язык из профиля не включается: это эхо прежнего
+  // сохранения, и оно перебило бы выбор (`LOCALE_MUTATION_KEY`).
+  const locale = user.data?.locale;
+  const choosing = useIsMutating({ mutationKey: LOCALE_MUTATION_KEY }) > 0;
+  useEffect(() => {
+    if (locale && !choosing) void applyLocale(locale).catch(() => false);
+  }, [locale, choosing]);
 
   if (user.isPending) {
     return (

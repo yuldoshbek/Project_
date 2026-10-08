@@ -7,29 +7,32 @@
 
 import type { TFunction } from 'i18next';
 
+import { capital, dateFormat, numberFormat } from '@/shared/i18n/format';
 import { formatDate } from '@/shared/time';
 
 import type { Pace, ProgramCard, ProgramMilestone, YearEndRow } from './model';
 
-const count = new Intl.NumberFormat('ru-RU');
-
+// Месяц прогноза — цифрами в той же записи, что даты рядом (`shared/time.formatDate`,
+// «30.09.2026»), на любом языке: узбекский `Intl` пишет «09/2026», и в одной фразе
+// оказались бы две записи дат.
 const monthYear = new Intl.DateTimeFormat('ru-RU', {
   month: '2-digit',
   year: 'numeric',
   timeZone: 'UTC',
 });
 
-const monthName = new Intl.DateTimeFormat('ru-RU', { month: 'long', timeZone: 'UTC' });
-
 /** Дни с разрядами: «1 540», а не «1540» — длинный отсчёт читается с одного взгляда. */
 export function formatCount(value: number): string {
-  return count.format(value);
+  return numberFormat().format(value);
 }
 
-/** «Октябрь» — заголовок месяца в «до конца года». */
+/** «Октябрь» — заголовок месяца в «до конца года», на языке интерфейса. */
 export function monthTitle(date: string): string {
-  const name = monthName.format(new Date(`${date.slice(0, 7)}-01T00:00:00Z`));
-  return name.charAt(0).toUpperCase() + name.slice(1);
+  return capital(
+    dateFormat({ month: 'long', timeZone: 'UTC' }).format(
+      new Date(`${date.slice(0, 7)}-01T00:00:00Z`),
+    ),
+  );
 }
 
 /** Прогноз — с точностью до месяца: точный день у прогноза по темпу был бы неправдой. */

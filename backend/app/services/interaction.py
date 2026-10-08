@@ -488,7 +488,15 @@ async def organization(
     lead = (await read_model.ijro_lead(session)).get(organization_id, [])
     projects = (await read_model.projects(session)).get(organization_id, [])
 
-    assignments = await ijro_model.records(session, zone=zone, ids=lead) if lead else []
+    # Вклад SETA — тот же, что у Пульта и «Ижро»: без него ступень поручения в карточке
+    # разошлась бы с лестницей, как только SETA подключат.
+    assignments = (
+        await ijro_model.records(
+            session, zone=zone, ids=lead, seta=await metrics.seta_life(zone=zone)
+        )
+        if lead
+        else []
+    )
     documents = {each.id: each.code for each in await ijro_model.documents(session)}
     steps = metrics.steps(
         [ijro_model.item_of(each, None) for each in assignments],

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -47,13 +48,20 @@ Key = tuple[str, uuid.UUID]
 
 
 async def load_items(
-    session: AsyncSession, *, zone: ZoneInfo, sleeping_days: int = DEFAULT_SLEEPING_DAYS
+    session: AsyncSession,
+    *,
+    zone: ZoneInfo,
+    seta: Mapping[str, date],
+    sleeping_days: int = DEFAULT_SLEEPING_DAYS,
 ) -> list[Item]:
     """Все незавершённые записи, из которых складывается лестница.
 
     Поручения Ижро — только на этапах, где работа наша (`app.domain.ijro.OPEN_STATES`);
-    строку и признак жизни собирает `app.repos.ijro` — та же, что в разделе. Письма — только
-    неотвеченные, соглашения — все, со своим порогом «спит» (`sleeping_days`, ТЗ 5).
+    строку и признак жизни собирает `app.repos.ijro` — та же, что в разделе, с тем же
+    вкладом SETA (`seta`, его даёт `app.services.metrics.seta_life`). Обязательный, а не
+    пустой по умолчанию: забытый здесь, он погасил бы признак жизни из SETA на Пульте и
+    оставил его в разделе. Письма — только неотвеченные, соглашения — все, со своим порогом
+    «спит» (`sleeping_days`, ТЗ 5).
     """
     awaiting = await _open_questions(session, zone)
     items: list[Item] = []
@@ -61,7 +69,7 @@ async def load_items(
     items += await _milestones(session, awaiting)
     items += await _tasks(session, zone, awaiting)
     items += await _decisions(session, zone)
-    items += await _ijro(session, zone, awaiting)
+    items += await _ijro(session, zone, awaiting, seta)
     items += await _letters(session, awaiting)
     items += await _agreements(session, zone, awaiting, sleeping_days)
     items += await _preparations(session, zone, awaiting)
@@ -275,8 +283,10 @@ async def _decisions(session: AsyncSession, zone: ZoneInfo) -> list[Item]:
     ]
 
 
-async def _ijro(session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date]) -> list[Item]:
-    records = await ijro.records(session, zone=zone, open_only=True)
+async def _ijro(
+    session: AsyncSession, zone: ZoneInfo, awaiting: dict[Key, date], seta: Mapping[str, date]
+) -> list[Item]:
+    records = await ijro.records(session, zone=zone, open_only=True, seta=seta)
     return [
         ijro.item_of(record, awaiting.get((DecisionTarget.IJRO_ASSIGNMENT.value, record.id)))
         for record in records

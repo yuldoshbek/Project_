@@ -28,7 +28,7 @@ from app.domain.tasks import validate_title
 from app.repos import captures as read_model
 from app.repos.captures import CaptureRow
 from app.repos.models import Capture, User
-from app.services import tasks
+from app.services import ideas, tasks
 
 RECENT_LIMIT = 6
 """Сколько записей показать: больше — это уже раздел, а не ответ на «а оно сохранилось?»."""
@@ -134,6 +134,10 @@ async def save(
         kind=kind.value, text=text, due_on=data.due_on, author_id=user.id, task_id=task_id
     )
     session.add(capture)
+    if kind is CaptureKind.IDEA:
+        # Идея из Захвата — сразу набросок раздела «Идеи и карты»: путь до «да» руководителя
+        # начинается с записи, а не с переноса из входящих.
+        await ideas.create_idea(session, user=user, text=text)
     await session.flush()
     (row,) = await read_model.recent(session, limit=1, ids=[capture.id])
     return _view(row, zone)

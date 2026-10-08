@@ -20,7 +20,13 @@
     {
       "name": "frontend",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--port", "5173", "--strictPort"],
+      "runtimeArgs": [
+        "frontend/node_modules/vite/bin/vite.js",
+        "frontend",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
       "port": 5173
     }
   ]

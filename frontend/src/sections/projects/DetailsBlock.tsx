@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { describeError } from '@/shared/api/client';
 import { dictionariesQuery } from '@/shared/api/queries';
+import { localName } from '@/shared/i18n';
 import { Button } from '@/shared/ui/Button';
 import { Failure } from '@/shared/ui/States';
 
@@ -35,7 +36,7 @@ interface Form {
 }
 
 export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; canEdit: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const ids = useId();
   const dictionaries = useQuery({ ...dictionariesQuery(), enabled: canEdit });
   const people = useProjects().data?.people ?? [];
@@ -121,7 +122,7 @@ export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; can
                 <option value="">{t('projects.details.notSet')}</option>
                 {directions.map((entry) => (
                   <option key={entry.code} value={entry.code}>
-                    {entry.name.ru}
+                    {localName(entry.name, i18n.language)}
                   </option>
                 ))}
               </select>
@@ -136,7 +137,7 @@ export function DetailsBlock({ project, canEdit }: { project: ProjectDetail; can
                 <option value="">{t('projects.details.notSet')}</option>
                 {regions.map((entry) => (
                   <option key={entry.code} value={entry.code}>
-                    {entry.name.ru}
+                    {localName(entry.name, i18n.language)}
                   </option>
                 ))}
               </select>

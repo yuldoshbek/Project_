@@ -107,7 +107,7 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import demo_ijro, demo_interaction, demo_preparations
+from app import demo_ideas, demo_ijro, demo_interaction, demo_preparations
 from app.domain.capture import CaptureKind
 from app.domain.clock import local_date
 from app.domain.cycles import CycleRule, horizon
@@ -1668,6 +1668,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
             )
         )
     session.add_all(captures)
+    ideas = await demo_ideas.load(session, now=now, users=users, projects=projects, tasks=tasks)
 
     # Всё, что заведено выше, было «до прошлого визита».
     await session.execute(update(User).values(last_visit_at=datetime.now(UTC)))
@@ -1682,6 +1683,7 @@ async def before_visit(session: AsyncSession, *, now: datetime, zone: ZoneInfo) 
         "ijro_assignments": len(assignments),
         "letters": letters,
         "preparations": preparations,
+        "ideas": ideas,
     }
 
 

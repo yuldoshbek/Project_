@@ -16,6 +16,7 @@
  * не будет (ADR-0021 §3а): она стоит секунд загрузки, а решение принимается за полминуты.
  */
 
+import { useRouterState } from '@tanstack/react-router';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -38,6 +39,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const device = useDevice();
   const isPhone = device === 'phone';
+  // Раздел — маршрут, который уже нарисован, а не адрес: адрес роутер меняет сразу по
+  // касанию, а новый маршрут приходит в Outlet позже. Ключ по адресу размонтировал бы и
+  // заново смонтировал уходящий раздел (лишние запросы, анимация не на том разделе).
+  // Маршрут читается из того же списка, по которому Outlet выбирает раздел.
+  const section = useRouterState({
+    // Тип — явно: маршруты разделов собраны списком (AnyRoute), и без него routeId — any.
+    select: (state): string | undefined => state.matches.at(-1)?.routeId,
+  });
   const [capturing, setCapturing] = useState(false);
   const openCapture = useCallback(() => setCapturing(true), []);
   const closeCapture = useCallback(() => setCapturing(false), []);
@@ -78,7 +87,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               device === 'monitor' ? 'max-w-[1600px]' : 'max-w-[1100px]',
             )}
           >
-            {children}
+            {/* Ключ — раздел: при переходе он появляется плавно, а не вспыхивает целиком. */}
+            <div key={section} className="animate-enter">
+              {children}
+            </div>
           </div>
         </main>
       </div>

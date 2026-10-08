@@ -18,8 +18,8 @@
  */
 
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { Gauge } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Gauge, Presentation } from 'lucide-react';
+import { lazy, startTransition, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
@@ -58,6 +58,11 @@ import { HoldersCard, MovesCard, SinceCard } from './Widgets';
  * чем он к ней вернётся.
  */
 const UNDO_SECONDS = 8;
+
+// Совещание и обзор монитора — отдельными кусками: на телефоне руководителя их нет, и
+// Пульт там не тянет за собой запросы пяти разделов.
+const MeetingMode = lazy(() => import('@/sections/meeting/MeetingMode'));
+const Overview = lazy(() => import('@/sections/meeting/Overview'));
 
 /** Точка ступени. Классы полностью: имя, собранное из частей, Tailwind при сборке не найдёт. */
 const DOT = { call: 'bg-call', burn: 'bg-burn', wait: 'bg-wait' } as const;
@@ -114,6 +119,7 @@ function Pult({ view }: { view: PultView }) {
   const [filter, setFilter] = useState<Filter>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [meeting, setMeeting] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -214,7 +220,13 @@ function Pult({ view }: { view: PultView }) {
 
   return (
     <div className={cn('flex flex-col', isPhone ? 'gap-3' : 'gap-5')}>
-      <PultHeader view={view} compact={isPhone} tab={tab} onTab={setTab} />
+      <PultHeader
+        view={view}
+        compact={isPhone}
+        tab={tab}
+        onTab={setTab}
+        onMeeting={() => setMeeting(true)}
+      />
 
       {/* Отказ действия — словами, а не молча: решение, которое не записалось, хуже
           решения, которое не принимали, — его считают принятым. */}
@@ -245,30 +257,35 @@ function Pult({ view }: { view: PultView }) {
               {widgets}
             </>
           ) : isMonitor ? (
-            <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] items-start gap-6">
-              {ladder}
-              <Card
-                title={t('pult.detail.title')}
-                className="sticky top-[calc(var(--topbar-height)+2rem)]"
-              >
-                {selected ? (
-                  <div className="flex flex-col gap-3">
-                    <p className="text-lg leading-snug font-semibold text-ink-strong">
-                      {rowTitle(t, selected)}
-                    </p>
-                    <RowDetails
-                      row={selected}
-                      viewer={viewer}
-                      actions={actions}
-                      busy={action.isPending}
-                    />
-                  </div>
-                ) : (
-                  <p className="text-sm text-ink-muted">{t('pult.detail.pick')}</p>
-                )}
-              </Card>
-              <div className="flex flex-col gap-6">{widgets}</div>
-            </div>
+            <>
+              <Suspense fallback={null}>
+                <Overview />
+              </Suspense>
+              <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] items-start gap-6">
+                {ladder}
+                <Card
+                  title={t('pult.detail.title')}
+                  className="sticky top-[calc(var(--topbar-height)+2rem)]"
+                >
+                  {selected ? (
+                    <div className="flex flex-col gap-3">
+                      <p className="text-lg leading-snug font-semibold text-ink-strong">
+                        {rowTitle(t, selected)}
+                      </p>
+                      <RowDetails
+                        row={selected}
+                        viewer={viewer}
+                        actions={actions}
+                        busy={action.isPending}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-ink-muted">{t('pult.detail.pick')}</p>
+                  )}
+                </Card>
+                <div className="flex flex-col gap-6">{widgets}</div>
+              </div>
+            </>
           ) : (
             <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-5">
               {ladder}
@@ -279,6 +296,11 @@ function Pult({ view }: { view: PultView }) {
       )}
 
       {notice ? <UndoNotice notice={notice} onUndo={undo} phone={isPhone} /> : null}
+      {meeting ? (
+        <Suspense fallback={null}>
+          <MeetingMode onClose={() => setMeeting(false)} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }
@@ -288,12 +310,15 @@ function PultHeader({
   compact,
   tab,
   onTab,
+  onMeeting,
 }: {
   view: PultView;
   /** Телефон: две короткие строки. Вопрос раздела и орбиты — на ноутбуке и мониторе. */
   compact: boolean;
   tab: Tab;
   onTab: (tab: Tab) => void;
+  /** Режим «Совещание» — на ноутбуке и мониторе: на телефоне повестку не показывают. */
+  onMeeting: () => void;
 }) {
   const { t } = useTranslation();
   const demo = view.is_demo ? (
@@ -336,6 +361,14 @@ function PultHeader({
           <span>{t('pult.asOf', { when: formatDateTime(view.as_of) })}</span>
           {demo}
           <PultTabs tab={tab} onTab={onTab} />
+          <button
+            type="button"
+            onClick={onMeeting}
+            className="inline-flex min-h-touch items-center gap-1.5 rounded-[var(--radius-pill)] border border-line bg-card px-3 text-xs font-medium text-ink hover:bg-hover"
+          >
+            <Presentation className="size-4" aria-hidden="true" />
+            {t('meeting.start')}
+          </button>
         </div>
       </div>
 
@@ -507,6 +540,17 @@ function Counters({
   );
 }
 
+/**
+ * Сколько строк лестницы рисуется первым заходом; остальные — сразу следом, несрочным
+ * заходом, без кнопки. Замер первого экрана на телефоне (критерий 4 блока 3): все 77 строк
+ * вымышленной базы рисовались одним заходом почти секунду на медленном процессоре — дольше,
+ * чем шли оба запроса к серверу. Прятать хвост за кнопкой нельзя: ТЗ 4 сворачивает только
+ * норму, а просроченное и горящее в конце длинной лестницы — такие же строки тревоги.
+ */
+const FIRST_ROWS = 20;
+/** На телефоне экран вмещает около пяти строк: десяти хватает с запасом на прокрутку. */
+const FIRST_ROWS_PHONE = 10;
+
 function LadderCard({
   rows,
   onTrack,
@@ -539,6 +583,13 @@ function LadderCard({
   compact: boolean;
 }) {
   const { t } = useTranslation();
+  const [whole, setWhole] = useState(false);
+  useEffect(() => {
+    // Эффект идёт после первой отрисовки, а переход уступает касаниям: верх лестницы уже
+    // на экране, хвост дорисовывается, не задерживая его.
+    startTransition(() => setWhole(true));
+  }, []);
+  const shown = whole ? rows : rows.slice(0, compact ? FIRST_ROWS_PHONE : FIRST_ROWS);
   const filterLabel = filter
     ? filter.kind === 'step'
       ? t(`pult.steps.${filter.step}`)
@@ -564,7 +615,7 @@ function LadderCard({
         <p className="py-4 text-sm text-calm-ink">{t('pult.ladder.allClear')}</p>
       ) : (
         <ol className="flex flex-col gap-2">
-          {rows.map((row) => {
+          {shown.map((row) => {
             const key = rowKey(row);
             return (
               <LadderRow

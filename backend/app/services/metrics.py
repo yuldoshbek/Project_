@@ -22,12 +22,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.seta import seta_gateway
 from app.domain.attention import (
     Attention,
     DueChanges,
@@ -42,7 +43,11 @@ from app.domain.attention import holders as holders_of
 from app.domain.calendar import CalendarKind, HotDay
 from app.domain.calendar import hot_days as hot_days_of
 from app.domain.calendar import window as hot_window_of
+from app.domain.clock import local_date
 from app.domain.dictionaries import ProjectStatus, SettingKey, TaskStatus
+from app.domain.ideas import Answer as IdeasAnswer
+from app.domain.ideas import Waiting as IdeaWaiting
+from app.domain.ideas import awaiting as ideas_awaiting_of
 from app.domain.ijro_control import NEAR_DUE_DAYS
 from app.domain.ijro_control import Answer as IjroAnswer
 from app.domain.ijro_control import BatchEffect as IjroBatch
@@ -79,10 +84,12 @@ from app.domain.pult import (
 )
 from app.domain.pult import deadline_moves as moves_of
 from app.domain.pult import period_totals as totals_of
+from app.domain.seta import latest_by_assignment
 from app.domain.tasks import Horizon, horizon_of
 from app.repos import attention as snapshot
 from app.repos import pult as read_model
 from app.services.dictionaries import load_settings
+from app.settings import get_settings
 
 DEFAULT_BURN_DAYS = 7
 DEFAULT_QUIET_DAYS = 14
@@ -354,6 +361,31 @@ def impediment_stale(*, updated_on: date | None, today: date, thresholds: Thresh
     )
 
 
+SETA_SINCE = datetime(1970, 1, 1, tzinfo=UTC)
+"""С какого момента спрашивать у SETA события для признака жизни — со всех.
+
+Признак жизни — самое свежее событие за всю жизнь поручения (ТЗ 4). Окно было бы ещё одним
+порогом рядом с порогом тишины из справочника: поручение, о котором SETA сообщала раньше
+окна, вдруг «молчало» бы с появления в реестре. Беречь сеть от повторных запросов — дело
+реализации порта, а не расчёта."""
+
+
+async def seta_life(*, zone: ZoneInfo) -> dict[str, date]:
+    """Вклад SETA в признак жизни поручений (ТЗ 10): номер поручения → день по Ташкенту
+    самого свежего события.
+
+    Отсюда его берут лестница (`ladder`, `what_if`) и раздел «Ижро» — один вклад на все
+    экраны. При `NoSeta` он пуст, и признак жизни считается по своим источникам: подключение
+    SETA добавляет событие, а не меняет расчёт.
+    """
+    # Порт — из настроек процесса, а не с приложения, как отправитель уведомлений
+    # (`app.api.deps.get_push`): лестницу считают Пульт, разделы, отчёты и сводка по
+    # расписанию — больше десятка вызовов `ladder`, — и протаскивать порт через каждый ради
+    # реализации, которой пока нет, значило бы менять их все.
+    events = await seta_gateway(get_settings()).events_since(SETA_SINCE)
+    return {code: local_date(moment, zone) for code, moment in latest_by_assignment(events).items()}
+
+
 async def ladder(
     session: AsyncSession,
     *,
@@ -363,7 +395,9 @@ async def ladder(
 ) -> Ladder:
     """Лестница внимания по всем разделам — то, что показывает Пульт."""
     limits = thresholds or await load_thresholds(session)
-    items = await snapshot.load_items(session, zone=zone, sleeping_days=limits.sleeping_days)
+    items = await snapshot.load_items(
+        session, zone=zone, seta=await seta_life(zone=zone), sleeping_days=limits.sleeping_days
+    )
     return build_ladder(
         items, today=today, burn_days=limits.burn_days, quiet_days=limits.quiet_days
     )
@@ -428,6 +462,11 @@ def ijro_answers(
     return ijro_answers_of(
         lines, today=today, limits=ijro_limits(thresholds), documents=documents, batch=batch
     )
+
+
+def ideas_awaiting(ideas: Iterable[IdeaWaiting], *, today: date) -> IdeasAnswer:
+    """«Что ждёт моего „да“?» — идеи на рассмотрении, дольше всех ждущая первой (V46)."""
+    return ideas_awaiting_of(ideas, today)
 
 
 def holders(ladder: Ladder) -> list[Holder]:
@@ -555,7 +594,9 @@ async def what_if(
     изменённых сроков, а не второго расчёта.
     """
     limits = thresholds or await load_thresholds(session)
-    items = await snapshot.load_items(session, zone=zone, sleeping_days=limits.sleeping_days)
+    items = await snapshot.load_items(
+        session, zone=zone, seta=await seta_life(zone=zone), sleeping_days=limits.sleeping_days
+    )
 
     def count(rows: Iterable[Item]) -> Ladder:
         return build_ladder(

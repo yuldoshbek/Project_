@@ -97,7 +97,8 @@ test('телефон: нижняя панель по ТЗ 6, «Ещё» и це�
   }
   await page.screenshot({ path: `${REPORT_DIR}/capture-bar-phone-light.png` });
 
-  await page.getByRole('button', { name: 'Ещё' }).click();
+  // Точное имя: подстрока «Ещё» встречается и в других кнопках экрана.
+  await page.getByRole('button', { name: 'Ещё', exact: true }).click();
   const more = page.getByRole('dialog', { name: 'Все разделы' });
   await expect(more.getByRole('link', { name: /Задачи/ })).toBeVisible();
   await page.screenshot({ path: `${REPORT_DIR}/capture-more-phone-light.png` });
@@ -105,7 +106,7 @@ test('телефон: нижняя панель по ТЗ 6, «Ещё» и це�
   await expect(page.getByRole('heading', { name: 'Задачи', level: 1 })).toBeVisible();
 });
 
-test('телефон: идея во входящие и цели нажатия листа', async ({ page }) => {
+test('телефон: идея наброском в «Идеи и карты» и цели нажатия листа', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPult(page);
   const sheet = await capture(page);
@@ -123,8 +124,10 @@ test('телефон: идея во входящие и цели нажатия 
     .getByRole('textbox', { name: 'Текст записи' })
     .fill('Мониторинг пастбищ для Минсельхоза');
   await sheet.getByRole('button', { name: 'Записать' }).click();
-  await expect(sheet.getByRole('status')).toHaveText('Идея во входящих.');
-  await expect(sheet.getByRole('listitem').first()).toContainText('во входящих до «Идей и карт»');
+  // Тексты — capture.saved.idea и capture.recent.inbox.idea: идея ложится наброском прямо
+  // в раздел, а не во входящие.
+  await expect(sheet.getByRole('status')).toHaveText('Идея записана наброском в «Идеях и картах».');
+  await expect(sheet.getByRole('listitem').first()).toContainText('в «Идеях и картах»');
   await noOverflow(page);
   await page.screenshot({ path: `${REPORT_DIR}/capture-idea-phone-light.png` });
 });

@@ -72,7 +72,7 @@ test-back:
 test-front:
 	cd $(FRONTEND) && npm run test
 
-e2e: ## Playwright на локальной сборке: сценарии и снимки экранов
+e2e: ## Playwright на своём стенде (свежая база orbita_e2e, API :8001, сборка :5174) — make dev не трогает
 	cd $(FRONTEND) && npx playwright test
 
 check: ## Линтеры и типы: ruff, mypy, import-linter, eslint, stylelint, tsc, prettier

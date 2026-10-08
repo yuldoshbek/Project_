@@ -61,3 +61,6 @@ Thumbs.db
 # Собранный холст дизайн-системы: 2,6 МБ редактора вокруг наших листов.
 # Источник — design/*.dc.html и design/canvas.json, холст пересобирается из них.
 design/orbita-design-system.html
+
+# Копии базы сервера агентства
+deploy/server/backups/

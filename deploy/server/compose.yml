@@ -1,0 +1,73 @@
+# ORBITA на сервере агентства (ADR-0028): база, API, интерфейс с прокси, расписание.
+#
+# Порядок — docs/RUNBOOK.md, «Переезд на сервер агентства». Секреты — только в
+# deploy/server/.env (в .gitignore), образец без значений — .env.example рядом.
+#
+# База наружу не выставлена: к ней ходит только API внутри сети контейнеров. Файлы
+# (версии презентаций) лежат на диске сервера, в томе `uploads` (LocalStorage).
+
+name: orbita-server
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ORBITA_DB_USER:-orbita}
+      POSTGRES_PASSWORD: ${ORBITA_DB_PASSWORD:?задайте ORBITA_DB_PASSWORD в deploy/server/.env}
+      POSTGRES_DB: ${ORBITA_DB_NAME:-orbita}
+      LANG: C.UTF-8
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${ORBITA_DB_USER:-orbita} -d ${ORBITA_DB_NAME:-orbita}']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/server/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ORBITA_DATABASE_URL: postgresql://${ORBITA_DB_USER:-orbita}:${ORBITA_DB_PASSWORD}@postgres:5432/${ORBITA_DB_NAME:-orbita}
+      ORBITA_STORAGE: local
+      ORBITA_STORAGE_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/server/web.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      ORBITA_SITE_ADDRESS: ${ORBITA_SITE_ADDRESS:-:80}
+    ports:
+      - '${ORBITA_HTTP_PORT:-80}:80'
+      - '${ORBITA_HTTPS_PORT:-443}:443'
+    volumes:
+      - caddy-data:/data
+
+  cron:
+    build:
+      context: ../..
+      dockerfile: deploy/server/cron.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      ORBITA_JOBS_SECRET: ${ORBITA_JOBS_SECRET:?задайте ORBITA_JOBS_SECRET в deploy/server/.env}
+
+volumes:
+  postgres-data:
+  uploads:
+  caddy-data:

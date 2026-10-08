@@ -1,0 +1,36 @@
+# Адрес сайта — из окружения. Доменное имя → Caddy сам получает сертификат HTTPS (нужны
+# публичный DNS и входящие 80 и 443). Без HTTPS вход не работает: cookie сессии `__Host-`
+# браузер принимает только по защищённому соединению (исключение — localhost, на нём
+# проверяется сборка). Сервер во внутренней сети без публичного имени — отдельная настройка
+# сертификата, которому доверяют iPhone (docs/RUNBOOK.md, «Переезд на сервер агентства»).
+{$ORBITA_SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+	}
+
+	# Задачи по расписанию вызываются изнутри сети контейнеров; снаружи их адреса нет.
+	handle /internal/* {
+		respond 404
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		# Файлы сборки с отпечатком в имени не меняются; оболочка и рабочий файл PWA — меняются
+		# с каждой выкладкой и кешироваться не должны (как в netlify.toml).
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@shell path / /index.html /sw.js
+		header @shell Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

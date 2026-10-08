@@ -22,6 +22,7 @@ from app.api.routes import (
     decisions,
     dictionaries,
     files,
+    ideas,
     ijro,
     interaction,
     management,
@@ -55,4 +56,5 @@ api_router.include_router(push.router)
 api_router.include_router(ijro.router)
 api_router.include_router(interaction.router)
 api_router.include_router(preparations.router)
+api_router.include_router(ideas.router)
 api_router.include_router(files.router)

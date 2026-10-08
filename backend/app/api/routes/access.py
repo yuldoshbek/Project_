@@ -23,7 +23,7 @@ from app.api.security import Assistant, CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.access import SESSION_COOKIE
 from app.domain.errors import NotFoundError
-from app.domain.people import Role
+from app.domain.people import Locale, Role
 from app.repos.models import User
 from app.services import access
 
@@ -130,6 +130,15 @@ async def whoami(user: CurrentUser, settings: SettingsDep) -> CurrentUserRespons
         timezone=settings.timezone,
         can_write=role.can_write,
     )
+
+
+class LocaleRequest(BaseModel):
+    locale: Locale
+
+
+@router.put("/me/locale", status_code=status.HTTP_204_NO_CONTENT, summary="Язык интерфейса")
+async def set_locale(body: LocaleRequest, user: CurrentUser, session: SessionDep) -> None:
+    await access.set_locale(session, user=user, locale=body.locale)
 
 
 @router.post(

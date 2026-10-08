@@ -47,7 +47,7 @@ export const SECTIONS: readonly SectionDefinition[] = [
   { id: 'ijro', icon: FileText, block: 2, onPhone: false, ready: true },
   { id: 'interaction', icon: Users, block: 2, onPhone: false, ready: true },
   { id: 'reports', icon: Presentation, block: 2, onPhone: false, ready: true },
-  { id: 'ideas', icon: Lightbulb, block: 3, onPhone: false, ready: false },
+  { id: 'ideas', icon: Lightbulb, block: 3, onPhone: false, ready: true },
   { id: 'calendar', icon: Calendar, block: 1, onPhone: true, ready: true },
   { id: 'management', icon: Settings, block: 0, onPhone: false, ready: true },
 ];
