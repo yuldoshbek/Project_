@@ -152,6 +152,7 @@ export function CaptureForm() {
 
   useEffect(() => {
     if (!waiting || !line.settled) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ответ разбора приходит из сети, а не из рендера
     setWaiting(false);
     send();
     // `send` — новая функция на каждый рендер; ждать надо ответа разбора.

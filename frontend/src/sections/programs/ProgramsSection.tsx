@@ -74,8 +74,8 @@ function Programs({ view }: { view: ProgramsView }) {
   const active = view.items.filter((card) => !TERMINAL.has(card.status));
   const closed = view.items.filter((card) => TERMINAL.has(card.status));
   const opened = view.items.find((card) => card.id === open) ?? null;
-  const closePanel = useCallback(() => setOpen(null), []);
-  const closeProject = useCallback(() => setProject(null), []);
+  const closePanel = useCallback(() => setOpen(null), [setOpen]);
+  const closeProject = useCallback(() => setProject(null), [setProject]);
 
   // Карточка проекта сменяет карточку программы, а не ложится вторым листом поверх.
   const onAction = (id: string, action: PanelAction) => {
