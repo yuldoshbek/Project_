@@ -28,12 +28,19 @@ from app.domain.errors import (
     StaleVersionError,
     check_version,
 )
+from app.domain.files import FileOwner
 from app.domain.ideas import IdeaStep, MapMode, Outcome
 from app.repos import ideas as read_model
 from app.repos import projects as project_model
 from app.repos.ideas import IdeaRow, MapRow, NodeRow
 from app.repos.models import Idea, IdeaMap, MapNode, User
-from app.services import metrics, projects, tasks
+from app.services import files, metrics, projects, tasks
+
+
+@dataclass(frozen=True, slots=True)
+class PhotoRef:
+    id: uuid.UUID
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +49,9 @@ class IdeaView:
     waiting_days: int
     """Сколько дней ждёт руководителя — из ответа `metrics.ideas_awaiting` (V46); у не
     отправленной — 0."""
+    photos: list[PhotoRef]
+    """Фото, снятые вместе с идеей в Захвате (V18): строка идеи и есть её карточка, и фото
+    приходят вместе со списком — одним запросом на все идеи, а не запросом на строку."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,10 +113,20 @@ async def load(
         if row.step == IdeaStep.REVIEW.value and row.review_at is not None
     ]
     answer = metrics.ideas_awaiting(waiting, today=today)
+    photos = await files.photos_by_owner(
+        session, owner=FileOwner.IDEA, owner_ids=[row.id for row in rows]
+    )
     return IdeasView(
         as_of=now,
         questions=[answer],
-        items=[IdeaView(row=row, waiting_days=answer.days.get(row.id, 0)) for row in rows],
+        items=[
+            IdeaView(
+                row=row,
+                waiting_days=answer.days.get(row.id, 0),
+                photos=[PhotoRef(id=photo.id, name=photo.name) for photo in photos.get(row.id, [])],
+            )
+            for row in rows
+        ],
         maps=await read_model.maps(session),
         project_types=await _types(session, locale),
         is_demo=is_demo,

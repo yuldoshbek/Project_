@@ -42,6 +42,11 @@ export const uzLatn = {
     },
   },
 
+  photos: {
+    title: 'Surat',
+    open: '«{{name}}» suratini ochish',
+  },
+
   capture: {
     open: 'Yozish',
     key: '+',
@@ -82,7 +87,12 @@ export const uzLatn = {
     },
     dictation: 'Ovozli yozish — telefon klaviaturasidagi mikrofon tugmasi.',
     photo: 'Surat',
-    photoLater: 'Yozuvga surat hozircha biriktirilmaydi: fayllar boʻlimlar kartochkalarida turadi.',
+    photoChange: 'Boshqa surat',
+    photoRemove: 'Suratni olib tashlash',
+    photoChosen: 'Tanlangan surat',
+    photoAttached: 'Surat biriktirildi.',
+    photoUploading: 'Surat yuklanmoqda…',
+    photoFailed: 'Yozuv saqlandi, lekin surat yuklanmadi.',
     save: 'Yozish',
     saved: {
       task: 'Vazifa kiritildi: {{code}} — u «Vazifalar»da.',

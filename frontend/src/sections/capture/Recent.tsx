@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { describeError } from '@/shared/api/client';
 import { Card } from '@/shared/ui/Card';
 import { Failure, Loading } from '@/shared/ui/States';
+import { Photos } from '@/shared/ui/Photos';
 
 import { KIND_ICON } from './kinds';
 import { metaText } from './text';
@@ -46,6 +47,11 @@ export function Recent() {
                   <span className="numeric text-xs text-ink-muted">
                     {metaText(t, capture, asOf)}
                   </span>
+                  {/* Письмо и мероприятие ждут во входящих — их фото здесь, у записи (V18).
+                      Фото задачи и идеи — в их карточках. */}
+                  {capture.destination === 'inbox' && capture.kind !== 'idea' ? (
+                    <Photos ownerType="capture" ownerId={capture.id} />
+                  ) : null}
                 </span>
               </li>
             );

@@ -23,6 +23,7 @@ from app.api.security import CurrentUser
 from app.api.transaction import transactional_router
 from app.domain.capture import TEXT_MAX_LENGTH, CaptureKind
 from app.domain.clock import now_utc
+from app.domain.files import FileOwner
 from app.domain.people import Role
 from app.services import captures as service
 
@@ -45,9 +46,16 @@ class CapturesResponse(BaseModel):
     is_demo: bool
 
 
+class PhotoOwner(BaseModel):
+    owner_type: FileOwner
+    owner_id: uuid.UUID
+
+
 class SavedCapture(CaptureOut):
     task_code: str | None
     """Номер заведённой задачи — для подтверждения «Задача заведена: TSK-…»."""
+    photo_owner: PhotoOwner
+    """К чему класть фото из того же касания: задача, идея или запись во входящих."""
 
 
 def _out(view: service.CaptureView) -> dict[str, object]:
@@ -98,7 +106,7 @@ class NewCaptureRequest(BaseModel):
 async def create_capture(
     body: NewCaptureRequest, user: CurrentUser, session: SessionDep, settings: SettingsDep
 ) -> SavedCapture:
-    view = await service.save(
+    saved = await service.save(
         session,
         user=user,
         data=service.NewCapture(
@@ -112,4 +120,10 @@ async def create_capture(
         now=now_utc(),
         zone=ZoneInfo(settings.timezone),
     )
-    return SavedCapture.model_validate({**_out(view), "task_code": view.task_code})
+    return SavedCapture.model_validate(
+        {
+            **_out(saved.view),
+            "task_code": saved.view.task_code,
+            "photo_owner": {"owner_type": saved.record_type, "owner_id": saved.record_id},
+        }
+    )

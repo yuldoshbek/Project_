@@ -26,6 +26,7 @@ import { Card } from '@/shared/ui/Card';
 import { Sheet } from '@/shared/ui/Sheet';
 import { Empty, Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { PhotoStrip } from '@/shared/ui/Photos';
 
 import { Maps } from './Maps';
 import type { Idea, IdeasView, Outcome } from './model';
@@ -323,6 +324,8 @@ function IdeaRow({
       ) : (
         <span className="text-ink-strong">{idea.text}</span>
       )}
+      {/* Фото, снятое вместе с идеей в Захвате (V18). */}
+      <PhotoStrip photos={idea.photos} />
       {idea.link ? (
         <span className="text-sm text-ink">
           {t(`ideas.link.${idea.link.type}`, { code: idea.link.code, title: idea.link.title })}

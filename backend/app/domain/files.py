@@ -45,6 +45,41 @@ class FileOwner(StrEnum):
     """Чему принадлежит файл. Закрытый набор: по нему собирается обратная ссылка."""
 
     PRESENTATION_VERSION = "presentation_version"
+    # Фото из Захвата (ТЗ 7, V18) — к тому, что Захват завёл: к задаче (и просьбе
+    # руководителя — она тоже задача), к идее, а письмо и мероприятие ждут во входящих
+    # записью Захвата (V17) — фото к ней.
+    TASK = "task"
+    IDEA = "idea"
+    CAPTURE = "capture"
+
+
+PHOTO_OWNERS = frozenset({FileOwner.TASK, FileOwner.IDEA, FileOwner.CAPTURE})
+
+PHOTO_TYPES = frozenset({"image/jpeg", "image/png"})
+"""Камера iPhone отдаёт HEIC, но Safari при выборе фото в поле файла сам переводит его в JPEG,
+а HEIC не покажет ни один браузер, кроме Safari. Поэтому принимается то, что видят оба."""
+
+PHOTO_MAX_SIZE = 20 * 1024 * 1024
+"""Экран сжимает снимок перед отправкой до ~0,5 МБ; 20 МБ — запас на случай, когда сжать не
+вышло и уходит исходник с камеры (12 Мп JPEG — 3–8 МБ)."""
+
+
+def check_photo(*, name: str, content_type: str, size: int) -> str:
+    """Проверка фото до выдачи ссылки: JPEG или PNG, размер в пределе. Возвращает имя."""
+    cleaned = clean_name(name)
+    if content_type not in PHOTO_TYPES:
+        raise RuleViolationError("Фото принимается в JPEG или PNG")
+    if size <= 0:
+        raise RuleViolationError("Файл пустой")
+    if size > PHOTO_MAX_SIZE:
+        raise RuleViolationError(f"Фото больше {PHOTO_MAX_SIZE // (1024 * 1024)} МБ")
+    return cleaned
+
+
+def may_upload(owner: FileOwner, *, is_assistant: bool) -> bool:
+    """Кто кладёт файл. Презентации — помощник (данные вносит он). Фото из Захвата — оба:
+    Захватом пользуется и руководитель — «записать идею» с телефона (ТЗ 6)."""
+    return is_assistant or owner in PHOTO_OWNERS
 
 
 _UNSAFE = re.compile(r"[\\/:*?\"<>|\x00-\x1f]+")

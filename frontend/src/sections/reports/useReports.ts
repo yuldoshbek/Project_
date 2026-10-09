@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { request } from '@/shared/api/client';
+import { fileLink, uploadTo } from '@/shared/api/upload';
 
 import type {
   NewPreparation,
@@ -101,11 +102,7 @@ interface StartedVersion {
   upload: { url: string; method: string; headers: Record<string, string> };
 }
 
-/**
- * Новая версия презентации — три шага (ADR-0009): ссылка от API, файл — прямо в хранилище по
- * этой ссылке, проверка. Ссылка S3 — на чужой адрес и без cookie; локальное хранилище — путь
- * API, туда файл идёт с сессией.
- */
+/** Новая версия презентации: ссылка от API, файл и проверка — общей загрузкой (`uploadTo`). */
 export function useUploadVersion() {
   return useChange(async (input: { id: string; file: File }) => {
     const started = await request<StartedVersion>(`${BASE}/${input.id}/versions`, {
@@ -116,26 +113,12 @@ export function useUploadVersion() {
         size: input.file.size,
       },
     });
-    if (started.upload.url.startsWith('/')) {
-      await request<void>(started.upload.url, { method: 'PUT', body: input.file });
-    } else {
-      const response = await fetch(started.upload.url, {
-        method: started.upload.method,
-        headers: started.upload.headers,
-        body: input.file,
-      });
-      if (!response.ok) throw new Error(`upload ${response.status}`);
-    }
-    await request<void>(`/api/v1/files/${started.file_id}/complete`, { method: 'POST' });
+    await uploadTo(started.file_id, started.upload, input.file);
     return started.version_id;
   });
 }
 
-/** Ссылка на просмотр: подписанная и короткоживущая, поэтому — по требованию, а не заранее. */
-export async function fileLink(fileId: string): Promise<string> {
-  const found = await request<{ url: string }>(`/api/v1/files/${fileId}/link`);
-  return found.url;
-}
+export { fileLink };
 
 export function useVersionState() {
   return useChange(

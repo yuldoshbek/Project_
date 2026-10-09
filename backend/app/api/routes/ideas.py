@@ -55,6 +55,11 @@ def _link(link: Link | None) -> LinkOut | None:
     return LinkOut(type=kind, id=link.id, code=link.code, title=link.title)
 
 
+class PhotoOut(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
 class IdeaOut(BaseModel):
     id: uuid.UUID
     text: str
@@ -66,6 +71,7 @@ class IdeaOut(BaseModel):
     decided_at: datetime | None
     waiting_days: int
     link: LinkOut | None
+    photos: list[PhotoOut]
     version: int
 
 
@@ -148,6 +154,7 @@ async def read_ideas(
                 decided_at=item.row.decided_at,
                 waiting_days=item.waiting_days,
                 link=_link(item.row.link),
+                photos=[PhotoOut(id=photo.id, name=photo.name) for photo in item.photos],
                 version=item.row.version,
             )
             for item in view.items

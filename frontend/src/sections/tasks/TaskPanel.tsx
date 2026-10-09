@@ -26,6 +26,7 @@ import { Block } from '@/shared/ui/Block';
 import { Button } from '@/shared/ui/Button';
 import { Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { Photos } from '@/shared/ui/Photos';
 
 import type { ProjectRef, Ref, TaskDetail, TaskType } from './model';
 import { dueText, originText, projectLabel } from './text';
@@ -91,6 +92,9 @@ function Panel({
       {canEdit ? <StatusControl task={task} /> : null}
 
       <Checklist task={task} canEdit={canEdit} />
+
+      {/* Фото из Захвата — к задаче и к просьбе руководителя (V18). */}
+      <Photos ownerType="task" ownerId={task.id} />
 
       <Details task={task} canEdit={canEdit} types={types} people={people} projects={projects} />
     </div>

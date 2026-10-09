@@ -103,6 +103,7 @@ export class FakeIdeas {
       decided_at: null,
       waiting_days: 0,
       link: null,
+      photos: [],
       version: 1,
       ...extra,
     });
@@ -266,6 +267,7 @@ export class FakeIdeas {
       decided_at: null,
       waiting_days: 0,
       link: null,
+      photos: [],
       version: 1,
     });
     return id;

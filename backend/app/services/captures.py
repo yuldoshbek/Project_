@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.capture import CaptureKind, check_author, check_fields, clean_text
 from app.domain.clock import local_date
+from app.domain.files import FileOwner
 from app.domain.people import Role
 from app.domain.projects import validate_horizon
 from app.domain.tasks import validate_title
@@ -44,6 +45,16 @@ class CaptureView:
     created_at: datetime
     destination: str
     task_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Saved:
+    """Что записано и к чему класть фото из того же касания (ТЗ 7, V18): задача, идея или
+    сама запись во входящих — письмо и мероприятие ждут там своих разделов (V17)."""
+
+    view: CaptureView
+    record_type: FileOwner
+    record_id: uuid.UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +108,7 @@ async def load(
 
 async def save(
     session: AsyncSession, *, user: User, data: NewCapture, now: datetime, zone: ZoneInfo
-) -> CaptureView:
+) -> Saved:
     """Запись одной кнопкой. Задача и просьба — сразу задачей, остальное — во входящие."""
     kind = data.kind
     check_author(kind, Role(user.role))
@@ -134,10 +145,17 @@ async def save(
         kind=kind.value, text=text, due_on=data.due_on, author_id=user.id, task_id=task_id
     )
     session.add(capture)
+    idea_id: uuid.UUID | None = None
     if kind is CaptureKind.IDEA:
         # Идея из Захвата — сразу набросок раздела «Идеи и карты»: путь до «да» руководителя
         # начинается с записи, а не с переноса из входящих.
-        await ideas.create_idea(session, user=user, text=text)
+        idea_id = await ideas.create_idea(session, user=user, text=text)
     await session.flush()
     (row,) = await read_model.recent(session, limit=1, ids=[capture.id])
-    return _view(row, zone)
+    if task_id is not None:
+        record = (FileOwner.TASK, task_id)
+    elif idea_id is not None:
+        record = (FileOwner.IDEA, idea_id)
+    else:
+        record = (FileOwner.CAPTURE, capture.id)
+    return Saved(view=_view(row, zone), record_type=record[0], record_id=record[1])

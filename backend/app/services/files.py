@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -24,10 +25,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.storage import FileStorage, LocalStorage, UploadTarget
 from app.domain.clock import now_utc
-from app.domain.errors import NotFoundError, RuleViolationError, check_version
-from app.domain.files import FileOwner, FileState, check_upload, storage_key
+from app.domain.errors import (
+    NotFoundError,
+    PermissionDeniedError,
+    RuleViolationError,
+    check_version,
+)
+from app.domain.files import (
+    FileOwner,
+    FileState,
+    check_photo,
+    check_upload,
+    may_upload,
+    storage_key,
+)
+from app.domain.people import Role
 from app.domain.preparations import COMMENT_MAX_LENGTH, VersionState
-from app.repos.models import Preparation, PresentationVersion, SlideComment, StoredFile, User
+from app.repos.models import (
+    Capture,
+    Idea,
+    Preparation,
+    PresentationVersion,
+    SlideComment,
+    StoredFile,
+    Task,
+    User,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +65,97 @@ async def _file(session: AsyncSession, file_id: uuid.UUID) -> StoredFile:
     if found is None:
         raise NotFoundError("Файл не найден: его могли удалить")
     return found
+
+
+def _check_uploader(stored: StoredFile, user: User) -> None:
+    if not may_upload(FileOwner(stored.owner_type), is_assistant=Role(user.role) is Role.ASSISTANT):
+        raise PermissionDeniedError("Этот файл загружает помощник")
+
+
+PHOTO_OWNERS: dict[FileOwner, type[Task | Idea | Capture]] = {
+    FileOwner.TASK: Task,
+    FileOwner.IDEA: Idea,
+    FileOwner.CAPTURE: Capture,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class StartedPhoto:
+    file_id: uuid.UUID
+    upload: UploadTarget
+
+
+async def start_photo(
+    session: AsyncSession,
+    *,
+    user: User,
+    storage: FileStorage,
+    owner: FileOwner,
+    owner_id: uuid.UUID,
+    name: str,
+    content_type: str,
+    size: int,
+) -> StartedPhoto:
+    """Фото к записи из Захвата (ТЗ 7, V18): ссылка на загрузку тем же путём, что у
+    презентации, — мимо API в хранилище, потом проверка (`complete`)."""
+    model = PHOTO_OWNERS.get(owner)
+    if model is None:
+        raise RuleViolationError("К такой записи фото не прикладывается")
+    if await session.get(model, owner_id) is None:
+        raise NotFoundError("Запись не найдена: её могли удалить")
+    cleaned = check_photo(name=name, content_type=content_type, size=size)
+    file_id = uuid.uuid4()
+    key = storage_key(owner, owner_id, file_id, content_type)
+    # Ссылку просим до записи: не настроенное хранилище откажет раньше, чем в базе появится
+    # файл, которого нет.
+    target = storage.upload_target(key, file_id=str(file_id), content_type=content_type)
+    session.add(
+        StoredFile(
+            id=file_id,
+            owner_type=owner.value,
+            owner_id=owner_id,
+            name=cleaned,
+            content_type=content_type,
+            size=size,
+            storage_key=key,
+            state=FileState.PENDING.value,
+            uploaded_by=user.id,
+        )
+    )
+    await session.flush()
+    return StartedPhoto(file_id=file_id, upload=target)
+
+
+async def photos_by_owner(
+    session: AsyncSession, *, owner: FileOwner, owner_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[StoredFile]]:
+    """Фото многих записей одним запросом — для списка, где у каждой строки свои фото.
+
+    Только проверенные, по времени: недогруженное фото не показывается.
+    """
+    if not owner_ids:
+        return {}
+    rows = await session.scalars(
+        select(StoredFile)
+        .where(
+            StoredFile.owner_type == owner.value,
+            StoredFile.owner_id.in_(owner_ids),
+            StoredFile.state == FileState.STORED.value,
+        )
+        .order_by(StoredFile.created_at, StoredFile.id)
+    )
+    found: dict[uuid.UUID, list[StoredFile]] = {}
+    for row in rows:
+        found.setdefault(row.owner_id, []).append(row)
+    return found
+
+
+async def photos(
+    session: AsyncSession, *, owner: FileOwner, owner_id: uuid.UUID
+) -> list[StoredFile]:
+    """Фото одной записи — для её карточки."""
+    found = await photos_by_owner(session, owner=owner, owner_ids=[owner_id])
+    return found.get(owner_id, [])
 
 
 async def start_version(
@@ -156,14 +270,19 @@ def write_local(storage: FileStorage, stored: StoredFile, content: bytes) -> Non
 
 
 async def put_content(
-    session: AsyncSession, *, storage: FileStorage, file_id: uuid.UUID, content: bytes
+    session: AsyncSession, *, user: User, storage: FileStorage, file_id: uuid.UUID, content: bytes
 ) -> None:
-    write_local(storage, await _file(session, file_id), content)
-
-
-async def complete(session: AsyncSession, *, storage: FileStorage, file_id: uuid.UUID) -> None:
-    """Файл лёг — проверяем размер в хранилище и показываем версию."""
     stored = await _file(session, file_id)
+    _check_uploader(stored, user)
+    write_local(storage, stored, content)
+
+
+async def complete(
+    session: AsyncSession, *, user: User, storage: FileStorage, file_id: uuid.UUID
+) -> None:
+    """Файл лёг — проверяем размер в хранилище и показываем версию или фото."""
+    stored = await _file(session, file_id)
+    _check_uploader(stored, user)
     if stored.state == FileState.STORED.value:
         return
     size = await storage.size(stored.storage_key)
