@@ -8,6 +8,7 @@
 
 export const ru = {
   app: {
+    offline: 'нет связи',
     name: 'ORBITA',
     tagline: 'Что требует внимания сейчас',
     more: 'Ещё',

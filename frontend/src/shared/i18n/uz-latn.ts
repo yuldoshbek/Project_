@@ -9,6 +9,7 @@
 
 export const uzLatn = {
   app: {
+    offline: 'aloqa yoʻq',
     name: 'ORBITA',
     tagline: 'Hozir eʼtibor talab qiladigan ishlar',
     more: 'Yana',

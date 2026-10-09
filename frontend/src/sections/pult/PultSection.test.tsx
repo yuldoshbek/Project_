@@ -490,6 +490,28 @@ describe('Пульт', () => {
     ).toBeInTheDocument();
   });
 
+  it('без связи — последняя картина со своим временем данных, а не «не получилось»', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const path = typeof input === 'string' ? input : String(input);
+      if (path === '/api/me') return Promise.resolve(reply(200, user('leader')));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Так её кладёт `restoreLastPicture` при открытии: прошлый ответ, помеченный устаревшим.
+    client.setQueryData(['pult'], VIEW);
+    void client.invalidateQueries({ queryKey: ['pult'], refetchType: 'none' });
+    render(
+      <QueryClientProvider client={client}>
+        <PultSection />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('Согласование ТЗ')).toBeInTheDocument();
+    await waitFor(() => expect(client.getQueryState(['pult'])?.status).toBe('error'));
+    expect(screen.getByText('Согласование ТЗ')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('перенос срока «с прошлого визита» — было → стало', async () => {
     serve('leader');
     renderPult();

@@ -8,6 +8,7 @@
 
 export const uzCyrl = {
   app: {
+    offline: 'алоқа йўқ',
     name: 'ORBITA',
     tagline: 'Ҳозир эътибор талаб қиладиган ишлар',
     more: 'Яна',

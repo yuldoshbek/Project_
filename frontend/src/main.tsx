@@ -16,11 +16,16 @@ import { pultQuery } from '@/sections/pult/usePult';
 import { ThemeProvider } from '@/app/theme';
 import { QUERY_DEFAULTS } from '@/shared/api/queries';
 import '@/shared/i18n';
+import { keepLastPicture, restoreLastPicture } from '@/shared/api/offline';
 import '@/styles/app.css';
 
 // Опрос и его исключения — shared/api/queries.ts. Возврат на вкладку обновляет сразу:
 // руководитель открывает систему и должен видеть сегодняшнее, а не то, что было утром.
 const queryClient = new QueryClient({ defaultOptions: { queries: QUERY_DEFAULTS } });
+
+// Последняя картина Пульта — сразу, ещё до ответа сервера, и без связи (`offline.ts`).
+restoreLastPicture(queryClient);
+keepLastPicture(queryClient);
 
 // Пульт — первый экран руководителя: его данные запрашиваются сразу, вместе с `/api/me`, а
 // не после того, как оболочка узнает, кто вошёл. На 4G это минус один круг до сервера
