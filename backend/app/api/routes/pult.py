@@ -97,6 +97,8 @@ class PultResponse(BaseModel):
     rows: list[Row]
     counts: dict[str, int]
     on_track: int
+    soon_days: int
+    soon: list[Row]
     holders: list[Holder]
     changes: list[Change]
     deadline_moves: DeadlineMoves
@@ -175,6 +177,8 @@ async def read_pult(user: CurrentUser, session: SessionDep, settings: SettingsDe
         rows=[_row(row) for row in view.rows],
         counts=view.counts,
         on_track=view.on_track,
+        soon_days=view.soon_days,
+        soon=[_row(row) for row in view.soon],
         holders=[_holder(holder) for holder in view.holders],
         changes=[
             Change(

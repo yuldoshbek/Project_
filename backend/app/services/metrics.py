@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.seta import seta_gateway
 from app.domain.attention import (
+    SOON_DAYS,
     Attention,
     DueChanges,
     Holder,
@@ -393,13 +394,20 @@ async def ladder(
     zone: ZoneInfo,
     thresholds: Thresholds | None = None,
 ) -> Ladder:
-    """Лестница внимания по всем разделам — то, что показывает Пульт."""
+    """Лестница внимания по всем разделам — то, что показывает Пульт.
+
+    Вместе с ней — «что сорвётся за 14 дней» (`Ladder.soon`): тот же снимок, тот же проход.
+    """
     limits = thresholds or await load_thresholds(session)
     items = await snapshot.load_items(
         session, zone=zone, seta=await seta_life(zone=zone), sleeping_days=limits.sleeping_days
     )
     return build_ladder(
-        items, today=today, burn_days=limits.burn_days, quiet_days=limits.quiet_days
+        items,
+        today=today,
+        burn_days=limits.burn_days,
+        quiet_days=limits.quiet_days,
+        soon_days=SOON_DAYS,
     )
 
 

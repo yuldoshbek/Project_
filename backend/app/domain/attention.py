@@ -28,7 +28,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 
 
@@ -275,6 +275,9 @@ class Ladder:
 
     rows: tuple[Row, ...]
     on_track: int
+    soon: tuple[Row, ...] = ()
+    """«Что сорвётся за 14 дней?» — записи со сроком от сегодня до горизонта, на любой
+    ступени и по дате; пусто, если горизонт не спрашивали (`build_ladder(soon_days=…)`)."""
 
     @property
     def needs_attention(self) -> int:
@@ -289,9 +292,27 @@ class Ladder:
         return len(self.of(attention))
 
 
-def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_days: int) -> Ladder:
-    """Лестница по снимку. Чистая функция: одинаковый снимок — одинаковая лестница."""
+SOON_DAYS = 14
+"""Горизонт вопроса Пульта «Что сорвётся за 14 дней?» — число из каталога вопросов ТЗ 5.
+Это часть вопроса руководителя, а не порог сигнала, поэтому в справочнике порогов его нет."""
+
+
+def build_ladder(
+    items: Iterable[Item],
+    *,
+    today: date,
+    burn_days: int,
+    quiet_days: int,
+    soon_days: int | None = None,
+) -> Ladder:
+    """Лестница по снимку. Чистая функция: одинаковый снимок — одинаковая лестница.
+
+    С `soon_days` тем же проходом собирается и «что сорвётся за N дней»: ступень у строки
+    горизонта та же, что у строки лестницы, — иначе горящее на Пульте могло бы идти по
+    плану в соседнем списке (инвариант 2).
+    """
     rows: list[Row] = []
+    soon: list[Row] = []
     on_track = 0
 
     for item in items:
@@ -306,33 +327,44 @@ def build_ladder(items: Iterable[Item], *, today: date, burn_days: int, quiet_da
             due_is_exact=item.due_is_exact,
             due_is_others=item.due_is_others,
         )
+        row = Row(
+            section=item.section,
+            entity_id=item.entity_id,
+            title=item.title,
+            kind=item.kind,
+            attention=state,
+            deviation=deviation_days(
+                state,
+                awaiting_since=item.awaiting_since,
+                due_on=item.due_on,
+                today=today,
+                last_sign_of_life=item.last_sign_of_life,
+            ),
+            due_on=item.due_on,
+            responsible_person_id=item.responsible_person_id,
+        )
+        # Просроченное в горизонт не входит: оно уже сорвалось и стоит своей ступенью.
+        # Срок, обещанный нам чужими, — тоже срок, который может сорваться, поэтому он
+        # здесь вместе с нашими.
+        if (
+            soon_days is not None
+            and item.due_on is not None
+            and today <= item.due_on <= today + timedelta(days=soon_days)
+        ):
+            soon.append(row)
         if state.is_normal:
             on_track += 1
             continue
-        rows.append(
-            Row(
-                section=item.section,
-                entity_id=item.entity_id,
-                title=item.title,
-                kind=item.kind,
-                attention=state,
-                deviation=deviation_days(
-                    state,
-                    awaiting_since=item.awaiting_since,
-                    due_on=item.due_on,
-                    today=today,
-                    last_sign_of_life=item.last_sign_of_life,
-                ),
-                due_on=item.due_on,
-                responsible_person_id=item.responsible_person_id,
-            )
-        )
+        rows.append(row)
 
     # Равные по ступени, отклонению и сроку строки идут по названию, затем по записи: без
     # этого их порядок зависел бы от того, в каком порядке база отдала снимок, и первой
     # строкой «срок сегодня» на экране блокировки оказывалась бы то одна, то другая.
     rows.sort(key=lambda row: (row.order, row.title or "", str(row.entity_id)))
-    return Ladder(rows=tuple(rows), on_track=on_track)
+    # Горизонт — по дате: вопрос «что сорвётся», и ответ читается как календарь. Внутри
+    # дня — порядок лестницы, чтобы ждущее решения стояло над идущим по плану.
+    soon.sort(key=lambda row: (row.due_on or today, row.order, row.title or "", str(row.entity_id)))
+    return Ladder(rows=tuple(rows), on_track=on_track, soon=tuple(soon))
 
 
 @dataclass(frozen=True, slots=True)

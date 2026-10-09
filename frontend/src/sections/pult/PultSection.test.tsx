@@ -15,7 +15,7 @@ import { keyBytes } from '@/app/notifications';
 import type { CurrentUser } from '@/shared/api/orbita';
 import { setViewport } from '@/test-setup';
 
-import type { PultRow, PultView, PushRow, ReportView, SummaryView } from './model';
+import type { PultRow, PultView, PushRow, ReportView, SoonRow, SummaryView } from './model';
 import { PultSection } from './PultSection';
 
 /**
@@ -112,6 +112,10 @@ const VIEW: PultView = {
   ],
   counts: { awaiting_decision: 1, overdue: 2, burning: 0, blocked_by_others: 0, silent: 0 },
   on_track: 21,
+  soon_days: 14,
+  // Пусто по умолчанию: кнопки решений горизонта путали бы проверки лестницы, которые
+  // ищут «Поторопить» и «Утвердить» по всему экрану. Горизонт проверяется своими данными.
+  soon: [],
   holders: [
     {
       person: KARIMOV,
@@ -139,6 +143,28 @@ const VIEW: PultView = {
   deadline_moves: { period_days: 30, moves: 1, total_shift_days: 7, items: [] },
   is_demo: true,
 };
+
+const SOON: SoonRow[] = [
+  row({
+    entity_id: 's-1',
+    target_id: 's-1',
+    title: 'Отбор участников пилота',
+    step: 'burning',
+    deviation: 2,
+    due_on: '2026-09-27',
+  }),
+  {
+    ...row({
+      entity_id: 's-2',
+      target_id: 's-2',
+      title: 'Смета миссии',
+      due_on: '2026-10-03',
+      responsible: TURSUNOV,
+    }),
+    step: 'on_track',
+    deviation: 0,
+  },
+];
 
 function report(period: 'week' | 'month'): ReportView {
   return {
@@ -427,6 +453,41 @@ describe('Пульт', () => {
     expect(screen.getByText('Просроченная 14')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Показать ещё/ })).not.toBeInTheDocument();
     expect(screen.getByText('и ещё 21 по плану')).toBeInTheDocument();
+  });
+
+  it('«Что сорвётся за 14 дней?» — по датам, решение по строке нормы уходит по её объекту', async () => {
+    const calls = serve('leader', { ...VIEW, soon: SOON });
+    renderPult();
+
+    expect(await screen.findByText('Что сорвётся за 14 дней?')).toBeInTheDocument();
+    expect(screen.getByText('2 срока, ближайший — через 2 дн')).toBeInTheDocument();
+    const quiet = screen.getByText('Смета миссии').closest('li')!;
+    expect(within(quiet).getByText('По плану')).toBeInTheDocument();
+
+    fireEvent.click(await within(quiet).findByRole('button', { name: 'Поторопить' }));
+
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'POST',
+        path: '/api/v1/decisions',
+        body: { target_type: 'project', target_id: 's-2', kind: 'hurry' },
+      }),
+    );
+  });
+
+  it('пустой горизонт — фраза, а не пустая карточка', async () => {
+    serve('leader');
+    renderPult();
+    expect(await screen.findByText('За 14 дней сроков нет.')).toBeInTheDocument();
+  });
+
+  it('на телефоне число изменений «с прошлого визита» — в шапке, без прокрутки', async () => {
+    setViewport({ width: 390 });
+    serve('leader');
+    renderPult();
+    expect(
+      await screen.findByRole('button', { name: /1 изменение с прошлого визита/ }),
+    ).toBeInTheDocument();
   });
 
   it('перенос срока «с прошлого визита» — было → стало', async () => {

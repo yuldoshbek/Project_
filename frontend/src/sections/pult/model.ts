@@ -61,6 +61,17 @@ export const STEP_DECISIONS = {
   silent: ['hurry', 'assign', 'escalate'],
 } as const satisfies Record<Step, readonly DecisionKind[]>;
 
+/**
+ * Решения по строке горизонта, которая идёт по плану: «вмешаться, перенести, поручить» —
+ * действия вопроса «Что сорвётся за 14 дней?» (ТЗ 5) готовыми видами решения. Строка
+ * на ступени лестницы берёт решения своей ступени (`STEP_DECISIONS`).
+ */
+export const ON_TRACK_DECISIONS = [
+  'hurry',
+  'ask_extension',
+  'assign',
+] as const satisfies readonly DecisionKind[];
+
 export interface Person {
   id: string;
   name: string;
@@ -97,6 +108,14 @@ export interface PultRow {
   question: { id: string; text: string; asked_on: string } | null;
   /** Последнее решение руководителя по объекту: чтобы не поторопить дважды, не зная. */
   last_decision: { kind: DecisionKind; decided_on: string } | null;
+}
+
+/** Ступень строки горизонта: лестница плюс «по плану» — в горизонте норма не сворачивается. */
+export type SoonStep = Step | 'on_track';
+
+/** Строка «Что сорвётся за 14 дней?» — та же строка Пульта, но на любой ступени. */
+export interface SoonRow extends Omit<PultRow, 'step'> {
+  step: SoonStep;
 }
 
 /** «Кто держит»: строки лестницы по ответственным. */
@@ -143,6 +162,10 @@ export interface PultView {
   rows: PultRow[];
   counts: Record<Step, number>;
   on_track: number;
+  /** Горизонт вопроса «Что сорвётся за N дней?» — число сервера, а не экрана. */
+  soon_days: number;
+  /** Сроки от сегодня до горизонта по дате, на любой ступени; просроченного здесь нет. */
+  soon: SoonRow[];
   holders: Holder[];
   changes: Change[];
   deadline_moves: DeadlineMoves;
