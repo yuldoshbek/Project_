@@ -50,6 +50,11 @@ export interface Slide {
   empty: boolean;
   /** Запрос раздела не прошёл: вопрос остаётся, а ответа нет. */
   failed: boolean;
+  /**
+   * Горячие дни для полосы на четыре недели — только у слайда Календаря: на мониторе
+   * «где тесно» видно глазом раньше, чем прочитано словами (блок 4, пакет C).
+   */
+  strip?: { today: string; hot: { date: string; count: number }[] };
 }
 
 const LINES = 5;
@@ -185,5 +190,6 @@ export function calendarSlide(t: TFunction, view: CalendarView, today: string): 
     })),
     freshness: t('pult.asOf', { when: formatDateTime(view.as_of) }),
     empty: hot.length === 0,
+    strip: { today, hot: hot.map((day) => ({ date: day.date, count: day.count })) },
   };
 }
