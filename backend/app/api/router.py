@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends
 from app.api.routes import (
     calendar,
     captures,
+    changes,
     decisions,
     dictionaries,
     files,
@@ -61,3 +62,4 @@ api_router.include_router(preparations.router)
 api_router.include_router(ideas.router)
 api_router.include_router(files.router)
 api_router.include_router(search.router)
+api_router.include_router(changes.router)

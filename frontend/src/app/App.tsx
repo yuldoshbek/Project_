@@ -18,12 +18,16 @@ import { ApiError, describeError } from '@/shared/api/client';
 import { issuedLinkQuery } from '@/shared/api/queries';
 import { applyLocale, LOCALE_MUTATION_KEY } from '@/shared/i18n';
 import { Failure, Loading } from '@/shared/ui/States';
+import { useChangeStamp } from '@/shared/api/changes';
+import { forgetLastPicture } from '@/shared/api/offline';
 
 export function App() {
   const { t } = useTranslation();
   const user = useCurrentUser();
   const client = useQueryClient();
   const role = user.data?.role;
+  // Свежесть данных разделов — по метке изменений, пока есть сессия (`shared/api/changes.ts`).
+  useChangeStamp(Boolean(role) && !user.isError);
 
   // Сессия снова есть — своя ссылка, выпущенная до неё, больше не новая: следующий отказ
   // (истечение, перевыпуск с другого устройства) не должен показывать её действующей.
@@ -52,6 +56,8 @@ export function App() {
   }
 
   if (user.error instanceof ApiError && user.error.needsLink) {
+    // Сессии нет — картине Пульта на устройстве больше не место (`offline.ts`).
+    forgetLastPicture();
     // Помощник перевыпустил свою ссылку и погасил эту сессию: показать новую ссылку теперь
     // может только этот экран. Прежний ответ `/api/me` остаётся при отказе — по нему и роль.
     const fresh = user.data
@@ -60,7 +66,9 @@ export function App() {
     return <NeedsLink fresh={fresh} onRetry={() => void user.refetch()} />;
   }
 
-  if (user.isError) {
+  // Без связи ответ «кто вошёл» не приходит, но прошлый есть (последняя картина): оболочка
+  // открывается с ним и честной пометкой «нет связи», а не экраном «не получилось».
+  if (user.isError && !user.data) {
     return (
       <div className="grid min-h-dvh place-items-center bg-app px-6">
         <div className="w-full max-w-md">

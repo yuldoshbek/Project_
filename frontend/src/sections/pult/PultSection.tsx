@@ -99,7 +99,8 @@ export function PultSection() {
   const pult = usePult();
 
   if (pult.isPending) return <Loading />;
-  if (pult.isError) {
+  // Ответ не пришёл, а прошлый есть — показывается он, со своим временем данных в шапке.
+  if (!pult.data) {
     return <Failure detail={describeError(pult.error)} onRetry={() => void pult.refetch()} />;
   }
   return <Pult view={pult.data} />;

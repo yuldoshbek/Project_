@@ -21,6 +21,7 @@ import type { Device } from '@/app/device';
 import { useCurrentUser, useHealth } from '@/app/session';
 import { HeaderParticles } from '@/app/shell/HeaderParticles';
 import { ThemeMenu } from '@/app/shell/ThemeMenu';
+import { useOnline } from '@/shared/lib/useOnline';
 import { Button } from '@/shared/ui/Button';
 import { Signal } from '@/shared/ui/Signal';
 
@@ -36,6 +37,7 @@ export function TopBar({
   const { t } = useTranslation();
   const user = useCurrentUser();
   const health = useHealth();
+  const online = useOnline();
   const isPhone = device === 'phone';
 
   return (
@@ -53,6 +55,9 @@ export function TopBar({
         {isPhone ? <span className="flex-1" /> : <HeaderParticles />}
 
         <div className="flex items-center gap-2">
+          {/* Без связи экраны показывают последнюю картину со своим временем данных
+              (`shared/api/offline.ts`) — пометка говорит, почему она не обновляется. */}
+          {!online ? <Signal state="burn">{t('app.offline')}</Signal> : null}
           {health.data && health.data.env !== 'production' ? (
             <Signal state="wait">
               {t(`management.state.envNames.${health.data.env}`, health.data.env)}

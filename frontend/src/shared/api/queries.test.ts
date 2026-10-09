@@ -9,11 +9,14 @@ import { describe, expect, it } from 'vitest';
 
 import { ApiError } from './client';
 import {
+  currentUserQuery,
   dictionariesQuery,
   HEALTH_INTERVAL_MS,
   healthQuery,
+  ME_INTERVAL_MS,
   POLL_INTERVAL_MS,
   pollEvery,
+  QUERY_DEFAULTS,
   retryUpTo,
 } from './queries';
 
@@ -33,6 +36,19 @@ describe('опрос', () => {
     const interval = pollEvery(POLL_INTERVAL_MS);
     expect(interval(after(new ApiError(401, 'нет сессии')))).toBe(false);
     expect(interval(after(new ApiError(403, 'только помощник')))).toBe(false);
+  });
+
+  it('данные разделов сами не опрашиваются — их перечитывает метка изменений', () => {
+    expect(QUERY_DEFAULTS.refetchInterval).toBe(false);
+    expect(QUERY_DEFAULTS.refetchOnWindowFocus).toBe(false);
+    expect(QUERY_DEFAULTS.staleTime).toBe(Infinity);
+  });
+
+  it('«кто вошёл» — раз в минуту: перевыпуск ссылки виден без перезагрузки', () => {
+    const { refetchInterval } = currentUserQuery();
+    expect(typeof refetchInterval).toBe('function');
+    if (typeof refetchInterval !== 'function') return;
+    expect(refetchInterval(after(null) as never)).toBe(ME_INTERVAL_MS);
   });
 
   it('справочники не опрашиваются и не устаревают', () => {

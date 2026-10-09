@@ -3,8 +3,12 @@
  *
  * Опрос, а не постоянное соединение (ADR-0034). Цена у данных разная, поэтому и частота:
  *
- * - **данные разделов** — раз в 15 секунд и сразу при возврате на вкладку: это умолчание
- *   клиента запросов, `QUERY_DEFAULTS`;
+ * - **метка изменений** — раз в 15 секунд и сразу при возврате на вкладку (`changes.ts`):
+ *   один лёгкий ответ вместо данных. Данные разделов сами не опрашиваются (умолчание
+ *   `QUERY_DEFAULTS`) — их перечитывает смена метки. Раньше Пульт собирался целиком раз в
+ *   15 секунд, даже когда за день не менялось ничего (HANDOFF, «Известные ограничения»);
+ * - **кто вошёл** (`/api/me`) — раз в минуту: перевыпуск ссылки гасит сессию, и экран
+ *   «откройте по ссылке» должен появиться без перезагрузки;
  * - **состояние системы** — раз в минуту: коммит и контур меняются только при выкладке;
  * - **справочники** — не опрашиваются: состав меняется редко, а опрос раз в 15 секунд
  *   тянул бы его целиком ради ответа «ничего не изменилось».
@@ -22,8 +26,11 @@ import { queryOptions, skipToken } from '@tanstack/react-query';
 import { ApiError } from './client';
 import { api, type AccessLink, type Role } from './orbita';
 
-/** Данные разделов: 15 секунд — компромисс из ADR-0034. */
+/** Метка изменений: 15 секунд — компромисс из ADR-0034. */
 export const POLL_INTERVAL_MS = 15_000;
+
+/** Кто вошёл: перевыпуск ссылки виден не позже чем через минуту. */
+export const ME_INTERVAL_MS = 60_000;
 
 /** Состояние системы меняется только при выкладке. */
 export const HEALTH_INTERVAL_MS = 60_000;
@@ -44,16 +51,27 @@ export function retryUpTo(times: number) {
     !isRefusal(error) && failureCount < times;
 }
 
-/** Умолчания клиента запросов: всё, что не сказало иного, — данные разделов. */
+/**
+ * Умолчания клиента запросов: всё, что не сказало иного, — данные разделов. Сами они не
+ * опрашиваются и не устаревают: свежесть держит метка изменений (`useChangeStamp`), а после
+ * своей правки экран перечитывает затронутое сам.
+ */
 export const QUERY_DEFAULTS = {
-  refetchInterval: pollEvery(POLL_INTERVAL_MS),
-  refetchOnWindowFocus: true,
-  staleTime: POLL_INTERVAL_MS,
+  refetchInterval: false as const,
+  refetchOnWindowFocus: false,
+  staleTime: Infinity,
   retry: retryUpTo(1),
 };
 
 export function currentUserQuery() {
-  return queryOptions({ queryKey: ['me'], queryFn: api.me, retry: retryUpTo(2) });
+  return queryOptions({
+    queryKey: ['me'],
+    queryFn: api.me,
+    retry: retryUpTo(2),
+    refetchInterval: pollEvery(ME_INTERVAL_MS),
+    refetchOnWindowFocus: true,
+    staleTime: ME_INTERVAL_MS,
+  });
 }
 
 export function healthQuery() {
