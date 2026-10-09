@@ -18,12 +18,15 @@ import { ApiError, describeError } from '@/shared/api/client';
 import { issuedLinkQuery } from '@/shared/api/queries';
 import { applyLocale, LOCALE_MUTATION_KEY } from '@/shared/i18n';
 import { Failure, Loading } from '@/shared/ui/States';
+import { useChangeStamp } from '@/shared/api/changes';
 
 export function App() {
   const { t } = useTranslation();
   const user = useCurrentUser();
   const client = useQueryClient();
   const role = user.data?.role;
+  // Свежесть данных разделов — по метке изменений, пока есть сессия (`shared/api/changes.ts`).
+  useChangeStamp(Boolean(role) && !user.isError);
 
   // Сессия снова есть — своя ссылка, выпущенная до неё, больше не новая: следующий отказ
   // (истечение, перевыпуск с другого устройства) не должен показывать её действующей.
