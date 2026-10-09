@@ -112,6 +112,29 @@ class TestReading:
     ) -> None:
         assert (await leader_api.get(PULT)).json()["is_demo"] is True
 
+    async def test_soon_is_the_metrics_horizon_by_date(
+        self, leader_api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """«Что сорвётся за 14 дней?»: по дате, на любой ступени, тот же расчёт, что лестница."""
+        karimov = await make_person(session, "Каримов А.")
+        await make_project(session, due_on=today() - timedelta(days=1), title="Сорвалось")
+        await make_project(
+            session, due_on=today() + timedelta(days=10), responsible=karimov, title="По плану"
+        )
+        await make_project(session, due_on=today() + timedelta(days=2), title="Горит")
+        await make_project(session, due_on=today() + timedelta(days=40), title="Не скоро")
+
+        body = (await leader_api.get(PULT)).json()
+        ladder = await metrics.ladder(session, today=today(), zone=TASHKENT)
+
+        assert body["soon_days"] == 14
+        assert [row["entity_id"] for row in body["soon"]] == [
+            str(row.entity_id) for row in ladder.soon
+        ]
+        titles = [(row["title"], row["step"]) for row in body["soon"]]
+        assert titles == [("Горит", "burning"), ("По плану", "on_track")]
+        assert body["soon"][1]["responsible"]["name"] == "Каримов А."
+
 
 class TestDecisions:
     async def test_leader_decides_in_one_tap_and_the_question_closes(

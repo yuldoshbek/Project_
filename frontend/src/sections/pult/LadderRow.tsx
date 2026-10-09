@@ -45,9 +45,11 @@ interface LadderRowProps {
   /** На мониторе подробности живут в средней панели, а не под строкой. */
   detailsInline: boolean;
   /**
-   * Телефон: название в одну строку и без стрелки раскрытия — раскрывает касание строки.
-   * Иначе пять строк не помещаются на экран без прокрутки: кнопка решения сжимает
-   * название до трёх строк, и каждая строка лестницы занимает треть экрана.
+   * Телефон: без стрелки раскрытия — раскрывает касание строки — и в три строки вместо
+   * четырёх: название до двух строк, под ним одной строкой ступень, отклонение и кто
+   * держит. Пять строк лестницы обязаны помещаться без прокрутки (решение заказчика
+   * 25.09), а название в одну строку обрезалось на полуслове — «Согласование ТЗ на
+   * спутнико…» — и руководитель утверждал, не видя, что именно (разбор 08.10, блок 4).
    */
   compact?: boolean;
 }
@@ -88,21 +90,36 @@ export function LadderRow({
           aria-controls={detailsInline ? detailsId : undefined}
           className="min-w-0 flex-1 text-left"
         >
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Signal state={signal}>{t(`pult.steps.${row.step}`)}</Signal>
-            <span className="numeric text-xs font-medium text-ink">{deviationText(t, row)}</span>
-          </span>
+          {compact ? null : (
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Signal state={signal}>{t(`pult.steps.${row.step}`)}</Signal>
+              <span className="numeric text-xs font-medium text-ink">{deviationText(t, row)}</span>
+            </span>
+          )}
           <span
             className={cn(
-              'mt-1 block text-[15px] leading-snug font-medium text-ink-strong',
+              'block text-[15px] leading-snug font-medium text-ink-strong',
+              !compact && 'mt-1',
               // Раскрытая строка показывает название целиком: обрезанное — это вопрос,
               // на который ответа нет нигде, кроме этой строки.
-              expanded ? '' : compact ? 'truncate' : 'line-clamp-2',
+              !expanded && 'line-clamp-2',
             )}
           >
             {rowTitle(t, row)}
           </span>
-          <span className="mt-0.5 block truncate text-xs text-ink-muted">{subtitle}</span>
+          {compact ? (
+            // Словом в метке — отклонение: «ждёт 17 дн», «просрочено 3 дн», «тишина 21 дн»
+            // уже называют ступень, а «Ждёт решения · ждёт 17 дн» на 390 px съедало имя
+            // того, кто держит, до «Кар…». Ступень целиком — в счётчиках над лестницей и
+            // для экранного диктора.
+            <span className="mt-1 flex min-w-0 items-center gap-2">
+              <span className="sr-only">{t(`pult.steps.${row.step}`)}</span>
+              <Signal state={signal}>{deviationText(t, row)}</Signal>
+              <span className="truncate text-xs text-ink-muted">{who}</span>
+            </span>
+          ) : (
+            <span className="mt-0.5 block truncate text-xs text-ink-muted">{subtitle}</span>
+          )}
         </button>
 
         <div className="flex shrink-0 items-center gap-1">

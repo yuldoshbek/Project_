@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.attention import LADDER, Attention
+from app.domain.attention import LADDER, SOON_DAYS, Attention
 from app.domain.attention import Row as LadderRow
 from app.domain.clock import local_date
 from app.domain.pult import (
@@ -131,6 +131,8 @@ class PultView:
     rows: list[RowView]
     counts: dict[str, int]
     on_track: int
+    soon_days: int
+    soon: list[RowView]
     holders: list[HolderView]
     changes: list[ChangeView]
     deadline_moves: MovesView
@@ -143,7 +145,14 @@ async def load(
     today = local_date(now, zone)
     ladder = await metrics.ladder(session, today=today, zone=zone)
 
-    rows = await row_views(session, ladder.rows, zone)
+    # Горящее и ждущее решения часто стоит в обоих списках: подробности строк читаются
+    # одним заходом на объединение, а не дважды (CLAUDE.md, «Read-модель на экран»).
+    union = list(
+        {(row.section, row.entity_id): row for row in (*ladder.rows, *ladder.soon)}.values()
+    )
+    views = {(view.section, view.entity_id): view for view in await row_views(session, union, zone)}
+    rows = [views[(row.section, row.entity_id)] for row in ladder.rows]
+    soon = [views[(row.section, row.entity_id)] for row in ladder.soon]
     holders = metrics.holders(ladder)
     moves = await metrics.deadline_moves(session, now=now, zone=zone)
     changes = await _changes(session, viewer=viewer, zone=zone)
@@ -158,6 +167,8 @@ async def load(
         rows=rows,
         counts={step.value: ladder.count(step) for step in STEPS},
         on_track=ladder.on_track,
+        soon_days=SOON_DAYS,
+        soon=soon,
         holders=[
             HolderView(
                 person=PersonRef(id=holder.person_id, name=names.get(holder.person_id, "")),

@@ -4,7 +4,8 @@
  * Раскладка меняется с устройством, потому что меняется задача (`app/device.ts`):
  *
  * - **телефон** — одна колонка: счётчики ступеней, лестница, под ней карточки. Первые пять
- *   строк лестницы видны без прокрутки, решение — одно касание (PLAN-10X);
+ *   строк лестницы видны без прокрутки, решение — одно касание (PLAN-10X); число изменений
+ *   «с прошлого визита» — в шапке, касание ведёт к карточке (блок 4);
  * - **ноутбук** — лестница и рядом карточки-вопросы; строка раскрывается на месте;
  * - **монитор** — три панели: лестница, раскрытая строка, карточки. Не одна широкая
  *   колонка и 85 % пустоты (аудит 20.09, В8).
@@ -18,7 +19,7 @@
  */
 
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { Gauge, Presentation } from 'lucide-react';
+import { ChevronDown, Gauge, Presentation } from 'lucide-react';
 import { lazy, startTransition, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -50,7 +51,7 @@ import { ReportTab } from './Report';
 import { SummaryTab } from './Summary';
 import { rowTitle } from './text';
 import { usePult, usePultAction, type PultAction, type Target } from './usePult';
-import { HoldersCard, MovesCard, SinceCard } from './Widgets';
+import { HoldersCard, MovesCard, SinceCard, SoonCard } from './Widgets';
 
 /**
  * Сколько секунд держится «Отменить» после действия. Восемь, а не пять: руководитель
@@ -67,8 +68,11 @@ const Overview = lazy(() => import('@/sections/meeting/Overview'));
 /** Точка ступени. Классы полностью: имя, собранное из частей, Tailwind при сборке не найдёт. */
 const DOT = { call: 'bg-call', burn: 'bg-burn', wait: 'bg-wait' } as const;
 
+/** Якорь карточки «С прошлого визита»: к ней ведёт число изменений в шапке телефона. */
+const SINCE_ANCHOR = 'pult-since';
+
 /** Объект решения строки — ровно два поля, а не вся строка в теле запроса. */
-function targetFrom(row: PultRow): Target {
+function targetFrom(row: Pick<PultRow, 'target_type' | 'target_id'>): Target {
   return { target_type: row.target_type, target_id: row.target_id };
 }
 
@@ -194,7 +198,18 @@ function Pult({ view }: { view: PultView }) {
 
   const widgets = (
     <>
-      <SinceCard changes={view.changes} lastVisitAt={view.last_visit_at} />
+      <SoonCard
+        soon={view.soon}
+        days={view.soon_days}
+        asOf={view.as_of}
+        canDecide={viewer === 'leader'}
+        busy={action.isPending}
+        compact={isPhone}
+        onDecide={(row, kind) => decide(targetFrom(row), kind, rowTitle(t, row))}
+      />
+      <div id={SINCE_ANCHOR} className="scroll-mt-[calc(var(--topbar-height)+1rem)]">
+        <SinceCard changes={view.changes} lastVisitAt={view.last_visit_at} />
+      </div>
       <HoldersCard
         holders={view.holders}
         active={filter?.kind === 'person' ? filter.person.id : null}
@@ -336,9 +351,26 @@ function PultHeader({
         </div>
         {/* Время данных — второй строкой: рядом с тремя вкладками на 390 px от него
             оставалось «Данные на 2…». */}
-        <div className="flex min-w-0 items-center gap-2 text-xs text-ink-muted">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-ink-muted">
           <span className="truncate">{t('pult.asOf', { when: formatDateTime(view.as_of) })}</span>
           {demo}
+          {/* «Что изменилось с моего прошлого визита?» — вопрос телефона руководителя
+              (ТЗ 6), а карточка с ответом стоит под лестницей: число здесь отвечает без
+              прокрутки, касание ведёт к подробностям. */}
+          {view.last_visit_at ? (
+            <button
+              type="button"
+              // Кнопка, а не ссылка с якорем: адрес Пульта — это его вкладка (`?view=`), и
+              // хвост `#…` в нём читался бы как ещё одно состояние экрана.
+              onClick={() => document.getElementById(SINCE_ANCHOR)?.scrollIntoView()}
+              className="inline-flex min-h-touch items-center gap-0.5 font-medium text-accent-ink"
+            >
+              {view.changes.length === 0
+                ? t('pult.since.chipNone')
+                : t('pult.since.chip', { count: view.changes.length })}
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </header>
     );

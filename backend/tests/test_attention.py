@@ -180,3 +180,50 @@ class TestTashkentDay:
     def test_moment_without_zone_is_refused(self) -> None:
         with pytest.raises(ValueError, match="часового пояса"):
             local_date(datetime(2026, 9, 25, 22, 0), TASHKENT)  # noqa: DTZ001
+
+
+class TestSoon:
+    """«Что сорвётся за 14 дней?» (ТЗ 5) — горизонт Пульта тем же проходом, что лестница."""
+
+    @staticmethod
+    def soon_of(*items: Item) -> Ladder:
+        return build_ladder(items, today=TODAY, burn_days=BURN, quiet_days=QUIET, soon_days=14)
+
+    def test_window_from_today_to_horizon_inclusive(self) -> None:
+        """Сегодня и четырнадцатый день — внутри; вчера и пятнадцатый — снаружи."""
+        result = self.soon_of(
+            item(title="вчера", due_on=days(-1)),
+            item(title="сегодня", due_on=days(0)),
+            item(title="четырнадцатый", due_on=days(14)),
+            item(title="пятнадцатый", due_on=days(15)),
+            item(title="без срока"),
+        )
+        assert [row.title for row in result.soon] == ["сегодня", "четырнадцатый"]
+
+    def test_on_track_counted_and_listed(self) -> None:
+        """Работа через десять дней идёт по плану: в лестнице её нет, в горизонте — есть."""
+        result = self.soon_of(item(title="через десять", due_on=days(10)))
+        assert result.rows == ()
+        assert result.on_track == 1
+        assert [(row.title, row.attention) for row in result.soon] == [
+            ("через десять", Attention.ON_TRACK)
+        ]
+
+    def test_same_step_as_ladder(self) -> None:
+        """Горящая строка горит в обоих списках — ступень считается один раз."""
+        result = self.soon_of(item(title="горит", due_on=days(3)))
+        assert result.rows[0].attention is Attention.BURNING
+        assert result.soon[0] == result.rows[0]
+
+    def test_by_date_then_ladder_order(self) -> None:
+        """По дате; в один день ждущее решения стоит над идущим по плану."""
+        result = self.soon_of(
+            item(title="через неделю", due_on=days(9)),
+            item(title="план", due_on=days(5)),
+            item(title="решение", due_on=days(5), awaiting_since=days(-1)),
+        )
+        assert [row.title for row in result.soon] == ["решение", "план", "через неделю"]
+
+    def test_not_asked_stays_empty(self) -> None:
+        """Без горизонта лестница прежняя: остальные потребители его не платят."""
+        assert ladder_of(item(due_on=days(3))).soon == ()

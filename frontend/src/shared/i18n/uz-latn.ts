@@ -232,6 +232,9 @@ export const uzLatn = {
       question: 'Oxirgi tashrifimdan beri nima oʻzgardi?',
       since: '{{when}} dan beri oʻzgarishlar',
       none: 'Oxirgi tashrifdan beri hech narsa oʻzgarmadi.',
+      chip_one: 'Oxirgi tashrifdan beri {{count}} ta oʻzgarish',
+      chip_other: 'Oxirgi tashrifdan beri {{count}} ta oʻzgarish',
+      chipNone: 'Oxirgi tashrifdan beri oʻzgarish yoʻq',
       kinds: {
         created: 'Yangi',
         closed: 'Yopildi',
@@ -253,6 +256,14 @@ export const uzLatn = {
       answer: '{{days}} kunda surishlar: {{moves}}, jami siljish +{{shift}} kun',
       times: 'surishlar: {{count}}',
       reapprove: 'Qayta tasdiqlash',
+    },
+    soon: {
+      title: '{{days}} kun ichida nima buziladi?',
+      question: 'Barcha boʻlimlar muddatlari ikki hafta oldinga — kech boʻlmasdan aralashish',
+      answer_one: '{{count}} ta muddat, eng yaqini — {{when}}',
+      answer_other: '{{count}} ta muddat, eng yaqini — {{when}}',
+      none: '{{days}} kun ichida muddatlar yoʻq.',
+      all: 'Hammasini koʻrsatish: {{count}}',
     },
     ask: {
       action: 'Soʻrash',
