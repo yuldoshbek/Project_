@@ -54,9 +54,22 @@ def database_url() -> str:
     return get_settings().sqlalchemy_url
 
 
+SEARCH_INDEX_PREFIX = "ix_search_"
+"""Индексы поиска — выражения над функцией `search_fold` (миграция 0010_search). Модели
+SQLAlchemy их не описывают: функция — не таблица, и её выражение Alembic сравнивал бы как
+строку, которую база печатает по-своему. Поэтому сравнение схемы с моделями их пропускает."""
+
+
+def include_object(
+    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    return not (type_ == "index" and name is not None and name.startswith(SEARCH_INDEX_PREFIX))
+
+
 def configure(connection: Connection | None = None, url: str | None = None) -> None:
     options: dict[str, Any] = {
         "target_metadata": target_metadata,
+        "include_object": include_object,
         # version_table_schema не задаётся: схему определяет search_path, и таблица
         # версий попадает в orbita вместе со всеми остальными. Явное указание здесь
         # ломает встроенное исключение alembic_version из сравнения — она начинает

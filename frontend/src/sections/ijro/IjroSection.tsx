@@ -30,6 +30,7 @@ import { formatDate, formatDateTime } from '@/shared/time';
 import { Sheet } from '@/shared/ui/Sheet';
 import { Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { useLinkedOpen } from '@/shared/lib/useLinkedOpen';
 
 import { AssignmentPanel } from './AssignmentPanel';
 import { AssignmentsTab } from './AssignmentsTab';
@@ -79,10 +80,8 @@ function Ijro({ view }: { view: IjroView }) {
     });
 
   const [filter, setFilter] = useState<Filter>(NO_FILTER);
-  // Карточка из ссылки — так её открывает Календарь.
-  const [open, setOpen] = useState<string | null>(() =>
-    typeof search.open === 'string' ? search.open : null,
-  );
+  // Карточка из ссылки — так её открывают Календарь и поиск.
+  const [open, setOpen] = useLinkedOpen();
   const [spravka, setSpravka] = useState(false);
 
   const showList = (patch: Partial<Filter>) => {

@@ -152,6 +152,8 @@ class TestTask:
         capture = await written(session, saved["id"])
         task = await session.get(Task, capture.task_id)
         assert task is not None and task.code == saved["task_code"]
+        # Фото из того же касания ложится к задаче — его видно в её карточке.
+        assert saved["photo_owner"] == {"owner_type": "task", "owner_id": str(task.id)}
         work = await card(assistant_api, str(task.id))
         assert work["title"] == "Рассмотрение проекта постановления Минэкологии"
         assert (work["due_on"], work["assignee"]["id"], work["project"]["id"]) == (
@@ -287,6 +289,14 @@ class TestInbox:
         assert saved["due_on"] == (on(due).isoformat() if due is not None else None)
         assert (await written(session, saved["id"])).task_id is None
         assert await count(session, Task) == tasks_before
+        # Фото из того же касания (V18): идея — к наброску в «Идеях», письмо и мероприятие —
+        # к самой записи во входящих, своих разделов у них ещё нет.
+        owner = saved["photo_owner"]
+        if kind == "idea":
+            assert owner["owner_type"] == "idea"
+            assert owner["owner_id"] != saved["id"]
+        else:
+            assert owner == {"owner_type": "capture", "owner_id": saved["id"]}
 
     @pytest.mark.parametrize(
         "body",

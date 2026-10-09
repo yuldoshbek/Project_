@@ -11,6 +11,8 @@
  */
 
 /** Тип записи. Порядок — порядок кнопок. */
+import type { PhotoOwner } from './photo';
+
 export const CAPTURE_KINDS = ['task', 'request', 'idea', 'letter', 'event'] as const;
 
 export type CaptureKind = (typeof CAPTURE_KINDS)[number];
@@ -40,6 +42,8 @@ export interface CaptureView {
 /** Ответ на запись: у задачи и просьбы — номер заведённой задачи. */
 export interface SavedCapture extends Capture {
   task_code: string | null;
+  /** К чему класть фото из того же касания: задача, идея или запись во входящих (V18). */
+  photo_owner: PhotoOwner;
 }
 
 /**

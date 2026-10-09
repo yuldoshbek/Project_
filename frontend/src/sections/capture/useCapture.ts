@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { request } from '@/shared/api/client';
 
 import type { CaptureView, NewCapture, SavedCapture } from './model';
+import { attachPhoto, type PhotoOwner } from './photo';
 
 const BASE = '/api/v1/captures';
 
@@ -31,5 +32,17 @@ export function useSaveCapture() {
           ? WITH_TASKS.map((queryKey) => client.invalidateQueries({ queryKey }))
           : []),
       ]),
+  });
+}
+
+/** Фото к записи из того же касания; после него перечитываются фото этой записи. */
+export function useAttachPhoto() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { owner: PhotoOwner; file: File }) => attachPhoto(input.owner, input.file),
+    onSettled: (_, __, input) =>
+      client.invalidateQueries({
+        queryKey: ['photos', input.owner.owner_type, input.owner.owner_id],
+      }),
   });
 }

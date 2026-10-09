@@ -39,6 +39,8 @@ export interface Idea {
   /** Сколько дней ждёт руководителя; у не отправленной — 0 (V46). */
   waiting_days: number;
   link: Link | null;
+  /** Фото, снятые вместе с идеей в Захвате (V18): приходят вместе со списком. */
+  photos: { id: string; name: string }[];
   version: number;
 }
 

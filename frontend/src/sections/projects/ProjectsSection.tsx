@@ -28,6 +28,7 @@ import { Button } from '@/shared/ui/Button';
 import { Sheet } from '@/shared/ui/Sheet';
 import { Empty, Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { useLinkedOpen } from '@/shared/lib/useLinkedOpen';
 
 import { Board } from './Board';
 import { CreateProject } from './CreateProject';
@@ -80,7 +81,8 @@ function Projects({ view }: { view: ProjectsView }) {
   const [mode, setMode] = useState<View>('board');
   const [filter, setFilter] = useState<ProjectFilter>(NO_FILTER);
   const [phoneStatus, setPhoneStatus] = useState<ProjectStatus>('in_progress');
-  const [open, setOpen] = useState<string | null>(null);
+  // Карточка из ссылки — так её открывают Календарь и поиск.
+  const [open, setOpen] = useLinkedOpen();
   const [creating, setCreating] = useState(false);
   const [move, setMove] = useState<{ card: ProjectCard; status: ProjectStatus } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -104,7 +106,7 @@ function Projects({ view }: { view: ProjectsView }) {
     else status.mutate({ id, status: next, reason: null, version: card.version });
   };
 
-  const closePanel = useCallback(() => setOpen(null), []);
+  const closePanel = useCallback(() => setOpen(null), [setOpen]);
   const closeCreate = useCallback(() => setCreating(false), []);
   const closeMove = useCallback(() => setMove(null), []);
 

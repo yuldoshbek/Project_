@@ -23,10 +23,16 @@ import { Sheet } from '@/shared/ui/Sheet';
 const SLOT =
   'flex min-h-touch w-full flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] transition-colors duration-[var(--motion-fast)]';
 
-export function BottomBar({ onCapture }: { onCapture: () => void }) {
+export function BottomBar({
+  onCapture,
+  onSearch,
+}: {
+  onCapture: () => void;
+  onSearch: () => void;
+}) {
   const { t } = useTranslation();
   const path = useRouterState({ select: (state) => state.location.pathname });
-  const [sheet, setSheet] = useState<'more' | 'search' | null>(null);
+  const [sheet, setSheet] = useState<'more' | null>(null);
   const close = useCallback(() => setSheet(null), []);
   const isActive = (to: string) => (to === '/' ? path === '/' : path.startsWith(to));
   const inMore = MORE_SECTIONS.some((section) => isActive(sectionPath(section.id)));
@@ -71,11 +77,7 @@ export function BottomBar({ onCapture }: { onCapture: () => void }) {
             </button>
           </li>
           <li className="flex-1">
-            <button
-              type="button"
-              onClick={() => setSheet('search')}
-              className={cn(SLOT, 'text-ink-muted')}
-            >
+            <button type="button" onClick={onSearch} className={cn(SLOT, 'text-ink-muted')}>
               <Search className="size-5" aria-hidden="true" />
               <span className="truncate">{t('app.search')}</span>
             </button>
@@ -124,13 +126,6 @@ export function BottomBar({ onCapture }: { onCapture: () => void }) {
               );
             })}
           </ul>
-        </Sheet>
-      ) : null}
-
-      {sheet === 'search' ? (
-        <Sheet label={t('app.searchTitle')} closeLabel={t('app.searchClose')} onClose={close}>
-          <h2 className="text-lg font-semibold text-ink-strong">{t('app.searchTitle')}</h2>
-          <p className="text-sm text-ink">{t('app.searchBody')}</p>
         </Sheet>
       ) : null}
     </>

@@ -278,3 +278,101 @@ def test_links_expire() -> None:
         now=datetime.now(UTC) - timedelta(minutes=1),
     )
     assert "X-Amz-Expires=300" in url
+
+
+JPEG = "image/jpeg"
+
+
+async def a_task(api: AsyncClient) -> str:
+    items = (await api.get("/api/v1/tasks")).json()["items"]
+    task_id: str = items[0]["id"]
+    return task_id
+
+
+@pytest.mark.infra
+@pytest.mark.usefixtures("loaded")
+class TestPhotos:
+    """Фото из Захвата (ТЗ 7, V18): к записи, которую Захват завёл, тем же путём загрузки."""
+
+    async def test_leader_attaches_a_photo_and_the_card_shows_it(
+        self, leader_api: AsyncClient
+    ) -> None:
+        """Руководитель записывает с телефона — и фото кладёт он сам, не помощник."""
+        task_id = await a_task(leader_api)
+        content = b"\xff\xd8\xff fictional photo"
+        started = await leader_api.post(
+            "/api/v1/files/photos",
+            json={
+                "owner_type": "task",
+                "owner_id": task_id,
+                "name": "доска.jpg",
+                "content_type": JPEG,
+                "size": len(content),
+            },
+        )
+        assert started.status_code == 201, started.text
+        body = started.json()
+        listing = {"owner_type": "task", "owner_id": task_id}
+        # Пока фото не проверено, в карточке его нет.
+        assert (await leader_api.get("/api/v1/files/photos", params=listing)).json() == []
+
+        put = await leader_api.put(
+            body["upload"]["url"], content=content, headers={"Content-Type": JPEG}
+        )
+        assert put.status_code == 204, put.text
+        done = await leader_api.post(f"/api/v1/files/{body['file_id']}/complete")
+        assert done.status_code == 204, done.text
+
+        photos = (await leader_api.get("/api/v1/files/photos", params=listing)).json()
+        assert [photo["name"] for photo in photos] == ["доска.jpg"]
+        link = (await leader_api.get(f"/api/v1/files/{photos[0]['id']}/link")).json()
+        assert (await leader_api.get(link["url"])).content == content
+
+    async def test_only_images_to_known_records(self, assistant_api: AsyncClient) -> None:
+        task_id = await a_task(assistant_api)
+        base = {"owner_type": "task", "owner_id": task_id, "name": "x", "size": 10}
+        pdf = {**base, "content_type": PDF}
+        assert (await assistant_api.post("/api/v1/files/photos", json=pdf)).status_code == 422
+        missing = {**base, "content_type": JPEG, "owner_id": str(uuid.uuid4())}
+        assert (await assistant_api.post("/api/v1/files/photos", json=missing)).status_code == 404
+        version = {**base, "content_type": JPEG, "owner_type": "presentation_version"}
+        assert (await assistant_api.post("/api/v1/files/photos", json=version)).status_code == 422
+
+    async def test_presentation_stays_the_assistants_file(
+        self, assistant_api: AsyncClient, leader_api: AsyncClient
+    ) -> None:
+        """Фото кладут оба, а версию презентации по-прежнему подтверждает только помощник."""
+        prep_id = await drought(assistant_api)
+        started = (
+            await assistant_api.post(
+                f"/api/v1/preparations/{prep_id}/versions",
+                json={"name": "x.pdf", "content_type": PDF, "size": 10},
+            )
+        ).json()
+        refused = await leader_api.post(f"/api/v1/files/{started['file_id']}/complete")
+        assert refused.status_code == 403
+
+    async def test_idea_photos_come_with_the_ideas_list(self, leader_api: AsyncClient) -> None:
+        """У идеи нет карточки — карточка и есть строка: фото приходят вместе со списком."""
+        saved = (
+            await leader_api.post(
+                "/api/v1/captures", json={"kind": "idea", "text": "Спутник для лесхозов"}
+            )
+        ).json()
+        owner = saved["photo_owner"]
+        assert owner["owner_type"] == "idea"
+        content = b"\xff\xd8\xff idea photo"
+        started = (
+            await leader_api.post(
+                "/api/v1/files/photos",
+                json={**owner, "name": "эскиз.jpg", "content_type": JPEG, "size": len(content)},
+            )
+        ).json()
+        await leader_api.put(started["upload"]["url"], content=content)
+        await leader_api.post(f"/api/v1/files/{started['file_id']}/complete")
+
+        items = (await leader_api.get("/api/v1/ideas")).json()["items"]
+        idea = next(item for item in items if item["id"] == owner["owner_id"])
+        assert [photo["name"] for photo in idea["photos"]] == ["эскиз.jpg"]
+        others = [item for item in items if item["id"] != owner["owner_id"]]
+        assert all(item["photos"] == [] for item in others)

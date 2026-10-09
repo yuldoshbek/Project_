@@ -30,6 +30,8 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
   useRouterState: () => '/',
+  // Панель поиска переходит к находке — здесь до перехода не доходит.
+  useNavigate: () => () => Promise.resolve(),
 }));
 
 beforeEach(() => {
@@ -194,12 +196,22 @@ describe('оболочка меняется вместе с устройство
     for (const link of links) expect(link).not.toHaveTextContent('блок');
   });
 
-  it('«Поиск» честно говорит, что его нет в плане блоков (V19)', () => {
+  it('«Поиск» из нижней панели открывает строку поиска с клавиатурой (ТЗ 6, V19)', async () => {
     setViewport({ width: 390 });
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'Поиск' }));
     const sheet = screen.getByRole('dialog', { name: 'Поиск по всем разделам' });
-    expect(within(sheet).getByText(/вопрос на приёмке блока 1 \(V19\)/)).toBeInTheDocument();
+    // Панель грузится отдельным куском — поле появляется, когда он пришёл.
+    const field = await within(sheet).findByRole('searchbox', { name: 'Что найти' });
+    expect(field).toHaveFocus();
+  });
+
+  it('на ноутбуке поиск открывается клавишей «/» с любого экрана', async () => {
+    setViewport({ width: 1440 });
+    renderShell();
+    fireEvent.keyDown(window, { key: '/' });
+    const sheet = screen.getByRole('dialog', { name: 'Поиск по всем разделам' });
+    expect(await within(sheet).findByRole('searchbox')).toBeInTheDocument();
   });
 
   it('(+) открывает Захват', () => {

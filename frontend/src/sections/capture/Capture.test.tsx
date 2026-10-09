@@ -82,6 +82,8 @@ interface Options {
   /** Свой ответ на запись; `null` — ответ по умолчанию. */
   save?: (body: NewCapture) => Promise<Response> | null;
   demo?: boolean;
+  /** Сколько первых загрузок фото падает: проверка «запись есть, фото — ещё раз». */
+  failUploads?: number;
 }
 
 /** Сервер Захвата в памяти: недавние, запись по правилу V17, разбор фразы. */
@@ -91,8 +93,29 @@ function serve(role: 'leader' | 'assistant' = 'assistant', options: Options = {}
   vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    // Фото уходит телом-файлом, остальное — JSON.
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
     calls.push({ method, path, body });
+    if (method === 'POST' && path === '/api/v1/files/photos') {
+      const file_id = `f-${calls.length}`;
+      return Promise.resolve(
+        reply(201, {
+          file_id,
+          upload: { url: `/api/v1/files/${file_id}/content`, method: 'PUT', headers: {} },
+        }),
+      );
+    }
+    if (method === 'PUT' && path.startsWith('/api/v1/files/')) {
+      if ((options.failUploads ?? 0) > 0) {
+        options.failUploads = (options.failUploads ?? 0) - 1;
+        return Promise.resolve(reply(503, { detail: 'хранилище недоступно' }));
+      }
+      return Promise.resolve(reply(204));
+    }
+    if (method === 'POST' && path.endsWith('/complete')) return Promise.resolve(reply(204));
+    if (method === 'GET' && path.startsWith('/api/v1/files/photos')) {
+      return Promise.resolve(reply(200, []));
+    }
     if (path === '/api/me') return Promise.resolve(reply(200, user(role)));
     if (method === 'GET' && path === '/api/v1/tasks') return Promise.resolve(reply(200, view()));
     if (method === 'GET' && path === '/api/v1/captures') {
@@ -127,6 +150,9 @@ function serve(role: 'leader' | 'assistant' = 'assistant', options: Options = {}
         created_at: NOW.toISOString(),
         destination: toTasks ? 'tasks' : 'inbox',
         task_code: toTasks ? 'TSK-2026-0999' : null,
+        photo_owner: toTasks
+          ? { owner_type: 'task', owner_id: 't-new' }
+          : { owner_type: input.kind === 'idea' ? 'idea' : 'capture', owner_id: 'i-new' },
       };
       recent.unshift(saved);
       return Promise.resolve(reply(201, saved));
@@ -406,6 +432,7 @@ describe('Захват', () => {
       created_at: NOW.toISOString(),
       destination: 'tasks',
       task_code: 'TSK-2026-0999',
+      photo_owner: { owner_type: 'task', owner_id: 't-new' },
     };
     answer!(reply(201, saved));
     expect(await screen.findByRole('status')).toHaveTextContent('Задача заведена');
@@ -426,14 +453,10 @@ describe('Захват', () => {
     expect(screen.queryByText('Вымышленные данные')).not.toBeInTheDocument();
   });
 
-  it('фото названо честно: кнопка есть и говорит, почему недоступна', async () => {
+  it('кнопка «Фото» работает — снимок прикладывается к записи (V18)', async () => {
     serve();
     renderCapture();
-    const photo = await screen.findByRole('button', { name: 'Фото' });
-    expect(photo).toBeDisabled();
-    expect(photo).toHaveAccessibleDescription(
-      'Фото к записи пока не прикладывается: файлы живут в карточках разделов.',
-    );
+    expect(await screen.findByRole('button', { name: 'Фото' })).toBeEnabled();
   });
 
   it('на телефоне — подсказка про диктовку', async () => {
@@ -474,5 +497,66 @@ describe('подписи недавних записей', () => {
     expect(
       metaText(t, { ...request, kind: 'event', destination: 'inbox', author: 'assistant' }, asOf),
     ).toBe('Помощник · 1 ч назад · 02.10.2026 · во входящих до «Докладов и мероприятий»');
+  });
+});
+
+describe('фото из Захвата (V18)', () => {
+  beforeEach(() => {
+    // jsdom не умеет показывать выбранный файл — миниатюре нужен только адрес.
+    URL.createObjectURL = vi.fn(() => 'blob:photo');
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  async function pickAndSave(text: string) {
+    const field = await screen.findByRole('textbox', { name: 'Текст записи' });
+    fireEvent.change(field, { target: { value: text } });
+    const photo = new File(['jpeg'], 'доска.jpg', { type: 'image/jpeg' });
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: { files: [photo] },
+    });
+    expect(screen.getByRole('img', { name: 'Выбранное фото' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Записать' }));
+  }
+
+  it('фото уходит следом за записью — к задаче, которую она завела', async () => {
+    const calls = serve('assistant');
+    renderCapture();
+
+    await pickAndSave('Позвонить в Минфин');
+
+    expect(await screen.findByText(/Фото приложено/)).toBeInTheDocument();
+    expect(calls).toContainEqual({
+      method: 'POST',
+      path: '/api/v1/files/photos',
+      body: {
+        owner_type: 'task',
+        owner_id: 't-new',
+        name: 'доска.jpg',
+        content_type: 'image/jpeg',
+        size: 4,
+      },
+    });
+    const put = calls.findIndex((call) => call.method === 'PUT');
+    const done = calls.findIndex((call) => call.path.endsWith('/complete'));
+    expect(put).toBeGreaterThan(-1);
+    expect(done).toBeGreaterThan(put);
+    // Фото ушло — следующая запись начинается без него.
+    expect(screen.queryByRole('img', { name: 'Выбранное фото' })).not.toBeInTheDocument();
+  });
+
+  it('фото не загрузилось — запись уже есть, фото отправляется ещё раз без второй записи', async () => {
+    const calls = serve('assistant', { failUploads: 1 });
+    renderCapture();
+
+    await pickAndSave('Позвонить в Минфин');
+
+    expect(await screen.findByText(/Запись сохранена, а фото не загрузилось/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+
+    expect(await screen.findByText(/Фото приложено/)).toBeInTheDocument();
+    const saves = calls.filter(
+      (call) => call.method === 'POST' && call.path === '/api/v1/captures',
+    );
+    expect(saves).toHaveLength(1);
   });
 });

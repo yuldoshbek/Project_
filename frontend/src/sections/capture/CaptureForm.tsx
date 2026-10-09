@@ -9,9 +9,11 @@
  *
  * Куда уходит запись — допущение V17: задача — в «Задачи», просьба руководителя — туда же с
  * пометкой; идея, письмо и мероприятие — во входящие, пока их разделы не появятся. Запись и
- * задача — одна транзакция сервера (`POST /api/v1/captures`). Фото — с хранилищем файлов в
- * блоке 2 (V18): кнопка на месте и говорит, когда заработает. Руководителю — два типа,
- * свои: просьба и идея (ТЗ 6); то же правило держит сервер.
+ * задача — одна транзакция сервера (`POST /api/v1/captures`). Фото (V18) уходит следом за
+ * записью к тому, что она завела: к задаче, к идее или к записи во входящих — сервер говорит
+ * к чему (`photo_owner`). Не загрузилось — запись уже сохранена, и фото можно отправить
+ * ещё раз, не записывая дело дважды. Руководителю — два типа, свои: просьба и идея (ТЗ 6);
+ * то же правило держит сервер.
  *
  * Лист не закрывается после записи: после совещания записывают несколько дел подряд, и
  * каждое открытие листа — лишнее касание. Записывает Enter, как у строки «Новая задача»
@@ -19,8 +21,16 @@
  * не прячется, — а кнопка «Записать» под четырьмя полями разбора оказывается под ней.
  */
 
-import { Camera, Mic, Sparkles } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { Camera, Mic, Sparkles, X } from 'lucide-react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
@@ -38,7 +48,8 @@ import { Failure } from '@/shared/ui/States';
 import { KIND_ICON } from './kinds';
 import { CAPTURE_KINDS, type CaptureKind, type NewCapture } from './model';
 import { Recent } from './Recent';
-import { useCaptures, useSaveCapture } from './useCapture';
+import type { PhotoOwner } from './photo';
+import { useAttachPhoto, useCaptures, useSaveCapture } from './useCapture';
 
 const LEADER_KINDS: readonly CaptureKind[] = ['request', 'idea'];
 
@@ -85,6 +96,18 @@ export function CaptureForm() {
   const [text, setText] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const preview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+  useEffect(() => () => (preview ? URL.revokeObjectURL(preview) : undefined), [preview]);
+  const attach = useAttachPhoto();
+  // Подтверждение — к сообщению о записи: «Задача заведена… Фото приложено». Повтор после
+  // сбоя загрузки идёт тем же путём, иначе успех повтора остался бы без слов.
+  const sendPhoto = (owner: PhotoOwner, file: File, message: string) =>
+    attach.mutate(
+      { owner, file },
+      { onSuccess: () => setSaved(`${message} ${t('capture.photoAttached')}`.trim()) },
+    );
 
   const fields = FIELDS[kind];
   const line = useLineParse(text, fields.length > 0);
@@ -138,8 +161,16 @@ export function CaptureForm() {
     if (fields.includes('type')) body.type_code = line.value('type') || null;
     if (fields.includes('project')) body.project_id = line.value('project') || null;
     forget();
+    attach.reset();
+    const sentPhoto = photo;
     save.mutate(body, {
-      onSuccess: (capture) => done(t(`capture.saved.${kind}`, { code: capture.task_code }), sent),
+      onSuccess: (capture) => {
+        const message = t(`capture.saved.${kind}`, { code: capture.task_code });
+        done(message, sent);
+        if (!sentPhoto) return;
+        setPhoto(null);
+        sendPhoto(capture.photo_owner, sentPhoto, message);
+      },
     });
   };
 
@@ -255,16 +286,50 @@ export function CaptureForm() {
 
         <div className="flex flex-col gap-1.5">
           <span className="flex flex-wrap items-center gap-2">
-            <Button type="submit" look="primary" disabled={!title || save.isPending || waiting}>
+            <Button
+              type="submit"
+              look="primary"
+              disabled={!title || save.isPending || attach.isPending || waiting}
+            >
               {t('capture.save')}
             </Button>
-            <Button type="button" disabled aria-describedby={`${ids}-photo`}>
+            {/* Поле выбора спрятано, кнопка — своя: у поля файла нет подписи по-русски.
+                На телефоне оно предлагает снять фото или взять из галереи. */}
+            <input
+              ref={picker}
+              type="file"
+              accept="image/*"
+              tabIndex={-1}
+              aria-hidden="true"
+              className="sr-only"
+              onChange={(event) => {
+                setPhoto(event.target.files?.[0] ?? null);
+                setSaved(null);
+                event.target.value = '';
+              }}
+            />
+            <Button type="button" onClick={() => picker.current?.click()}>
               <Camera className="size-4" aria-hidden="true" />
-              {t('capture.photo')}
+              {t(photo ? 'capture.photoChange' : 'capture.photo')}
             </Button>
-          </span>
-          <span id={`${ids}-photo`} className="text-xs text-ink-muted">
-            {t('capture.photoLater')}
+            {preview ? (
+              <span className="inline-flex items-center gap-1">
+                <img
+                  src={preview}
+                  alt={t('capture.photoChosen')}
+                  className="size-11 rounded-[var(--radius)] border border-line object-cover"
+                />
+                <Button
+                  type="button"
+                  look="quiet"
+                  size="icon"
+                  onClick={() => setPhoto(null)}
+                  aria-label={t('capture.photoRemove')}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Button>
+              </span>
+            ) : null}
           </span>
           {device === 'phone' ? (
             <span className="flex items-center gap-1.5 text-xs text-ink-muted">
@@ -283,6 +348,20 @@ export function CaptureForm() {
           </p>
         ) : null}
         {save.error ? <Failure detail={describeError(save.error)} /> : null}
+        {attach.isPending ? (
+          <p role="status" className="text-sm text-ink-muted">
+            {t('capture.photoUploading')}
+          </p>
+        ) : null}
+        {attach.error ? (
+          <Failure
+            detail={`${t('capture.photoFailed')} ${describeError(attach.error)}`}
+            onRetry={() =>
+              attach.variables &&
+              sendPhoto(attach.variables.owner, attach.variables.file, saved ?? '')
+            }
+          />
+        ) : null}
       </form>
 
       <Recent />
