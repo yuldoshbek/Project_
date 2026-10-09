@@ -27,6 +27,7 @@ import { formatDateTime } from '@/shared/time';
 import { Sheet } from '@/shared/ui/Sheet';
 import { Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { useLinkedOpen } from '@/shared/lib/useLinkedOpen';
 
 import { AgreementsTab } from './AgreementsTab';
 import { NO_FILTER, type Filter } from './filter';
@@ -82,7 +83,22 @@ function Interaction({ view }: { view: InteractionView }) {
 
   const [filter, setFilter] = useState<Filter>(NO_FILTER);
   const [sleepingOnly, setSleepingOnly] = useState(false);
-  const [open, setOpen] = useState<Opened | null>(null);
+  // Карточка из ссылки — так её открывает поиск. Ссылка знает только запись, вид карточки —
+  // по вкладке, в которую она ведёт: письмо — из «Писем», организация — из «Организаций».
+  const [linked, setLinked] = useLinkedOpen();
+  const [picked, setPicked] = useState<Opened | null>(null);
+  const [seenLinked, setSeenLinked] = useState(linked);
+  if (linked !== seenLinked) {
+    setSeenLinked(linked);
+    setPicked(null);
+  }
+  const open: Opened | null =
+    picked ??
+    (linked ? { kind: tab === 'organizations' ? 'organization' : 'letter', id: linked } : null);
+  const setOpen = (next: Opened | null) => {
+    setPicked(next);
+    if (next === null) setLinked(null);
+  };
 
   const showLetters = (patch: Partial<Filter>) => {
     setFilter({ ...NO_FILTER, ...patch });

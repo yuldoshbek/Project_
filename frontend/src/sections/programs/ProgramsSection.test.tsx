@@ -21,6 +21,12 @@ import { ProgramsSection } from './ProgramsSection';
 import { view } from './test-data';
 import { YearEndCard } from './YearEndCard';
 
+// Карточку раздел открывает и по ссылке `?open=` (поиск, Календарь) — здесь ссылки нет.
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  useNavigate: () => () => Promise.resolve(),
+}));
+
 function user(role: 'leader' | 'assistant'): CurrentUser {
   return {
     id: `u-${role}`,

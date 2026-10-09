@@ -6,15 +6,15 @@
  *
  * Высота строки — токен `--topbar-height`: по нему же прилипает боковая полоса.
  *
- * На ноутбуке и мониторе здесь же кнопка Захвата: он есть на каждом экране (ТЗ 6, 7), а на
- * телефоне его место — посередине нижней панели.
+ * На ноутбуке и мониторе здесь же кнопки поиска и Захвата: они есть на каждом экране
+ * (ТЗ 6, 7), а на телефоне их место — в нижней панели.
  *
  * Пометка контура («превью») стоит здесь нарочно и только вне рабочего контура: человек,
  * работающий в превью, обязан видеть, что данные вымышленные, — иначе он однажды заведёт
  * настоящее поручение в копии, которая удалится вместе с закрытием PR.
  */
 
-import { Plus } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { Device } from '@/app/device';
@@ -24,7 +24,15 @@ import { ThemeMenu } from '@/app/shell/ThemeMenu';
 import { Button } from '@/shared/ui/Button';
 import { Signal } from '@/shared/ui/Signal';
 
-export function TopBar({ device, onCapture }: { device: Device; onCapture: () => void }) {
+export function TopBar({
+  device,
+  onCapture,
+  onSearch,
+}: {
+  device: Device;
+  onCapture: () => void;
+  onSearch: () => void;
+}) {
   const { t } = useTranslation();
   const user = useCurrentUser();
   const health = useHealth();
@@ -58,6 +66,16 @@ export function TopBar({ device, onCapture }: { device: Device; onCapture: () =>
           ) : null}
 
           <ThemeMenu />
+
+          {!isPhone ? (
+            <Button look="plain" size="small" onClick={onSearch} title={t('search.shortcut')}>
+              <Search className="size-4" aria-hidden="true" />
+              {t('search.open')}
+              <kbd className="rounded-[var(--radius-sm)] bg-sunken px-1.5 text-xs font-normal">
+                {t('search.key')}
+              </kbd>
+            </Button>
+          ) : null}
 
           {!isPhone ? (
             <Button look="primary" size="small" onClick={onCapture} title={t('capture.shortcut')}>

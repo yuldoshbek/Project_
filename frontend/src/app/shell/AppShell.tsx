@@ -9,7 +9,10 @@
  *   с двух метров, а не с шестидесяти сантиметров.
  *
  * Захват живёт здесь, а не в разделах: он есть на каждом экране (ТЗ 6, 7) — кнопкой в
- * верхней строке, посередине нижней панели телефона и клавишей «+» на ноутбуке.
+ * верхней строке, посередине нижней панели телефона и клавишей «+» на ноутбуке. Поиск —
+ * так же: в нижней панели телефона, кнопкой в верхней строке и клавишей «/» или Ctrl+K.
+ * Панель поиска грузится отдельным куском при первом открытии: первый экран телефона её
+ * не ждёт (замер первого экрана, критерий 4 блока 3).
  *
  * Полоса «космоса» сверху — единственное украшение на весь блок 0, и она же несёт смысл:
  * ею отделяется служебная строка состояния от данных. Сцены с частицами на телефоне нет и
@@ -17,7 +20,7 @@
  */
 
 import { useRouterState } from '@tanstack/react-router';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
@@ -28,6 +31,8 @@ import { Sheet } from '@/shared/ui/Sheet';
 import { BottomBar } from './BottomBar';
 import { SideRail } from './SideRail';
 import { TopBar } from './TopBar';
+
+const SearchPanel = lazy(() => import('@/sections/search/SearchPanel'));
 
 /** Клавиша «+» — не посреди набора текста: там это просто плюс. */
 function isTyping(target: EventTarget | null): boolean {
@@ -50,11 +55,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [capturing, setCapturing] = useState(false);
   const openCapture = useCallback(() => setCapturing(true), []);
   const closeCapture = useCallback(() => setCapturing(false), []);
+  const [searching, setSearching] = useState(false);
+  const openSearch = useCallback(() => setSearching(true), []);
+  const closeSearch = useCallback(() => setSearching(false), []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
+      // Ctrl+K (⌘K) — привычное сочетание поиска, работает и посреди набора текста.
+      const searchKey = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
+      if (searchKey || (event.key === '/' && !isTyping(event.target))) {
+        event.preventDefault();
+        setSearching(true);
+        return;
+      }
       if (event.key !== '+' || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (isTyping(event.target) || document.querySelector('[role="dialog"]')) return;
+      if (isTyping(event.target)) return;
       event.preventDefault();
       setCapturing(true);
     };
@@ -64,7 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-app text-ink">
-      <TopBar device={device} onCapture={openCapture} />
+      <TopBar device={device} onCapture={openCapture} onSearch={openSearch} />
 
       <div className="flex">
         {!isPhone ? <SideRail wide={device === 'monitor'} /> : null}
@@ -95,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      {isPhone ? <BottomBar onCapture={openCapture} /> : null}
+      {isPhone ? <BottomBar onCapture={openCapture} onSearch={openSearch} /> : null}
 
       {capturing ? (
         <Sheet
@@ -105,6 +121,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           focusClose={false}
         >
           <CaptureForm />
+        </Sheet>
+      ) : null}
+
+      {searching ? (
+        <Sheet
+          label={t('search.title')}
+          closeLabel={t('search.close')}
+          onClose={closeSearch}
+          focusClose={false}
+        >
+          <Suspense fallback={null}>
+            <SearchPanel onPick={closeSearch} />
+          </Suspense>
         </Sheet>
       ) : null}
     </div>

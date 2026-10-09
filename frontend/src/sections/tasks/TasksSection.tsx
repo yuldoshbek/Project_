@@ -27,6 +27,7 @@ import { Card } from '@/shared/ui/Card';
 import { Sheet } from '@/shared/ui/Sheet';
 import { Empty, Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { useLinkedOpen } from '@/shared/lib/useLinkedOpen';
 
 import { CaptureLine } from './CaptureLine';
 import { filterTasks, isFiltered, NO_FILTER, type TaskFilter } from './filter';
@@ -64,7 +65,8 @@ function Tasks({ view }: { view: TasksView }) {
 
   const [mode, setMode] = useState<View>('list');
   const [filter, setFilter] = useState<TaskFilter>(NO_FILTER);
-  const [open, setOpen] = useState<string | null>(null);
+  // Карточка из ссылки — так её открывают Календарь и поиск.
+  const [open, setOpen] = useLinkedOpen();
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -74,7 +76,7 @@ function Tasks({ view }: { view: TasksView }) {
   }, [notice]);
 
   const items = useMemo(() => filterTasks(view.items, filter), [view.items, filter]);
-  const closePanel = useCallback(() => setOpen(null), []);
+  const closePanel = useCallback(() => setOpen(null), [setOpen]);
   const person = view.people.find((each) => each.id === filter.assignee);
 
   const pick = (personId: string) =>

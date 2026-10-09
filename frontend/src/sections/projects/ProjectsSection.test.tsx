@@ -19,6 +19,12 @@ import type { OrganizationRef, ProjectCard, ProjectDetail, WhatIfResult } from '
 import { ProjectsSection } from './ProjectsSection';
 import { ITEMS, card, detail, view } from './test-data';
 
+// Карточку раздел открывает и по ссылке `?open=` (поиск, Календарь) — здесь ссылки нет.
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  useNavigate: () => () => Promise.resolve(),
+}));
+
 const BASE = '/api/v1/projects';
 
 function user(role: 'leader' | 'assistant'): CurrentUser {

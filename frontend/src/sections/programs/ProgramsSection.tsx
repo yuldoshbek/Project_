@@ -29,6 +29,7 @@ import { formatDate, formatDateTime, localDay } from '@/shared/time';
 import { Sheet } from '@/shared/ui/Sheet';
 import { Empty, Failure, Loading } from '@/shared/ui/States';
 import { Signal } from '@/shared/ui/Signal';
+import { useLinkedOpen } from '@/shared/lib/useLinkedOpen';
 
 import { Horizon } from './Horizon';
 import { TERMINAL, type ProgramCard, type ProgramsView } from './model';
@@ -66,7 +67,8 @@ function Programs({ view }: { view: ProgramsView }) {
   // Вносит данные помощник, руководитель смотрит и считает «что если» (ТЗ 1).
   const canEdit = user.data?.role !== 'leader';
 
-  const [open, setOpen] = useState<string | null>(null);
+  // Карточка из ссылки — так её открывает поиск.
+  const [open, setOpen] = useLinkedOpen();
   const [project, setProject] = useState<{ id: string; focus: PanelFocus | undefined } | null>(
     null,
   );

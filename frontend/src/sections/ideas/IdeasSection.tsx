@@ -12,7 +12,7 @@
 
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Lightbulb } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDevice } from '@/app/device';
@@ -52,10 +52,13 @@ function Ideas({ view }: { view: IdeasView }) {
   const device = useDevice();
   const user = useCurrentUser();
   const viewer: Role = user.data?.role === 'leader' ? 'leader' : 'assistant';
-  const search: { view?: unknown; map?: unknown } = useSearch({ strict: false });
+  const search: { view?: unknown; map?: unknown; open?: unknown } = useSearch({ strict: false });
   const navigate = useNavigate();
   const tab: Tab = search.view === 'maps' ? 'maps' : 'ideas';
   const openMap = typeof search.map === 'string' ? search.map : null;
+  // Идея, к которой привёл поиск: своей карточки у идеи нет — карточка и есть строка
+  // списка, поэтому она подсвечивается, и экран к ней прокручивается.
+  const found = typeof search.open === 'string' ? search.open : null;
   const go = (next: { view?: Tab; map?: string | null }) =>
     void navigate({
       to: '/ideas',
@@ -110,7 +113,7 @@ function Ideas({ view }: { view: IdeasView }) {
 
       <div role="tabpanel" aria-label={t(`ideas.tabs.${tab}`)}>
         {tab === 'ideas' ? (
-          <IdeasTab view={view} viewer={viewer} />
+          <IdeasTab view={view} viewer={viewer} found={found} />
         ) : (
           <Maps view={view} openId={openMap} onOpen={(id) => go({ view: 'maps', map: id })} />
         )}
@@ -119,7 +122,15 @@ function Ideas({ view }: { view: IdeasView }) {
   );
 }
 
-function IdeasTab({ view, viewer }: { view: IdeasView; viewer: Role }) {
+function IdeasTab({
+  view,
+  viewer,
+  found,
+}: {
+  view: IdeasView;
+  viewer: Role;
+  found: string | null;
+}) {
   const { t } = useTranslation();
   const device = useDevice();
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -193,6 +204,7 @@ function IdeasTab({ view, viewer }: { view: IdeasView; viewer: Role }) {
                 <IdeaRow
                   key={idea.id}
                   idea={idea}
+                  found={idea.id === found}
                   viewer={viewer}
                   editable={device !== 'monitor'}
                   onDecide={() => setDeciding(idea.id)}
@@ -218,11 +230,13 @@ function IdeasTab({ view, viewer }: { view: IdeasView; viewer: Role }) {
 
 function IdeaRow({
   idea,
+  found,
   viewer,
   editable,
   onDecide,
 }: {
   idea: Idea;
+  found: boolean;
   viewer: Role;
   editable: boolean;
   onDecide: () => void;
@@ -238,8 +252,18 @@ function IdeaRow({
   // рассмотрении текст — то, что руководитель уже читает.
   const rewritable = editable && (idea.step === 'draft' || idea.outcome === 'postponed');
   const failure = review.error ?? edit.error;
+  const row = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (found) row.current?.scrollIntoView({ block: 'center' });
+  }, [found]);
   return (
-    <li className="flex min-w-0 flex-col gap-2 rounded-[var(--radius-lg)] border border-line bg-card p-4">
+    <li
+      ref={row}
+      className={cn(
+        'flex min-w-0 flex-col gap-2 rounded-[var(--radius-lg)] border bg-card p-4',
+        found ? 'border-line-accent ring-2 ring-accent/40' : 'border-line',
+      )}
+    >
       <span className="inline-flex flex-wrap items-center gap-2">
         <Signal
           state={

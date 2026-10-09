@@ -20,7 +20,10 @@ import { FakeReports, handle } from './test-server';
 
 let search: Record<string, unknown> = {};
 
-vi.mock('@tanstack/react-router', () => ({ useSearch: () => search }));
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => search,
+  useNavigate: () => () => Promise.resolve(),
+}));
 
 function user(role: 'assistant' | 'leader'): CurrentUser {
   return {
