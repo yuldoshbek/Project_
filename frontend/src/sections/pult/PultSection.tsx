@@ -196,17 +196,20 @@ function Pult({ view }: { view: PultView }) {
     />
   );
 
-  const widgets = (
+  const soon = (
+    <SoonCard
+      soon={view.soon}
+      days={view.soon_days}
+      asOf={view.as_of}
+      canDecide={viewer === 'leader'}
+      busy={action.isPending}
+      compact={isPhone}
+      onDecide={(row, kind) => decide(targetFrom(row), kind, rowTitle(t, row))}
+    />
+  );
+
+  const rest = (
     <>
-      <SoonCard
-        soon={view.soon}
-        days={view.soon_days}
-        asOf={view.as_of}
-        canDecide={viewer === 'leader'}
-        busy={action.isPending}
-        compact={isPhone}
-        onDecide={(row, kind) => decide(targetFrom(row), kind, rowTitle(t, row))}
-      />
       <div id={SINCE_ANCHOR} className="scroll-mt-[calc(var(--topbar-height)+1rem)]">
         <SinceCard changes={view.changes} lastVisitAt={view.last_visit_at} />
       </div>
@@ -230,6 +233,13 @@ function Pult({ view }: { view: PultView }) {
           if (target) decide(target, 'approve', item.title ?? '');
         }}
       />
+    </>
+  );
+
+  const widgets = (
+    <>
+      {soon}
+      {rest}
     </>
   );
 
@@ -276,7 +286,10 @@ function Pult({ view }: { view: PultView }) {
               <Suspense fallback={null}>
                 <Overview />
               </Suspense>
-              <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] items-start gap-6">
+              {/* Четыре колонки на всю ширину 2560: лестница, раскрытая строка, «что
+                  сорвётся за 14 дней» и остальные карточки. В три колонки горизонт стоял
+                  над «с прошлого визита», и обе уходили за нижний край экрана. */}
+              <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)_minmax(0,3fr)] items-start gap-6">
                 {ladder}
                 <Card
                   title={t('pult.detail.title')}
@@ -298,7 +311,8 @@ function Pult({ view }: { view: PultView }) {
                     <p className="text-sm text-ink-muted">{t('pult.detail.pick')}</p>
                   )}
                 </Card>
-                <div className="flex flex-col gap-6">{widgets}</div>
+                {soon}
+                <div className="flex flex-col gap-6">{rest}</div>
               </div>
             </>
           ) : (

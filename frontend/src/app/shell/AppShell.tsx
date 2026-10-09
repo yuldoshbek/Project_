@@ -34,6 +34,9 @@ import { TopBar } from './TopBar';
 
 const SearchPanel = lazy(() => import('@/sections/search/SearchPanel'));
 
+/** Маршрут Пульта — адрес `/` (`app/sections.ts`, `sectionPath`). */
+const PULT_ROUTE = '/';
+
 /** Клавиша «+» — не посреди набора текста: там это просто плюс. */
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -100,7 +103,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div
             className={cn(
               'mx-auto print:max-w-none',
-              device === 'monitor' ? 'max-w-[1600px]' : 'max-w-[1100px]',
+              // Пульт на мониторе — многопанельный обзор (ТЗ 6): ему нужна вся ширина 2560,
+              // а в 1600 px по бокам оставалось по 400 px пустоты (снимки блока 3). Разделам с
+              // формами и списками широкая строка вредит — у них предел прежний.
+              device === 'monitor'
+                ? section === PULT_ROUTE
+                  ? 'max-w-none'
+                  : 'max-w-[1600px]'
+                : 'max-w-[1100px]',
             )}
           >
             {/* Ключ — раздел: при переходе он появляется плавно, а не вспыхивает целиком. */}

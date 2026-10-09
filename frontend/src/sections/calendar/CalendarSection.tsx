@@ -15,7 +15,7 @@
  * оттуда карточку того, по чему оно принято.
  */
 
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { CalendarDays, Plus, Repeat } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -202,6 +202,18 @@ function Calendar({
     onMonth(date.slice(0, 7));
     setSelected(date);
   };
+
+  // День из ссылки `?day=` — так его открывает полоса горячих дней на мониторе (блок 4).
+  // Тем же путём, что касание горячего дня в карточке: месяц и день, на телефоне — прокрутка.
+  const search: { day?: unknown } = useSearch({ strict: false });
+  const linkedDay =
+    typeof search.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(search.day) ? search.day : null;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- день приходит из адреса после перехода, а не из рендера
+    if (linkedDay) pick(linkedDay);
+    // День открывается один раз на ссылку; `pick` — новая функция на каждый рендер.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedDay]);
 
   // Касание даты: цикл — его лист, решение — свой лист, проект и задача — их карточка;
   // поручение Ижро и подготовка — их раздел с открытой карточкой.

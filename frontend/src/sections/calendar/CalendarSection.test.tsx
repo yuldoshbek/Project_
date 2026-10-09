@@ -23,12 +23,15 @@ import type { NewCycle } from './model';
 import { created, detail, initialCycles, preview, summary, view } from './test-data';
 
 const navigated = vi.hoisted(() => [] as unknown[]);
+/** Адрес Календаря: день из ссылки `?day=` (полоса горячих дней на мониторе). */
+const address = vi.hoisted(() => ({ search: {} as Record<string, unknown> }));
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => (options: unknown) => {
     navigated.push(options);
     return Promise.resolve();
   },
+  useSearch: () => address.search,
 }));
 
 const NOW = new Date('2026-09-28T07:00:00Z');
@@ -131,6 +134,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  address.search = {};
 });
 
 // Сетка месяца — 35 клеток-кнопок с сотней дат, и каждое касание перерисовывает её целиком.
@@ -171,6 +175,16 @@ describe('Календарь', { timeout: 20_000 }, () => {
     expect(await within(day).findByText('Интеграция с геопорталом')).toBeInTheDocument();
     // Срок проекта в день его вехи — строкой вехи.
     expect(within(day).getByText('Веха · и срок проекта')).toBeInTheDocument();
+  });
+
+  it('день из ссылки — так его открывает полоса на мониторе: свой месяц и день', async () => {
+    address.search = { day: '2026-10-18' };
+    serve();
+    renderCalendar();
+
+    expect(await screen.findByRole('region', { name: 'Октябрь 2026' })).toBeInTheDocument();
+    const day = screen.getByRole('heading', { name: 'Вс, 18 октября' }).closest('section')!;
+    expect(await within(day).findByText('Интеграция с геопорталом')).toBeInTheDocument();
   });
 
   it('месяцы листаются с выбранным днём, «сегодня» возвращает', async () => {

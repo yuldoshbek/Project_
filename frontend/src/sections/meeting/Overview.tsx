@@ -3,12 +3,15 @@
  *
  * Пульт отвечает за лестницу; панели — за то, чего в лестнице нет: «готовы ли к дате»,
  * «кто не отвечает», «что ждёт моего „да“», «где неделя перегружена». Касание ведёт в
- * раздел — там действие.
+ * раздел — там действие. У Календаря — полоса на четыре недели: касание дня открывает его.
+ * Подробность — не длиннее трёх строк: одна длинная панель растягивала все пять по высоте,
+ * и в остальных под ответом стояла пустота (снимки блока 3).
  */
 
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
+import { HotStrip } from '@/sections/calendar/HotStrip';
 import { cn } from '@/shared/lib/cn';
 import { Card } from '@/shared/ui/Card';
 
@@ -38,7 +41,16 @@ export default function Overview() {
           >
             {slide.main}
           </p>
-          {slide.detail ? <p className="mt-1 text-sm text-ink-muted">{slide.detail}</p> : null}
+          {slide.detail ? (
+            <p className="mt-1 line-clamp-3 text-sm text-ink-muted">{slide.detail}</p>
+          ) : null}
+          {slide.strip ? (
+            <HotStrip
+              today={slide.strip.today}
+              hot={slide.strip.hot}
+              onPick={(day) => void navigate({ to: '/calendar', search: { day } })}
+            />
+          ) : null}
           <div className="mt-auto pt-3">
             <button
               type="button"
